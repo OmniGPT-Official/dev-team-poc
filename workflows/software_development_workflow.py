@@ -27,6 +27,7 @@ Usage:
 import os
 import sys
 import re
+import json
 from datetime import datetime
 from typing import Optional
 from loguru import logger
@@ -79,15 +80,38 @@ class SoftwareDevelopmentInput(BaseModel):
 def run_product_discovery(step_input: StepInput) -> StepOutput:
     """Run product discovery workflow to create PRD."""
     try:
+        # Debug: log what we received
+        log_info(f"[SOFTWARE DEV] Received input type: {type(step_input.input)}")
+        log_info(f"[SOFTWARE DEV] Input content: {str(step_input.input)[:200]}...")
+
         # Handle different input types
         if isinstance(step_input.input, SoftwareDevelopmentInput):
             workflow_input = step_input.input
         elif isinstance(step_input.input, dict):
             workflow_input = SoftwareDevelopmentInput(**step_input.input)
+        elif isinstance(step_input.input, str):
+            # Try to parse as JSON first
+            try:
+                input_dict = json.loads(step_input.input)
+                workflow_input = SoftwareDevelopmentInput(**input_dict)
+            except (json.JSONDecodeError, TypeError):
+                # If not JSON, treat as plain text description
+                # Check if there's metadata with parameters
+                product_name = getattr(step_input, 'product_name', None) or "Unnamed Product"
+                scope = getattr(step_input, 'scope', None) or "product"
+
+                # Use the plain text as product_context
+                workflow_input = SoftwareDevelopmentInput(
+                    product_name=product_name,
+                    product_context=step_input.input,
+                    scope=scope,
+                    enable_research=getattr(step_input, 'enable_research', False),
+                    enable_competitor_analysis=getattr(step_input, 'enable_competitor_analysis', False),
+                    user_prompt=step_input.input
+                )
         else:
-            # If it's a string or other type, try to extract parameters
             return StepOutput(
-                content=f"Invalid input type: {type(step_input.input)}. Expected SoftwareDevelopmentInput or dict.",
+                content=f"Invalid input type: {type(step_input.input)}. Expected SoftwareDevelopmentInput, dict, or JSON string.",
                 success=False
             )
 
@@ -107,7 +131,8 @@ def run_product_discovery(step_input: StepInput) -> StepOutput:
         # Run product discovery workflow
         result = discovery_and_requirements_workflow.run(input=discovery_input)
 
-        if result.success:
+        # WorkflowRunOutput doesn't have 'success', check if it completed
+        if result and result.content:
             log_info("[SOFTWARE DEV] Product Discovery completed")
 
             # Extract PRD file path from result
@@ -151,9 +176,27 @@ def run_architecture_design(step_input: StepInput) -> StepOutput:
             workflow_input = step_input.input
         elif isinstance(step_input.input, dict):
             workflow_input = SoftwareDevelopmentInput(**step_input.input)
+        elif isinstance(step_input.input, str):
+            # Try to parse as JSON first
+            try:
+                input_dict = json.loads(step_input.input)
+                workflow_input = SoftwareDevelopmentInput(**input_dict)
+            except (json.JSONDecodeError, TypeError):
+                # If not JSON, treat as plain text description
+                product_name = getattr(step_input, 'product_name', None) or "Unnamed Product"
+                scope = getattr(step_input, 'scope', None) or "product"
+
+                workflow_input = SoftwareDevelopmentInput(
+                    product_name=product_name,
+                    product_context=step_input.input,
+                    scope=scope,
+                    enable_research=getattr(step_input, 'enable_research', False),
+                    enable_competitor_analysis=getattr(step_input, 'enable_competitor_analysis', False),
+                    user_prompt=step_input.input
+                )
         else:
             return StepOutput(
-                content=f"Invalid input type: {type(step_input.input)}. Expected SoftwareDevelopmentInput or dict.",
+                content=f"Invalid input type: {type(step_input.input)}. Expected SoftwareDevelopmentInput, dict, or JSON string.",
                 success=False
             )
 
@@ -188,7 +231,8 @@ def run_architecture_design(step_input: StepInput) -> StepOutput:
         # Run architecture design workflow
         result = architecture_design_workflow.run(input=architecture_input)
 
-        if result.success:
+        # WorkflowRunOutput doesn't have 'success', check if it completed
+        if result and result.content:
             log_info("[SOFTWARE DEV] Architecture Design completed")
             return StepOutput(content=result.content, success=True)
         else:
