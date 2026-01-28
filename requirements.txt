@@ -5,3 +5,6 @@ fastapi
 sqlalchemy
 PyJWT
 ddgs
+websockets
+loguru
+pydantic

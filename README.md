@@ -1,6 +1,14 @@
-# Agent OS - Product Lead AI System
+# Agent OS - Product Development AI System
 
-A modular AI agent system powered by Claude Sonnet 4.5, featuring a Product Lead agent specialized in creating PRDs, managing tickets, and leading product development.
+A modular AI agent system powered by Claude Sonnet 4.5, featuring end-to-end product development workflows from requirements to technical architecture.
+
+## 📚 Documentation
+
+- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Quick start guide for the Product Team Lead agent
+- **[Software Development Workflow](workflow_readme/software_development_workflow.md)** - Complete workflow documentation
+- **[Product Discovery Workflow](workflow_readme/product_discovery_worklow.md)** - PRD creation workflow
+- **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** - Project organization guide
+- **[STRUCTURE.md](STRUCTURE.md)** - Detailed architecture documentation
 
 ## Setup Instructions
 
@@ -45,48 +53,118 @@ The agent will start running on http://localhost:8000 with hot-reload enabled.
 ```
 Agent-Os/
 ├── agno_agent.py           # Main application entry point
-├── agents/                 # Agent definitions
-│   ├── product_lead.py     # Product Lead agent
-│   └── research_agent.py   # Research agent with DuckDuckGo
-├── instructions/           # Agent instructions/prompts
+│
+├── agents/                 # Agent definitions (each agent = 1 file)
+│   ├── product_lead.py          # 🆕 Product Lead (orchestrator with WorkflowTools)
+│   ├── lead_engineer.py         # Lead Engineer agent
+│   ├── software_engineer.py     # Software Engineer agent
+│   └── research_agent.py        # Research agent with DuckDuckGo
+│
+├── instructions/           # Agent instructions (each agent = 1 file)
 │   ├── product_lead_instructions.py
+│   ├── lead_engineer_instructions.py
 │   └── research_agent_instructions.py
-├── teams/                  # Team configurations
+│
+├── tools/                  # Custom tools (each tool = 1 file)
+│   └── product_discovery_tool.py
+│
+├── teams/                  # Team configurations (each team = 1 file)
 │   └── product_team.py
+│
+├── workflows/              # Workflows (each workflow = 1 file)
+│   ├── software_development_workflow.py    # 🆕 Main orchestrator
+│   ├── product_discovery_workflow.py       # PRD creation
+│   ├── architecture_design_workflow.py     # 🆕 Architecture design
+│   └── code_review_workflow.py             # Code review
+│
+├── workflow_readme/        # Workflow documentation
+│   ├── software_development_workflow.md    # 🆕 Complete guide
+│   └── product_discovery_worklow.md
+│
 ├── requirements.txt        # Python dependencies
 ├── .env                    # Environment variables (API keys)
-└── venv/                   # Python virtual environment
+├── SETUP_GUIDE.md         # 🆕 Quick start guide
+└── venv/                   # Virtual environment
 ```
 
-See [STRUCTURE.md](STRUCTURE.md) for detailed documentation on the project architecture.
+**📖 See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for complete guide on where to add new agents, tools, teams, and workflows.**
 
-## Product Lead Agent Features
+## 🚀 Product Lead Agent (Enhanced)
 
-The Product Lead agent is an expert in:
+**The ultimate orchestrator** - Talk to one agent that manages the entire software development process.
 
-### 1. Creating Comprehensive PRDs
-- Product overview & vision
-- Business objectives & KPIs
-- User personas & target audience
-- Problem statements & solutions
-- Technical requirements
-- Success metrics & analytics plans
+### Features:
+- **Automated Workflow Orchestration** - Triggers complete software development workflow
+- **End-to-End Process** - From idea to implementation plan
+- **Nested Workflows** - Product Discovery + Architecture Design
+- **File Outputs** - Generates PRD and ticket.md files
+- **Conversational Interface** - Just describe what you want to build
 
-### 2. Generating Structured Tickets
-- User stories with clear acceptance criteria
-- Priority levels (P0-P3)
-- Story point estimation
-- Dependency mapping
-- Technical implementation notes
+### Quick Start:
 
-### 3. Setting Goals & Roadmaps
-- Quarterly OKRs (Objectives & Key Results)
-- Prioritized feature roadmaps
-- Business goal alignment
+```python
+from agents.product_lead import product_lead_agent
 
-### 4. RICE Prioritization Framework
-- Reach × Impact × Confidence / Effort scoring
-- Data-driven feature prioritization
+product_lead_agent.print_response(
+    "Create a blog post scheduling system",
+    stream=True
+)
+```
+
+**Output:**
+- `prd_blog_post_scheduling_[timestamp].md` - Product Requirements
+- `ticket_blog_post_scheduling_[timestamp].md` - Technical Architecture
+
+See [SETUP_GUIDE.md](SETUP_GUIDE.md) for complete usage examples.
+
+---
+
+## 🔄 Software Development Workflow (NEW)
+
+**Nested workflow** that combines Product Discovery + Architecture Design:
+
+```
+Product Lead Agent
+    ↓
+Software Development Workflow
+    ├── Product Discovery Workflow
+    │   └── Creates PRD (prd_[name]_[timestamp].md)
+    │
+    └── Architecture Design Workflow
+        └── Creates Ticket (ticket_[name]_[timestamp].md)
+```
+
+### Features:
+- ✅ Automatic PRD creation
+- ✅ Technical architecture design
+- ✅ Implementation task breakdown
+- ✅ Conditional market research
+- ✅ Pass data between workflows
+- ✅ Persistent documentation files
+
+See [Software Development Workflow Documentation](workflow_readme/software_development_workflow.md) for details.
+
+---
+
+## 👥 Agents
+
+### Product Lead Agent (Orchestrator)
+- Manages complete software development process
+- Uses WorkflowTools to trigger nested workflows
+- Creates PRD + Architecture tickets
+- Creates PRDs and requirements documents
+- Defines goals and acceptance criteria
+- RICE prioritization framework
+
+### Lead Engineer Agent
+- Designs technical architecture
+- Creates technical specifications
+- Defines implementation approach
+
+### Software Engineer Agent
+- Implements features
+- Code reviews
+- Technical execution
 
 ## Research Agent Features
 
@@ -106,9 +184,17 @@ The Research Agent provides:
 - Auto-reload on code changes
 - Extensible design for adding new agents
 
-## Adding New Agents
+## Adding New Components
 
-See [STRUCTURE.md](STRUCTURE.md) for instructions on:
-- Creating new agents
-- Adding new instructions
-- Building teams
+**See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for complete step-by-step guides on:**
+- Creating new agents (each in separate file)
+- Adding custom tools (each in separate file)
+- Building teams (each team in separate file)
+- Creating workflows (each workflow in separate file)
+- Adding instructions (each agent's instructions in separate file)
+
+**Quick Summary:**
+- **New Agent** → `agents/agent_name.py` + `instructions/agent_name_instructions.py`
+- **New Tool** → `tools/tool_name.py`
+- **New Team** → `teams/team_name.py`
+- **New Workflow** → `workflows/workflow_name.py`

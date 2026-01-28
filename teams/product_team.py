@@ -1,37 +1,40 @@
 """
 Product Team Configuration
 
-This module defines the product development team using Agno Team.
-The Team's model acts as the Product Lead (team leader), coordinating
-delegation to specialized agents for research, engineering, and implementation.
+This module defines the product development team with the Product Lead agent
+as the team leader, coordinating delegation to specialized agents.
 """
 
 from agno.team import Team
 from agno.models.anthropic import Claude
 
+from agents.product_lead import product_lead_agent
 from agents.research_agent import research_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
-from instructions.product_lead_instructions import PRODUCT_LEAD_INSTRUCTIONS
 
 
-# Product Development Team - The Team itself is the Product Lead (leader)
-# who coordinates and delegates to the specialized member agents
+# Product Development Team - Product Lead coordinates the team
+# The team includes Product Lead, Research, Lead Engineer, and Software Engineer
 product_team = Team(
     name="Product Development Team",
     model=Claude(id="claude-sonnet-4-5"),
     members=[
+        product_lead_agent,  # Product Lead coordinates and has workflow tools
         research_agent,
         lead_engineer_agent,
         software_engineer_agent,
     ],
     instructions=[
-        PRODUCT_LEAD_INSTRUCTIONS,
-        "As the Product Lead and team leader, coordinate the Product Development Team.",
-        "Delegate research tasks (market analysis, competitor research, industry trends) to the Research Agent.",
-        "Delegate technical architecture, specifications, and code review guidance to the Lead Engineer Agent.",
-        "Delegate code implementation, bug fixes, testing, and documentation to the Software Engineer Agent.",
-        "Synthesize results from team members into cohesive, actionable deliverables.",
+        "You are the Product Development Team.",
+        "The Product Lead (member) orchestrates the software development workflow:",
+        "  - Has access to Software Development workflow tool",
+        "  - Creates PRDs and coordinates technical architecture",
+        "  - Guides the team through product development",
+        "The Research Agent handles market research and competitor analysis.",
+        "The Lead Engineer Agent designs technical architecture and specifications.",
+        "The Software Engineer Agent implements features and handles code reviews.",
+        "Delegate tasks appropriately and work together to deliver complete solutions.",
     ],
     markdown=True,
     show_members_responses=True,
