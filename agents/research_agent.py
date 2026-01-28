@@ -11,6 +11,7 @@ from instructions.research_agent_instructions import RESEARCH_AGENT_INSTRUCTIONS
 
 research_agent = Agent(
     name="Research Agent",
+    role="Performs web research, market analysis, competitor research, and industry trend analysis. Synthesizes information from multiple sources.",
     model=Claude(id="claude-sonnet-4-5"),
     tools=[DuckDuckGoTools()],
     db=SqliteDb(db_file="agno.db"),

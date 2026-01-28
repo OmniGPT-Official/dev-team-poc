@@ -10,6 +10,7 @@ from instructions.product_lead_instructions import PRODUCT_LEAD_INSTRUCTIONS
 
 product_lead_agent = Agent(
     name="Product Lead Agent",
+    role="Creates PRDs, structured tickets, product descriptions, goal setting (OKRs), and RICE prioritization. Coordinates product strategy and roadmap.",
     model=Claude(id="claude-sonnet-4-5"),
     db=SqliteDb(db_file="agno.db"),
     add_history_to_context=True,
