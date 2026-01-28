@@ -1,6 +1,6 @@
 agno
 anthropic
-uvicorn
+uvicorn[standard]
 fastapi
 sqlalchemy
 PyJWT
