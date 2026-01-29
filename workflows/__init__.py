@@ -4,7 +4,6 @@ Workflows Module
 This module contains workflow definitions for orchestrating agents.
 """
 
-from workflows.code_review_workflow import code_review_workflow
 from workflows.product_discovery_workflow import (
     discovery_and_requirements_workflow,
     product_discovery_workflow,  # Backwards compatibility
@@ -29,7 +28,6 @@ from workflows.implementation_cycle_workflow import (
 )
 
 __all__ = [
-    "code_review_workflow",
     "discovery_and_requirements_workflow",
     "product_discovery_workflow",
     "DiscoveryAndRequirementsInput",
