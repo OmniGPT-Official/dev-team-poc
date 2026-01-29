@@ -22,6 +22,11 @@ from workflows.software_development_workflow import (
     SoftwareDevelopmentInput,
     run_software_development
 )
+from workflows.implementation_cycle_workflow import (
+    implementation_cycle_workflow,
+    ImplementationCycleInput,
+    run_implementation_cycle
+)
 
 __all__ = [
     "code_review_workflow",
@@ -35,5 +40,8 @@ __all__ = [
     "run_architecture_design",
     "software_development_workflow",
     "SoftwareDevelopmentInput",
-    "run_software_development"
+    "run_software_development",
+    "implementation_cycle_workflow",
+    "ImplementationCycleInput",
+    "run_implementation_cycle"
 ]

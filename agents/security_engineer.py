@@ -1,7 +1,7 @@
 """
-Software Engineer Agent Configuration
+Security Engineer Agent Configuration
 
-The Software Engineer can read technical documents and save implementation code files.
+The Security Engineer can read code files and save security review reports.
 """
 
 from pathlib import Path
@@ -9,22 +9,22 @@ from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.models.anthropic import Claude
 from agno.tools.file import FileTools
-from instructions.software_engineer_instructions import SOFTWARE_ENGINEER_INSTRUCTIONS
+from instructions.security_engineer_instructions import SECURITY_ENGINEER_INSTRUCTIONS
 
 
 # Shared output directory - all agents can read/write here
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-(OUTPUT_DIR / "implementations").mkdir(exist_ok=True)
+(OUTPUT_DIR / "security_reviews").mkdir(exist_ok=True)
 
-software_engineer_agent = Agent(
-    name="Software Engineer Agent",
-    role="Implements code, fixes bugs, writes tests, and creates code documentation. Handles version control and follows coding best practices.",
+security_engineer_agent = Agent(
+    name="Security Engineer Agent",
+    role="Reviews code for security vulnerabilities, ensures secure coding practices, and provides security guidance on implementations.",
     model=Claude(id="claude-sonnet-4-5"),
     db=SqliteDb(db_file="agno.db"),
     add_history_to_context=True,
     markdown=True,
-    instructions=SOFTWARE_ENGINEER_INSTRUCTIONS,
+    instructions=SECURITY_ENGINEER_INSTRUCTIONS,
     tools=[
         FileTools(
             base_dir=OUTPUT_DIR,

@@ -1,0 +1,5 @@
+# Ignore generated files but keep directory structure
+*.py
+*.md
+!.gitkeep
+!.gitignore

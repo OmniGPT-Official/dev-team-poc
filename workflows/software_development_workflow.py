@@ -1,18 +1,20 @@
 """
 Software Development Workflow
 
-A comprehensive workflow that orchestrates product discovery and architecture design.
+A comprehensive workflow that orchestrates the complete software development lifecycle.
 
 Nested Workflows:
 1. Discovery and Requirements (Product Lead) - Creates PRD
 2. Architecture Design (Lead Engineer) - Creates technical architecture
+3. Implementation Cycle (Software Engineer + Reviews) - Implements code with review loop
 
 Flow:
-    User Prompt → Product Lead (PRD) → Lead Engineer (Architecture)
+    User Prompt → Product Lead (PRD) → Lead Engineer (Architecture) → Implementation Cycle
 
 Output:
     - product_lead_prd_[name]_[timestamp].md
     - lead_engineer_architecture_[name]_[timestamp].md
+    - software_engineer_implementation_[name]_[timestamp].py
 
 Usage:
     from workflows.software_development_workflow import software_development_workflow, SoftwareDevelopmentInput
@@ -21,7 +23,8 @@ Usage:
         product_name="AI Assistant",
         product_context="Help sales teams automate follow-up emails",
         scope="product",
-        enable_research=True
+        enable_research=True,
+        enable_implementation=True
     )
 
     result = software_development_workflow.run(input=workflow_input)
@@ -51,6 +54,10 @@ from workflows.architecture_design_workflow import (
     architecture_design_workflow,
     ArchitectureDesignInput
 )
+from workflows.implementation_cycle_workflow import (
+    implementation_cycle_workflow,
+    ImplementationCycleInput
+)
 
 
 # ============================================================================
@@ -73,6 +80,9 @@ class SoftwareDevelopmentInput(BaseModel):
     # Research control - only for products from scratch
     enable_research: bool = Field(False, description="Conduct problem/market research (searches Google)")
     enable_competitor_analysis: bool = Field(False, description="Conduct competitor analysis")
+
+    # Implementation control
+    enable_implementation: bool = Field(True, description="Run implementation cycle after architecture design")
 
 
 # ============================================================================
@@ -248,6 +258,108 @@ architecture_design_step = Step(
 
 
 # ============================================================================
+# STEP 3: IMPLEMENTATION CYCLE (Software Engineer + Reviews)
+# ============================================================================
+
+def run_implementation_cycle(step_input: StepInput) -> StepOutput:
+    """Run implementation cycle workflow (development + code review + security review)."""
+    try:
+        # Handle different input types
+        if isinstance(step_input.input, SoftwareDevelopmentInput):
+            workflow_input = step_input.input
+        elif isinstance(step_input.input, dict):
+            workflow_input = SoftwareDevelopmentInput(**step_input.input)
+        elif isinstance(step_input.input, str):
+            try:
+                input_dict = json.loads(step_input.input)
+                workflow_input = SoftwareDevelopmentInput(**input_dict)
+            except (json.JSONDecodeError, TypeError):
+                product_name = getattr(step_input, 'product_name', None) or "Unnamed Product"
+                workflow_input = SoftwareDevelopmentInput(
+                    product_name=product_name,
+                    product_context=step_input.input,
+                    scope="feature"
+                )
+        else:
+            return StepOutput(
+                content=f"Invalid input type: {type(step_input.input)}",
+                success=False
+            )
+
+        # Get architecture content from previous step
+        architecture_result = step_input.get_step_content("architecture_design")
+
+        if not architecture_result:
+            return StepOutput(content="No architecture content available from Lead Engineer", success=False)
+
+        log_info(f"[SOFTWARE DEV] Starting Implementation Cycle for: {workflow_input.product_name}")
+
+        # Extract architecture file path if available
+        architecture_file_path = None
+        if "saved to:" in architecture_result:
+            match = re.search(r'`([^`]+\.md)`', architecture_result)
+            if match:
+                architecture_file_path = match.group(1)
+
+        # Clean up architecture content
+        architecture_content = architecture_result
+        if "---" in architecture_content:
+            # Get the main content before the "saved to" section
+            parts = architecture_content.split("---")
+            if len(parts) > 1:
+                architecture_content = "---".join(parts[:-1]).strip()
+
+        # Create input for implementation cycle workflow
+        implementation_input = ImplementationCycleInput(
+            technical_document=architecture_content,
+            product_name=workflow_input.product_name,
+            task_description=f"Implement {workflow_input.product_name}: {workflow_input.product_context}",
+            architecture_file_path=architecture_file_path
+        )
+
+        # Run implementation cycle workflow
+        result = implementation_cycle_workflow.run(input=implementation_input)
+
+        if result and result.content:
+            log_info("[SOFTWARE DEV] Implementation Cycle completed")
+            return StepOutput(content=result.content, success=True)
+        else:
+            return StepOutput(content="Implementation Cycle failed", success=False)
+
+    except Exception as e:
+        log_error(f"[SOFTWARE DEV] Implementation Cycle Error: {str(e)}")
+        return StepOutput(content=f"Implementation Cycle error: {str(e)}", success=False)
+
+
+implementation_cycle_step = Step(
+    name="implementation_cycle",
+    description="Software Engineer implements code with code review and security review loop",
+    executor=run_implementation_cycle
+)
+
+
+# ============================================================================
+# CONDITION: Check if implementation is enabled
+# ============================================================================
+
+def should_run_implementation(step_input: StepInput) -> bool:
+    """Determine if implementation cycle should run based on input."""
+    try:
+        if isinstance(step_input.input, SoftwareDevelopmentInput):
+            return step_input.input.enable_implementation
+        elif isinstance(step_input.input, dict):
+            return step_input.input.get("enable_implementation", True)
+        # Default to True for backwards compatibility
+        return True
+    except Exception:
+        return True
+
+
+# Import Condition for conditional execution
+from agno.workflow.condition import Condition
+
+
+# ============================================================================
 # WORKFLOW DEFINITION
 # ============================================================================
 
@@ -259,17 +371,26 @@ software_development_workflow = Workflow(
     Nested Workflows:
     1. Discovery and Requirements (Product Lead) - Creates PRD
     2. Architecture Design (Lead Engineer) - Creates technical architecture
+    3. Implementation Cycle (Software Engineer + Reviews) - Implements code with review loop
 
     Flow:
     - User Prompt → Product Lead analyzes and creates PRD
     - PRD → Lead Engineer creates technical architecture
+    - Architecture → Software Engineer implements with code review and security review
 
     Output:
     - product_lead_prd_[name]_[timestamp].md
-    - lead_engineer_architecture_[name]_[timestamp].md""",
+    - lead_engineer_architecture_[name]_[timestamp].md
+    - software_engineer_implementation_[name]_[timestamp].py""",
     steps=[
         product_discovery_step,
         architecture_design_step,
+        Condition(
+            name="implementation_condition",
+            description="Run implementation cycle if enabled",
+            evaluator=should_run_implementation,
+            steps=[implementation_cycle_step],
+        ),
     ]
 )
 
@@ -285,7 +406,8 @@ def run_software_development(
     user_prompt: Optional[str] = None,
     scope: str = "feature",
     enable_research: bool = False,
-    enable_competitor_analysis: bool = False
+    enable_competitor_analysis: bool = False,
+    enable_implementation: bool = True
 ) -> dict:
     """
     Run the complete software development workflow.
@@ -298,24 +420,27 @@ def run_software_development(
         scope: 'product' (from scratch) or 'feature'
         enable_research: Conduct market research (only for products)
         enable_competitor_analysis: Conduct competitor analysis (only for products)
+        enable_implementation: Run implementation cycle (default True)
 
     Returns:
         dict: Result with success status and content
 
     Examples:
-        # Product from scratch with research
+        # Product from scratch with research and implementation
         >>> result = run_software_development(
         ...     product_name="AI Email Assistant",
         ...     product_context="Help sales write follow-ups",
         ...     scope="product",
-        ...     enable_research=True
+        ...     enable_research=True,
+        ...     enable_implementation=True
         ... )
 
-        # Simple feature
+        # Simple feature (PRD and architecture only)
         >>> result = run_software_development(
         ...     product_name="Dark Mode Toggle",
         ...     product_context="Add dark mode to settings",
-        ...     scope="feature"
+        ...     scope="feature",
+        ...     enable_implementation=False
         ... )
     """
     workflow_input = SoftwareDevelopmentInput(
@@ -325,7 +450,8 @@ def run_software_development(
         user_prompt=user_prompt,
         scope=scope,
         enable_research=enable_research,
-        enable_competitor_analysis=enable_competitor_analysis
+        enable_competitor_analysis=enable_competitor_analysis,
+        enable_implementation=enable_implementation
     )
 
     log_info(f"Starting software development workflow: {product_name} ({scope})")
@@ -352,6 +478,8 @@ if __name__ == "__main__":
     parser.add_argument("--scope", choices=["product", "feature"], default="feature")
     parser.add_argument("--enable-research", action="store_true")
     parser.add_argument("--enable-competitor-analysis", action="store_true")
+    parser.add_argument("--enable-implementation", action="store_true", default=True)
+    parser.add_argument("--no-implementation", action="store_true", help="Skip implementation cycle")
 
     args = parser.parse_args()
 
@@ -362,7 +490,8 @@ if __name__ == "__main__":
         user_prompt=args.user_prompt,
         scope=args.scope,
         enable_research=args.enable_research,
-        enable_competitor_analysis=args.enable_competitor_analysis
+        enable_competitor_analysis=args.enable_competitor_analysis,
+        enable_implementation=not args.no_implementation
     )
 
     logger.info(f"Workflow completed!")
