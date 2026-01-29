@@ -12,7 +12,6 @@ from agents.research_agent import research_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
 from teams.product_team import product_team
-from workflows.code_review_workflow import code_review_workflow
 from workflows.product_discovery_workflow import discovery_and_requirements_workflow
 from workflows.architecture_design_workflow import architecture_design_workflow
 from workflows.software_development_workflow import software_development_workflow
@@ -33,10 +32,9 @@ agent_os = AgentOS(
         product_team,  # Product Development Team with Product Lead as leader
     ],
     workflows=[
-        software_development_workflow,  # Main workflow (orchestrates Product Discovery + Architecture Design)
+        software_development_workflow,  # Main workflow (orchestrates Product Discovery + Architecture Design + Implementation Cycle)
         architecture_design_workflow,
         discovery_and_requirements_workflow,
-        code_review_workflow
     ],
     tracing=True
 )
