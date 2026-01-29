@@ -1,11 +1,14 @@
 """
 Architecture Design Workflow
 
-A simple workflow for creating technical architecture from PRD.
+A workflow for creating technical architecture from PRD.
+All steps are executed by the Lead Engineer agent.
 
 Steps:
-1. Architecture Design - Lead engineer creates technical architecture
-2. Ticket Creation - Generate ticket.md file
+1. Architecture Design - Lead Engineer creates technical architecture
+
+Input: PRD content
+Output: Architecture file (lead_engineer_architecture_[product_name]_[timestamp].md)
 
 Usage:
     from workflows.architecture_design_workflow import architecture_design_workflow, ArchitectureDesignInput
@@ -48,15 +51,15 @@ class ArchitectureDesignInput(BaseModel):
 
 
 # ============================================================================
-# STEP 1: ARCHITECTURE DESIGN
+# STEP 1: ARCHITECTURE DESIGN (Lead Engineer)
 # ============================================================================
 
 def create_architecture(step_input: StepInput) -> StepOutput:
-    """Lead engineer creates technical architecture from PRD."""
+    """Lead Engineer creates technical architecture from PRD."""
     try:
         workflow_input: ArchitectureDesignInput = step_input.input
 
-        architecture_prompt = f"""Based on the following PRD, create a technical architecture design:
+        architecture_prompt = f"""As the Lead Engineer, create a technical architecture design based on the following PRD:
 
 **Product/Feature:** {workflow_input.product_name}
 
@@ -87,18 +90,59 @@ def create_architecture(step_input: StepInput) -> StepOutput:
    - Request/response formats
 
 6. **Implementation Tasks**
-   - Break down into 5-8 specific, actionable tickets
-   - Each ticket: clear title + brief description
+   - Break down into 5-8 specific, actionable tasks
+   - Each task: clear title + brief description
+   - Order by dependency (what needs to be done first)
+
+7. **Technical Risks & Mitigations**
+   - Identify 2-3 key technical risks
+   - Propose mitigation strategies
 
 **Format as a clear, structured markdown document.**
 """
 
-        log_info(f"[ARCHITECTURE] Creating architecture for: {workflow_input.product_name}")
+        log_info(f"[ARCHITECTURE] Lead Engineer creating architecture for: {workflow_input.product_name}")
         result = lead_engineer_agent.run(architecture_prompt)
 
         if result.content:
-            log_info("[ARCHITECTURE] Architecture design completed")
-            return StepOutput(content=result.content, success=True)
+            log_info("[ARCHITECTURE] Architecture design completed by Lead Engineer")
+
+            # Save to file with new naming format: lead_engineer_architecture_[name]_[timestamp].md
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_name = workflow_input.product_name.lower().replace(" ", "_").replace("/", "_")[:50]
+            filename = f"lead_engineer_architecture_{safe_name}_{timestamp}.md"
+
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            filepath = os.path.join(project_root, filename)
+
+            # Format the architecture content with metadata
+            architecture_content = f"""# Technical Architecture
+
+**Product/Feature:** {workflow_input.product_name}
+**Created:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+**Created By:** Lead Engineer
+
+---
+
+{result.content}
+
+---
+
+**PRD Reference:** {workflow_input.prd_file_path if workflow_input.prd_file_path else 'N/A'}
+"""
+
+            with open(filepath, "w") as f:
+                f.write(architecture_content)
+
+            log_info(f"[ARCHITECTURE] Saved to: {filepath}")
+
+            output = f"""{architecture_content}
+
+---
+
+**Architecture saved to:** `{filepath}`"""
+
+            return StepOutput(content=output, success=True)
         else:
             return StepOutput(content="Architecture design failed", success=False)
 
@@ -109,74 +153,8 @@ def create_architecture(step_input: StepInput) -> StepOutput:
 
 architecture_step = Step(
     name="architecture_design",
-    description="Create technical architecture from PRD",
+    description="Lead Engineer creates technical architecture from PRD",
     executor=create_architecture
-)
-
-
-# ============================================================================
-# STEP 2: TICKET CREATION
-# ============================================================================
-
-def create_ticket(step_input: StepInput) -> StepOutput:
-    """Create ticket.md file with architecture and implementation tasks."""
-    try:
-        workflow_input: ArchitectureDesignInput = step_input.input
-
-        # Get architecture from previous step
-        architecture = step_input.get_step_content("architecture_design")
-
-        log_info("[TICKET] Creating ticket.md file")
-
-        # Save to ticket.md
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_name = workflow_input.product_name.lower().replace(" ", "_").replace("/", "_")[:50]
-        filename = f"ticket_{safe_name}_{timestamp}.md"
-
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        filepath = os.path.join(project_root, filename)
-
-        # Format the ticket content
-        ticket_content = f"""# Architecture & Implementation Ticket
-
-**Product/Feature:** {workflow_input.product_name}
-**Created:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
----
-
-{architecture}
-
----
-
-**Status:** Ready for Implementation
-**PRD Reference:** {workflow_input.prd_file_path if workflow_input.prd_file_path else 'N/A'}
-"""
-
-        with open(filepath, "w") as f:
-            f.write(ticket_content)
-
-        log_info(f"[TICKET] Saved to: {filepath}")
-
-        output = f"""✅ **Architecture & Implementation Ticket Created**
-
-**File:** `{filepath}`
-
----
-
-{architecture}
-"""
-
-        return StepOutput(content=output, success=True)
-
-    except Exception as e:
-        log_error(f"[TICKET] Error: {str(e)}")
-        return StepOutput(content=f"Ticket creation error: {str(e)}", success=False)
-
-
-ticket_creation_step = Step(
-    name="ticket_creation",
-    description="Create ticket.md file with architecture",
-    executor=create_ticket
 )
 
 
@@ -187,17 +165,15 @@ ticket_creation_step = Step(
 architecture_design_workflow = Workflow(
     name="Architecture Design Workflow",
     stream=False,
-    description="""Architecture design workflow:
+    description="""Architecture design workflow (all steps by Lead Engineer):
 
     Steps:
-    1. Architecture Design - Lead engineer creates technical architecture
-    2. Ticket Creation - Generate ticket.md file
+    1. Architecture Design - Lead Engineer creates technical architecture
 
-    Input: PRD content
-    Output: ticket.md file with architecture and implementation tasks""",
+    Input: PRD content from Product Lead
+    Output: Architecture file (lead_engineer_architecture_[name]_[timestamp].md)""",
     steps=[
         architecture_step,
-        ticket_creation_step,
     ]
 )
 
@@ -220,7 +196,7 @@ def run_architecture_design(
         prd_file_path: Optional path to PRD file
 
     Returns:
-        str: Path to generated ticket file
+        str: Path to generated architecture file
     """
     workflow_input = ArchitectureDesignInput(
         prd_content=prd_content,
@@ -232,8 +208,8 @@ def run_architecture_design(
     result = architecture_design_workflow.run(input=workflow_input)
 
     # Extract file path
-    if "File:**" in result.content:
-        filepath = result.content.split("`")[1]
+    if "saved to:" in result.content:
+        filepath = result.content.split("`")[-2]
         return filepath
 
     return result.content
@@ -262,4 +238,4 @@ if __name__ == "__main__":
         prd_file_path=args.prd_file
     )
 
-    logger.info(f"Workflow completed! Ticket: {result}")
+    logger.info(f"Workflow completed! Architecture: {result}")

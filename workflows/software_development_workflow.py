@@ -4,12 +4,15 @@ Software Development Workflow
 A comprehensive workflow that orchestrates product discovery and architecture design.
 
 Nested Workflows:
-1. Product Discovery - Creates PRD
-2. Architecture Design - Creates technical architecture and tickets
+1. Discovery and Requirements (Product Lead) - Creates PRD
+2. Architecture Design (Lead Engineer) - Creates technical architecture
 
-Steps:
-1. Product Discovery - Run product discovery workflow to create PRD
-2. Architecture Design - Run architecture design workflow to create tickets
+Flow:
+    User Prompt → Product Lead (PRD) → Lead Engineer (Architecture)
+
+Output:
+    - product_lead_prd_[name]_[timestamp].md
+    - lead_engineer_architecture_[name]_[timestamp].md
 
 Usage:
     from workflows.software_development_workflow import software_development_workflow, SoftwareDevelopmentInput
@@ -28,7 +31,6 @@ import os
 import sys
 import re
 import json
-from datetime import datetime
 from typing import Optional
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -74,11 +76,11 @@ class SoftwareDevelopmentInput(BaseModel):
 
 
 # ============================================================================
-# STEP 1: PRODUCT DISCOVERY
+# STEP 1: PRODUCT DISCOVERY (Product Lead)
 # ============================================================================
 
 def run_product_discovery(step_input: StepInput) -> StepOutput:
-    """Run product discovery workflow to create PRD."""
+    """Run product discovery workflow (Product Lead creates PRD)."""
     try:
         # Debug: log what we received
         log_info(f"[SOFTWARE DEV] Received input type: {type(step_input.input)}")
@@ -96,11 +98,9 @@ def run_product_discovery(step_input: StepInput) -> StepOutput:
                 workflow_input = SoftwareDevelopmentInput(**input_dict)
             except (json.JSONDecodeError, TypeError):
                 # If not JSON, treat as plain text description
-                # Check if there's metadata with parameters
                 product_name = getattr(step_input, 'product_name', None) or "Unnamed Product"
                 scope = getattr(step_input, 'scope', None) or "product"
 
-                # Use the plain text as product_context
                 workflow_input = SoftwareDevelopmentInput(
                     product_name=product_name,
                     product_context=step_input.input,
@@ -115,7 +115,7 @@ def run_product_discovery(step_input: StepInput) -> StepOutput:
                 success=False
             )
 
-        log_info(f"[SOFTWARE DEV] Starting Product Discovery for: {workflow_input.product_name}")
+        log_info(f"[SOFTWARE DEV] Starting Product Discovery (Product Lead) for: {workflow_input.product_name}")
 
         # Create input for product discovery workflow
         discovery_input = DiscoveryAndRequirementsInput(
@@ -128,12 +128,11 @@ def run_product_discovery(step_input: StepInput) -> StepOutput:
             enable_competitor_analysis=workflow_input.enable_competitor_analysis
         )
 
-        # Run product discovery workflow
+        # Run product discovery workflow (Product Lead)
         result = discovery_and_requirements_workflow.run(input=discovery_input)
 
-        # WorkflowRunOutput doesn't have 'success', check if it completed
         if result and result.content:
-            log_info("[SOFTWARE DEV] Product Discovery completed")
+            log_info("[SOFTWARE DEV] Product Discovery completed (Product Lead)")
 
             # Extract PRD file path from result
             prd_file_path = None
@@ -159,17 +158,17 @@ def run_product_discovery(step_input: StepInput) -> StepOutput:
 
 product_discovery_step = Step(
     name="product_discovery",
-    description="Run product discovery workflow to create PRD",
+    description="Product Lead runs discovery workflow to create PRD",
     executor=run_product_discovery
 )
 
 
 # ============================================================================
-# STEP 2: ARCHITECTURE DESIGN
+# STEP 2: ARCHITECTURE DESIGN (Lead Engineer)
 # ============================================================================
 
 def run_architecture_design(step_input: StepInput) -> StepOutput:
-    """Run architecture design workflow to create technical architecture and tickets."""
+    """Run architecture design workflow (Lead Engineer creates architecture)."""
     try:
         # Handle different input types
         if isinstance(step_input.input, SoftwareDevelopmentInput):
@@ -182,7 +181,6 @@ def run_architecture_design(step_input: StepInput) -> StepOutput:
                 input_dict = json.loads(step_input.input)
                 workflow_input = SoftwareDevelopmentInput(**input_dict)
             except (json.JSONDecodeError, TypeError):
-                # If not JSON, treat as plain text description
                 product_name = getattr(step_input, 'product_name', None) or "Unnamed Product"
                 scope = getattr(step_input, 'scope', None) or "product"
 
@@ -204,9 +202,9 @@ def run_architecture_design(step_input: StepInput) -> StepOutput:
         prd_result = step_input.get_step_content("product_discovery")
 
         if not prd_result:
-            return StepOutput(content="No PRD content available", success=False)
+            return StepOutput(content="No PRD content available from Product Lead", success=False)
 
-        log_info(f"[SOFTWARE DEV] Starting Architecture Design for: {workflow_input.product_name}")
+        log_info(f"[SOFTWARE DEV] Starting Architecture Design (Lead Engineer) for: {workflow_input.product_name}")
 
         # Extract PRD file path if available
         prd_file_path = None
@@ -228,12 +226,11 @@ def run_architecture_design(step_input: StepInput) -> StepOutput:
             prd_file_path=prd_file_path
         )
 
-        # Run architecture design workflow
+        # Run architecture design workflow (Lead Engineer)
         result = architecture_design_workflow.run(input=architecture_input)
 
-        # WorkflowRunOutput doesn't have 'success', check if it completed
         if result and result.content:
-            log_info("[SOFTWARE DEV] Architecture Design completed")
+            log_info("[SOFTWARE DEV] Architecture Design completed (Lead Engineer)")
             return StepOutput(content=result.content, success=True)
         else:
             return StepOutput(content="Architecture Design failed", success=False)
@@ -245,7 +242,7 @@ def run_architecture_design(step_input: StepInput) -> StepOutput:
 
 architecture_design_step = Step(
     name="architecture_design",
-    description="Run architecture design workflow to create tickets",
+    description="Lead Engineer runs architecture workflow to create technical design",
     executor=run_architecture_design
 )
 
@@ -260,16 +257,16 @@ software_development_workflow = Workflow(
     description="""Complete software development workflow:
 
     Nested Workflows:
-    1. Product Discovery - Creates PRD from requirements
-    2. Architecture Design - Creates technical architecture and tickets
+    1. Discovery and Requirements (Product Lead) - Creates PRD
+    2. Architecture Design (Lead Engineer) - Creates technical architecture
 
     Flow:
-    - Takes product requirements as input
-    - Runs product discovery to create PRD
-    - Passes PRD to architecture design for technical planning
-    - Creates both PRD and ticket.md files
+    - User Prompt → Product Lead analyzes and creates PRD
+    - PRD → Lead Engineer creates technical architecture
 
-    Output: PRD + Architecture ticket files""",
+    Output:
+    - product_lead_prd_[name]_[timestamp].md
+    - lead_engineer_architecture_[name]_[timestamp].md""",
     steps=[
         product_discovery_step,
         architecture_design_step,
@@ -303,7 +300,7 @@ def run_software_development(
         enable_competitor_analysis: Conduct competitor analysis (only for products)
 
     Returns:
-        dict: Paths to generated PRD and ticket files
+        dict: Result with success status and content
 
     Examples:
         # Product from scratch with research

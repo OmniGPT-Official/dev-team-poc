@@ -1,19 +1,16 @@
 """
 Discovery and Requirements Workflow
 
-A flexible workflow for defining goals and requirements for any scope of work.
+A workflow for defining goals and requirements for any scope of work.
+All steps are executed by the Product Lead agent.
 
 Steps:
 1. Analysis - Analyze the request and determine what's needed
 2. Research (Conditional) - Market + Competitor research (only for products from scratch)
-3. Synthesis - Synthesize findings and prepare requirements
-4. PRD Creation - Create appropriate document based on scope
+3. PRD Creation - Create appropriate document based on scope
 
-Features:
-- Independent research control (enable_research, enable_competitor_analysis)
-- Dynamic PRD format: product (structured) vs feature (simple)
-- No hallucination - only uses provided information
-- Research runs in parallel when enabled
+Input: User prompt
+Output: PRD file (product_lead_prd_[product_name]_[timestamp].md)
 
 Usage:
     from workflows.product_discovery_workflow import discovery_and_requirements_workflow, DiscoveryAndRequirementsInput
@@ -47,18 +44,13 @@ from pydantic import BaseModel, Field
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agno.agent import Agent
-from agno.models.anthropic import Claude
 from agno.workflow.condition import Condition
 from agno.workflow.step import Step
 from agno.workflow.types import StepInput, StepOutput
 from agno.workflow.workflow import Workflow
 from agno.utils.log import log_error, log_info
 
-from agno.agent import Agent
-from agno.models.anthropic import Claude
-from agents.research_agent import research_agent
-from instructions.product_lead_instructions import PRODUCT_LEAD_INSTRUCTIONS
+from agents.product_lead import product_lead_agent
 
 
 # ============================================================================
@@ -87,31 +79,11 @@ ProductDiscoveryInput = DiscoveryAndRequirementsInput
 
 
 # ============================================================================
-# STEP 1: ANALYSIS
+# STEP 1: ANALYSIS (Product Lead)
 # ============================================================================
 
-analysis_agent = Agent(
-    name="Requirements Analyst",
-    model=Claude(id="claude-sonnet-4-5"),
-    instructions="""You are a requirements analyst. Your task is to:
-
-1. ANALYZE THE REQUEST:
-   - Understand what is being asked
-   - Identify the scope (product from scratch vs feature)
-   - Determine what information is provided vs missing
-   - Assess if research would be valuable
-
-2. OUTPUT:
-   - **Scope**: Product from scratch or feature/enhancement
-   - **Key Information**: What we know
-   - **Gaps**: What information is missing
-   - **Research Recommendation**: Whether research would help (yes/no and why)
-
-Be concise. No hallucination - only analyze what's provided."""
-)
-
 def analyze_request(step_input: StepInput) -> StepOutput:
-    """Analyze the request to understand scope and information gaps."""
+    """Product Lead analyzes the request to understand scope and information gaps."""
     try:
         workflow_input: DiscoveryAndRequirementsInput = step_input.input
 
@@ -123,13 +95,20 @@ def analyze_request(step_input: StepInput) -> StepOutput:
 **Target Audience:** {workflow_input.target_audience or 'Not specified'}
 **User Request:** {workflow_input.user_prompt or 'Not specified'}
 
-Provide a brief analysis following your instructions."""
+As the Product Lead, provide a brief analysis:
 
-        log_info(f"[ANALYSIS] Analyzing request for: {workflow_input.product_name}")
-        result = analysis_agent.run(analysis_prompt)
+1. **Scope Assessment**: Is this a product from scratch, feature, enhancement, or refactor?
+2. **Key Information**: What we know from the provided context
+3. **Information Gaps**: What details are missing (list as Open Questions)
+4. **Research Recommendation**: Would market/competitor research help? (yes/no and why)
+
+Be concise. No hallucination - only analyze what's provided."""
+
+        log_info(f"[ANALYSIS] Product Lead analyzing request for: {workflow_input.product_name}")
+        result = product_lead_agent.run(analysis_prompt)
 
         if result.content:
-            log_info("[ANALYSIS] Analysis completed")
+            log_info("[ANALYSIS] Analysis completed by Product Lead")
             return StepOutput(content=result.content, success=True)
         else:
             return StepOutput(content="Analysis failed", success=False)
@@ -141,7 +120,7 @@ Provide a brief analysis following your instructions."""
 
 analysis_step = Step(
     name="analysis",
-    description="Analyze the request and identify information gaps",
+    description="Product Lead analyzes the request and identifies information gaps",
     executor=analyze_request
 )
 
@@ -150,70 +129,61 @@ analysis_step = Step(
 # STEP 2: RESEARCH (CONDITIONAL - Only for products from scratch)
 # ============================================================================
 
-market_research_agent = Agent(
-    name="Market Researcher",
-    model=Claude(id="claude-sonnet-4-5"),
-    instructions="""You conduct market research. Search Google for:
+def conduct_research(step_input: StepInput) -> StepOutput:
+    """
+    Product Lead conducts market and competitor research.
+    Only runs if scope is 'product' AND research is enabled.
+    """
+    try:
+        workflow_input: DiscoveryAndRequirementsInput = step_input.input
+
+        results = []
+
+        # Market research if enabled
+        if workflow_input.enable_research:
+            log_info("[RESEARCH] Product Lead conducting market research...")
+            market_prompt = f"""As the Product Lead, conduct market research for:
+
+**Product:** {workflow_input.product_name}
+**Context:** {workflow_input.product_context}
+**Target Audience:** {workflow_input.target_audience or 'Not specified'}
+
+Research and provide:
 - Problem domain information
 - Existing solutions and approaches
 - User needs and pain points
 - Best practices and patterns
 - Market trends
 
-**CRITICAL**: Only report what you actually find. Do NOT hallucinate.""",
-    markdown=True,
-)
+**CRITICAL**: Only report what you actually find. Do NOT hallucinate."""
 
-competitor_research_agent = Agent(
-    name="Competitor Researcher",
-    model=Claude(id="claude-sonnet-4-5"),
-    instructions="""You conduct competitor analysis. Search for:
-- Top 3-5 competitors or similar solutions
-- Their features, pricing, positioning
-- Feature comparison matrix
-- Competitive gaps and opportunities
-
-**CRITICAL**: Only report what you actually find. Do NOT hallucinate.""",
-    markdown=True,
-  
-)
-
-def conduct_research(step_input: StepInput) -> StepOutput:
-    """
-    Conduct market and competitor research in parallel.
-    Only runs if scope is 'product' AND research is enabled.
-    """
-    try:
-        workflow_input: DiscoveryAndRequirementsInput = step_input.input
-
-        # Build research prompt
-        context = f"""
-**Product:** {workflow_input.product_name}
-**Context:** {workflow_input.product_context}
-**Target Audience:** {workflow_input.target_audience or 'Not specified'}
-"""
-
-        results = []
-
-        # Market research if enabled
-        if workflow_input.enable_research:
-            log_info("[RESEARCH] Conducting market research...")
-            market_prompt = f"{context}\n\nConduct market research on this problem domain. Search Google for existing solutions, user needs, and best practices."
-            market_result = market_research_agent.run(market_prompt)
+            market_result = product_lead_agent.run(market_prompt)
             if market_result.content:
                 results.append(f"## Market Research\n\n{market_result.content}")
 
         # Competitor research if enabled
         if workflow_input.enable_competitor_analysis:
-            log_info("[RESEARCH] Conducting competitor analysis...")
-            competitor_prompt = f"{context}\n\nConduct competitor analysis. Search for top competitors, their features, and positioning."
-            competitor_result = competitor_research_agent.run(competitor_prompt)
+            log_info("[RESEARCH] Product Lead conducting competitor analysis...")
+            competitor_prompt = f"""As the Product Lead, conduct competitor analysis for:
+
+**Product:** {workflow_input.product_name}
+**Context:** {workflow_input.product_context}
+
+Analyze and provide:
+- Top 3-5 competitors or similar solutions
+- Their features, pricing, positioning
+- Feature comparison matrix
+- Competitive gaps and opportunities
+
+**CRITICAL**: Only report what you actually find. Do NOT hallucinate."""
+
+            competitor_result = product_lead_agent.run(competitor_prompt)
             if competitor_result.content:
                 results.append(f"## Competitor Analysis\n\n{competitor_result.content}")
 
         if results:
             combined = "\n\n---\n\n".join(results)
-            log_info("[RESEARCH] Research completed")
+            log_info("[RESEARCH] Research completed by Product Lead")
             return StepOutput(content=combined, success=True)
         else:
             return StepOutput(content="No research conducted", success=True)
@@ -225,7 +195,7 @@ def conduct_research(step_input: StepInput) -> StepOutput:
 
 research_step = Step(
     name="research",
-    description="Conduct market and competitor research (parallel execution)",
+    description="Product Lead conducts market and competitor research",
     executor=conduct_research
 )
 
@@ -255,93 +225,12 @@ def should_conduct_research(step_input: StepInput) -> bool:
 
 
 # ============================================================================
-# STEP 3: SYNTHESIS
-# ============================================================================
-
-synthesis_agent = Agent(
-    name="Requirements Synthesizer",
-    model=Claude(id="claude-sonnet-4-5"),
-    instructions="""You synthesize information to prepare for requirements writing. Your task:
-
-1. REVIEW:
-   - Initial analysis
-   - Research findings (if available)
-   - Information provided by user
-
-2. SYNTHESIZE:
-   - Key insights and patterns
-   - Critical requirements that can be inferred
-   - Important constraints or considerations
-   - Open questions that remain
-
-3. OUTPUT:
-   Format as:
-   - **Key Insights**: 2-4 main takeaways
-   - **Core Requirements**: Essential needs identified
-   - **Open Questions**: What's still unclear
-
-**CRITICAL**: No hallucination. Only synthesize from provided information."""
-)
-
-def synthesize_findings(step_input: StepInput) -> StepOutput:
-    """Synthesize analysis and research findings."""
-    try:
-        workflow_input: DiscoveryAndRequirementsInput = step_input.input
-
-        # Get previous steps content
-        analysis = step_input.get_step_content("analysis")
-        research = step_input.get_step_content("research")
-
-        has_research = research and "No research conducted" not in research
-
-        synthesis_prompt = f"""Synthesize the following information to prepare for requirements writing:
-
-**Product/Feature:** {workflow_input.product_name}
-**Scope:** {workflow_input.scope.capitalize()}
-
-**Initial Analysis:**
-{analysis}
-"""
-
-        if has_research:
-            synthesis_prompt += f"""
-
-**Research Findings:**
-{research}
-"""
-
-        synthesis_prompt += """
-
-Provide a concise synthesis following your instructions."""
-
-        log_info(f"[SYNTHESIS] Synthesizing findings for: {workflow_input.product_name}")
-        result = synthesis_agent.run(synthesis_prompt)
-
-        if result.content:
-            log_info("[SYNTHESIS] Synthesis completed")
-            return StepOutput(content=result.content, success=True)
-        else:
-            return StepOutput(content="Synthesis failed", success=False)
-
-    except Exception as e:
-        log_error(f"[SYNTHESIS] Error: {str(e)}")
-        return StepOutput(content=f"Synthesis error: {str(e)}", success=False)
-
-
-synthesis_step = Step(
-    name="synthesis",
-    description="Synthesize analysis and research findings",
-    executor=synthesize_findings
-)
-
-
-# ============================================================================
-# STEP 4: PRD CREATION
+# STEP 3: PRD CREATION (Product Lead)
 # ============================================================================
 
 def create_requirements_document(step_input: StepInput) -> StepOutput:
     """
-    Create requirements document with format based on scope.
+    Product Lead creates requirements document with format based on scope.
     - Product (from scratch): Structured PRD with research
     - Feature: Simple document with goals and acceptance criteria
     """
@@ -351,31 +240,27 @@ def create_requirements_document(step_input: StepInput) -> StepOutput:
         # Get all previous steps
         analysis = step_input.get_step_content("analysis")
         research = step_input.get_step_content("research")
-        synthesis = step_input.get_step_content("synthesis")
 
         has_research = research and "No research conducted" not in research
 
-        log_info(f"[PRD] Creating {workflow_input.scope} requirements document")
+        log_info(f"[PRD] Product Lead creating {workflow_input.scope} requirements document")
 
         # Build prompt based on scope
         if workflow_input.scope == "product":
             # STRUCTURED PRD for products from scratch
-            prd_prompt = f"""Create a structured Product Requirements Document.
+            prd_prompt = f"""As the Product Lead, create a structured Product Requirements Document.
 
 **Product:** {workflow_input.product_name}
 **Context:** {workflow_input.product_context}
 **Target Audience:** {workflow_input.target_audience or 'Not specified'}
 
-**Analysis:**
+**Your Analysis:**
 {analysis}
-
-**Synthesis:**
-{synthesis}
 """
             if has_research:
                 prd_prompt += f"""
 
-**Research:**
+**Your Research:**
 {research}
 """
 
@@ -404,17 +289,14 @@ def create_requirements_document(step_input: StepInput) -> StepOutput:
 
         else:
             # SIMPLE DOCUMENT for features
-            prd_prompt = f"""Create a simple feature requirements document.
+            prd_prompt = f"""As the Product Lead, create a simple feature requirements document.
 
 **Feature:** {workflow_input.product_name}
 **Context:** {workflow_input.product_context}
 **Target Audience:** {workflow_input.target_audience or 'Not specified'}
 
-**Analysis:**
+**Your Analysis:**
 {analysis}
-
-**Synthesis:**
-{synthesis}
 
 **Create a simple document (1 page) with:**
 
@@ -433,24 +315,16 @@ def create_requirements_document(step_input: StepInput) -> StepOutput:
 - **Acceptance criteria**: Clear and testable
 - **1 page max**"""
 
-        # Create PRD agent inline to avoid circular import
-        prd_agent = Agent(
-            name="PRD Creator",
-            model=Claude(id="claude-sonnet-4-5"),
-            instructions=PRODUCT_LEAD_INSTRUCTIONS,
-            markdown=True
-        )
-
-        # Run PRD agent
-        result = prd_agent.run(prd_prompt)
+        # Run Product Lead agent
+        result = product_lead_agent.run(prd_prompt)
 
         if result.content:
-            log_info("[PRD] Requirements document created")
+            log_info("[PRD] Requirements document created by Product Lead")
 
-            # Save to file
+            # Save to file with new naming format: product_lead_prd_[name]_[timestamp].md
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_name = workflow_input.product_name.lower().replace(" ", "_").replace("/", "_")[:50]
-            filename = f"prd_{safe_name}_{timestamp}.md"
+            filename = f"product_lead_prd_{safe_name}_{timestamp}.md"
 
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             filepath = os.path.join(project_root, filename)
@@ -464,7 +338,7 @@ def create_requirements_document(step_input: StepInput) -> StepOutput:
 
 ---
 
-✅ **Requirements Document saved to:** `{filepath}`"""
+**PRD saved to:** `{filepath}`"""
 
             return StepOutput(content=output, success=True)
         else:
@@ -477,7 +351,7 @@ def create_requirements_document(step_input: StepInput) -> StepOutput:
 
 prd_creation_step = Step(
     name="prd_creation",
-    description="Create requirements document based on scope",
+    description="Product Lead creates requirements document based on scope",
     executor=create_requirements_document
 )
 
@@ -489,21 +363,15 @@ prd_creation_step = Step(
 discovery_and_requirements_workflow = Workflow(
     name="Discovery and Requirements Workflow",
     stream=False,
-    description="""Product discovery and requirements workflow:
+    description="""Product discovery and requirements workflow (all steps by Product Lead):
 
     Steps:
-    1. Analysis - Analyze request and identify gaps
-    2. Research (Conditional) - Market + Competitor research (only for products from scratch)
-    3. Synthesis - Synthesize findings
-    4. PRD Creation - Create appropriate document (structured for products, simple for features)
+    1. Analysis - Product Lead analyzes request and identifies gaps
+    2. Research (Conditional) - Product Lead conducts market + competitor research (only for products from scratch)
+    3. PRD Creation - Product Lead creates appropriate document (structured for products, simple for features)
 
-    Features:
-    - Conditional research (only for products from scratch)
-    - Parallel market and competitor research
-    - Dynamic format (structured PRD vs simple feature doc)
-    - No hallucination - uses only provided information
-
-    Output: Requirements document saved as .md file""",
+    Input: User prompt synthesized by Product Lead
+    Output: PRD file (product_lead_prd_[name]_[timestamp].md)""",
     steps=[
         analysis_step,
         Condition(
@@ -512,7 +380,6 @@ discovery_and_requirements_workflow = Workflow(
             evaluator=should_conduct_research,
             steps=[research_step]
         ),
-        synthesis_step,
         prd_creation_step,
     ]
 )
