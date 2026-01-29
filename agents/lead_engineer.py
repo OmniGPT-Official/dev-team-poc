@@ -1,21 +1,28 @@
 """
 Lead Engineer Agent Configuration
 
-The Lead Engineer can read PRDs and save architecture documents and code reviews.
+The Lead Engineer can read PRDs, save architecture documents, code reviews,
+and interact with GitHub repositories via MCP.
 """
 
+import os
 from pathlib import Path
 from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.models.anthropic import Claude
 from agno.tools.file import FileTools
+from agno.tools.mcp import MCPTools
 from instructions.lead_engineer_instructions import LEAD_ENGINEER_INSTRUCTIONS
 
 
-# Shared output directory - all agents can read/write here
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 (OUTPUT_DIR / "architecture").mkdir(exist_ok=True)
+
+github_mcp = MCPTools(
+    command="npx -y @modelcontextprotocol/server-github",
+    env={"GITHUB_TOKEN": os.environ.get("GITHUB_TOKEN", "")}
+)
 
 lead_engineer_agent = Agent(
     name="Lead Engineer Agent",
@@ -31,6 +38,7 @@ lead_engineer_agent = Agent(
             enable_read_file=True,
             enable_save_file=True,
             enable_list_files=True,
-        )
+        ),
+        github_mcp,
     ]
 )

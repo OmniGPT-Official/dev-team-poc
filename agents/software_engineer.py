@@ -1,21 +1,28 @@
 """
 Software Engineer Agent Configuration
 
-The Software Engineer can read technical documents and save implementation code files.
+The Software Engineer can read technical documents, save implementation code files,
+and interact with GitHub repositories via MCP.
 """
 
+import os
 from pathlib import Path
 from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.models.anthropic import Claude
 from agno.tools.file import FileTools
+from agno.tools.mcp import MCPTools
 from instructions.software_engineer_instructions import SOFTWARE_ENGINEER_INSTRUCTIONS
 
 
-# Shared output directory - all agents can read/write here
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 (OUTPUT_DIR / "implementations").mkdir(exist_ok=True)
+
+github_mcp = MCPTools(
+    command="npx -y @modelcontextprotocol/server-github",
+    env={"GITHUB_TOKEN": os.environ.get("GITHUB_TOKEN", "")}
+)
 
 software_engineer_agent = Agent(
     name="Software Engineer Agent",
@@ -31,6 +38,7 @@ software_engineer_agent = Agent(
             enable_read_file=True,
             enable_save_file=True,
             enable_list_files=True,
-        )
+        ),
+        github_mcp,
     ]
 )
