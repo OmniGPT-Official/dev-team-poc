@@ -5,6 +5,7 @@ This is the main entry point for the Agent OS application.
 It imports agents, teams, and workflows from their respective modules.
 """
 
+import os
 from agno.os import AgentOS
 from agents.product_lead import product_lead_agent, add_workflow_tools
 from agents.research_agent import research_agent
@@ -45,4 +46,11 @@ app = agent_os.get_app()
 
 
 if __name__ == "__main__":
-    agent_os.serve(app="agno_agent:app", reload=True)
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(
+        app="agno_agent:app",
+        host="0.0.0.0",
+        port=port,
+        reload=False  # Set to False for production
+    )
