@@ -52,6 +52,7 @@ Railway will automatically:
 - **railway.toml**: Railway-specific configuration
 - **railway.json**: Alternative Railway configuration format
 - **requirements.txt**: Python dependencies
+- **runtime.txt**: Specifies Python version (3.9.18)
 
 ## Running Locally
 
@@ -94,6 +95,8 @@ Check your deployment logs in the Railway dashboard:
 ### Build Fails
 - Check that `requirements.txt` has all necessary dependencies
 - Review build logs in Railway dashboard
+- Ensure `runtime.txt` specifies a valid Python version
+- Railway auto-detects Python from `requirements.txt` and `runtime.txt`
 
 ### Runtime Errors
 - Verify environment variables are set correctly
