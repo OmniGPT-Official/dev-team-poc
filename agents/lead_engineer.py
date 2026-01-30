@@ -2,7 +2,7 @@
 Lead Engineer Agent Configuration
 
 The Lead Engineer can read PRDs, save architecture documents, code reviews,
-and interact with GitHub repositories via MCP.
+and interact with GitHub and Supabase via MCP.
 """
 
 import os
@@ -24,6 +24,10 @@ github_mcp = MCPTools(
     env={"GITHUB_TOKEN": os.environ.get("GITHUB_TOKEN", "")}
 )
 
+supabase_mcp = MCPTools(
+    command=f"npx -y @supabase/mcp-server-supabase@latest --access-token={os.environ.get('SUPABASE_ACCESS_TOKEN', '')}"
+)
+
 lead_engineer_agent = Agent(
     name="Lead Engineer Agent",
     role="Designs technical architecture, creates technical specifications, provides code review guidance, and offers technical leadership on implementation approaches.",
@@ -40,5 +44,6 @@ lead_engineer_agent = Agent(
             enable_list_files=True,
         ),
         github_mcp,
+        supabase_mcp,
     ]
 )

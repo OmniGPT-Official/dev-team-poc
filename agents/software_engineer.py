@@ -2,7 +2,7 @@
 Software Engineer Agent Configuration
 
 The Software Engineer can read technical documents, save implementation code files,
-and interact with GitHub repositories via MCP.
+and interact with GitHub and Supabase via MCP.
 """
 
 import os
@@ -24,6 +24,10 @@ github_mcp = MCPTools(
     env={"GITHUB_TOKEN": os.environ.get("GITHUB_TOKEN", "")}
 )
 
+supabase_mcp = MCPTools(
+    command=f"npx -y @supabase/mcp-server-supabase@latest --access-token={os.environ.get('SUPABASE_ACCESS_TOKEN', '')}"
+)
+
 software_engineer_agent = Agent(
     name="Software Engineer Agent",
     role="Implements code, fixes bugs, writes tests, and creates code documentation. Handles version control and follows coding best practices.",
@@ -40,5 +44,6 @@ software_engineer_agent = Agent(
             enable_list_files=True,
         ),
         github_mcp,
+        supabase_mcp,
     ]
 )
