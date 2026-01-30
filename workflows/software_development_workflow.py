@@ -46,6 +46,7 @@ from agno.workflow.types import StepInput, StepOutput
 from agno.workflow.workflow import Workflow
 from agno.utils.log import log_error, log_info
 
+
 from workflows.product_discovery_workflow import (
     discovery_and_requirements_workflow,
     DiscoveryAndRequirementsInput
@@ -56,13 +57,10 @@ from workflows.architecture_design_workflow import (
 )
 from workflows.implementation_cycle_workflow import (
     implementation_cycle_workflow,
-    ImplementationCycleInput
+    ImplementationCycleInput,
+    ProjectContext,  # Import from implementation_cycle_workflow to ensure type compatibility
 )
 
-
-# ============================================================================
-# INPUT MODEL
-# ============================================================================
 
 class SoftwareDevelopmentInput(BaseModel):
     """Input model for Software Development Workflow."""
@@ -70,6 +68,9 @@ class SoftwareDevelopmentInput(BaseModel):
     product_context: str = Field(..., description="Description of what needs to be built/enhanced")
     target_audience: Optional[str] = Field(None, description="Who will use this")
     user_prompt: Optional[str] = Field(None, description="Original user request/prompt")
+
+    # Project integration context
+    project_context: Optional[ProjectContext] = Field(None, description="External project integration context (GitHub, Vercel, Supabase)")
 
     # Scope of work
     scope: str = Field(
@@ -314,7 +315,8 @@ def run_implementation_cycle(step_input: StepInput) -> StepOutput:
             technical_document=architecture_content,
             product_name=workflow_input.product_name,
             task_description=f"Implement {workflow_input.product_name}: {workflow_input.product_context}",
-            architecture_file_path=architecture_file_path
+            architecture_file_path=architecture_file_path,
+            project_context=workflow_input.project_context
         )
 
         # Run implementation cycle workflow
@@ -407,7 +409,13 @@ def run_software_development(
     scope: str = "feature",
     enable_research: bool = False,
     enable_competitor_analysis: bool = False,
-    enable_implementation: bool = True
+    enable_implementation: bool = True,
+    github_repo: Optional[str] = None,
+    github_owner: Optional[str] = None,
+    vercel_project: Optional[str] = None,
+    vercel_team: Optional[str] = None,
+    supabase_project: Optional[str] = None,
+    supabase_org: Optional[str] = None,
 ) -> dict:
     """
     Run the complete software development workflow.
@@ -421,6 +429,12 @@ def run_software_development(
         enable_research: Conduct market research (only for products)
         enable_competitor_analysis: Conduct competitor analysis (only for products)
         enable_implementation: Run implementation cycle (default True)
+        github_repo: GitHub repository name (required for implementation)
+        github_owner: GitHub owner/organization (required for implementation)
+        vercel_project: Vercel project name (optional)
+        vercel_team: Vercel team/org slug (optional)
+        supabase_project: Supabase project name/ref (optional)
+        supabase_org: Supabase organization (optional)
 
     Returns:
         dict: Result with success status and content
@@ -432,7 +446,9 @@ def run_software_development(
         ...     product_context="Help sales write follow-ups",
         ...     scope="product",
         ...     enable_research=True,
-        ...     enable_implementation=True
+        ...     enable_implementation=True,
+        ...     github_repo="ai-email-assistant",
+        ...     github_owner="my-org"
         ... )
 
         # Simple feature (PRD and architecture only)
@@ -443,11 +459,24 @@ def run_software_development(
         ...     enable_implementation=False
         ... )
     """
+    # Build project context if GitHub details provided
+    project_ctx = None
+    if github_repo and github_owner:
+        project_ctx = ProjectContext(
+            github_repo=github_repo,
+            github_owner=github_owner,
+            vercel_project=vercel_project,
+            vercel_team=vercel_team,
+            supabase_project=supabase_project,
+            supabase_org=supabase_org,
+        )
+
     workflow_input = SoftwareDevelopmentInput(
         product_name=product_name,
         product_context=product_context,
         target_audience=target_audience,
         user_prompt=user_prompt,
+        project_context=project_ctx,
         scope=scope,
         enable_research=enable_research,
         enable_competitor_analysis=enable_competitor_analysis,
@@ -480,6 +509,12 @@ if __name__ == "__main__":
     parser.add_argument("--enable-competitor-analysis", action="store_true")
     parser.add_argument("--enable-implementation", action="store_true", default=True)
     parser.add_argument("--no-implementation", action="store_true", help="Skip implementation cycle")
+    parser.add_argument("--github-repo", help="GitHub repository name")
+    parser.add_argument("--github-owner", help="GitHub owner/organization")
+    parser.add_argument("--vercel-project", help="Vercel project name")
+    parser.add_argument("--vercel-team", help="Vercel team/org slug")
+    parser.add_argument("--supabase-project", help="Supabase project name/ref")
+    parser.add_argument("--supabase-org", help="Supabase organization")
 
     args = parser.parse_args()
 
@@ -491,7 +526,13 @@ if __name__ == "__main__":
         scope=args.scope,
         enable_research=args.enable_research,
         enable_competitor_analysis=args.enable_competitor_analysis,
-        enable_implementation=not args.no_implementation
+        enable_implementation=not args.no_implementation,
+        github_repo=args.github_repo,
+        github_owner=args.github_owner,
+        vercel_project=args.vercel_project,
+        vercel_team=args.vercel_team,
+        supabase_project=args.supabase_project,
+        supabase_org=args.supabase_org,
     )
 
     logger.info(f"Workflow completed!")

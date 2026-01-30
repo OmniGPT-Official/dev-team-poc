@@ -4,14 +4,14 @@ Implementation Cycle Workflow
 A workflow that handles the implementation cycle with development, code review,
 security review, and revision loop.
 
-All communication between agents is file-based:
-1. Development (Software Engineer) - Saves code to file → outputs file path
-2. Code Review (Lead Engineer) - Reads code file → saves review to file → outputs file path
-3. Security Review (Security Engineer) - Reads code file → saves review to file → outputs file path
-4. Revision Loop - Software Engineer reads feedback files → updates code file
+All communication between agents is GitHub-based:
+1. Development (Software Engineer) - Creates/updates code file in GitHub repo
+2. Code Review (Lead Engineer) - Reads code from GitHub → saves review to GitHub
+3. Security Review (Security Engineer) - Reads code from GitHub → saves review to GitHub
+4. Revision Loop - Software Engineer reads feedback from GitHub → updates code in GitHub
 
-File Structure:
-    output/
+GitHub File Structure (in target repo):
+    .dev-team/
     ├── implementations/     # Code files from Software Engineer
     ├── code_reviews/        # Review files from Lead Engineer
     └── security_reviews/    # Review files from Security Engineer
@@ -25,7 +25,11 @@ Usage:
     workflow_input = ImplementationCycleInput(
         technical_document="[Architecture content here]",
         product_name="AI Assistant",
-        task_description="Implement user authentication module"
+        task_description="Implement user authentication module",
+        project_context=ProjectContext(
+            github_repo="my-app",
+            github_owner="my-org"
+        )
     )
 
     result = implementation_cycle_workflow.run(input=workflow_input)
@@ -33,6 +37,7 @@ Usage:
 
 import os
 import sys
+import asyncio
 from datetime import datetime
 from typing import Optional, List
 from loguru import logger
@@ -51,8 +56,44 @@ from agents.security_engineer import security_engineer_agent
 
 
 # ============================================================================
+# ASYNC HELPER - Run async agent calls from sync workflow steps
+# ============================================================================
+
+# Persistent event loop for running async code from sync context
+_event_loop = None
+
+
+def get_or_create_event_loop():
+    """Get existing event loop or create a new one."""
+    global _event_loop
+    if _event_loop is None or _event_loop.is_closed():
+        _event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_event_loop)
+    return _event_loop
+
+
+def run_async(coro):
+    """
+    Run an async coroutine from synchronous code.
+    Uses a persistent event loop to avoid 'Event loop is closed' errors.
+    """
+    loop = get_or_create_event_loop()
+    return loop.run_until_complete(coro)
+
+
+# ============================================================================
 # INPUT MODEL
 # ============================================================================
+
+class ProjectContext(BaseModel):
+    """Context for external project integrations."""
+    github_repo: str = Field(..., description="GitHub repository name (e.g., 'my-app')")
+    github_owner: str = Field(..., description="GitHub owner/org (e.g., 'my-org')")
+    vercel_project: Optional[str] = Field(None, description="Vercel project name")
+    vercel_team: Optional[str] = Field(None, description="Vercel team/org slug")
+    supabase_project: Optional[str] = Field(None, description="Supabase project name/ref")
+    supabase_org: Optional[str] = Field(None, description="Supabase organization")
+
 
 class ImplementationCycleInput(BaseModel):
     """Input model for Implementation Cycle Workflow."""
@@ -60,6 +101,7 @@ class ImplementationCycleInput(BaseModel):
     product_name: str = Field(..., description="Name of the product/feature")
     task_description: str = Field(..., description="Specific task to implement")
     architecture_file_path: Optional[str] = Field(None, description="Path to architecture file")
+    project_context: Optional[ProjectContext] = Field(None, description="GitHub/Vercel/Supabase project context")
 
 
 # ============================================================================
@@ -76,6 +118,13 @@ class ImplementationState:
         self.code_review_status = "pending"
         self.security_review_status = "pending"
         self.approved = False
+        # GitHub context
+        self.github_repo = ""
+        self.github_owner = ""
+        self.vercel_project = ""
+        self.vercel_team = ""
+        self.supabase_project = ""
+        self.supabase_org = ""
 
     def reset_reviews(self):
         """Reset review statuses for a new iteration."""
@@ -84,23 +133,33 @@ class ImplementationState:
         self.code_review_file_path = ""
         self.security_review_file_path = ""
 
+    def set_project_context(self, project_context: Optional[ProjectContext]):
+        """Set project context from input."""
+        if project_context:
+            self.github_repo = project_context.github_repo
+            self.github_owner = project_context.github_owner
+            self.vercel_project = project_context.vercel_project or ""
+            self.vercel_team = project_context.vercel_team or ""
+            self.supabase_project = project_context.supabase_project or ""
+            self.supabase_org = project_context.supabase_org or ""
+
 
 # Global state instance (per workflow run)
 _state = ImplementationState()
 
 
 # ============================================================================
-# HELPER: Generate file paths (no versioning - same files get updated)
+# HELPER: Generate GitHub file paths (stored in .dev-team/ directory)
 # ============================================================================
 
-def _get_file_paths(product_name: str):
-    """Generate consistent file paths (same files updated each iteration)."""
+def _get_github_file_paths(product_name: str):
+    """Generate consistent GitHub file paths (stored in .dev-team/ directory)."""
     safe_name = product_name.lower().replace(" ", "_").replace("/", "_")[:30]
 
     return {
-        "code": f"implementations/software_engineer_{safe_name}.py",
-        "code_review": f"code_reviews/lead_engineer_review_{safe_name}.md",
-        "security_review": f"security_reviews/security_engineer_review_{safe_name}.md",
+        "code": f".dev-team/implementations/software_engineer_{safe_name}.py",
+        "code_review": f".dev-team/code_reviews/lead_engineer_review_{safe_name}.md",
+        "security_review": f".dev-team/security_reviews/security_engineer_review_{safe_name}.md",
     }
 
 
@@ -109,7 +168,7 @@ def _get_file_paths(product_name: str):
 # ============================================================================
 
 def run_development(step_input: StepInput) -> StepOutput:
-    """Software Engineer implements code and saves to file."""
+    """Software Engineer implements code and saves to GitHub."""
     global _state
 
     try:
@@ -121,14 +180,27 @@ def run_development(step_input: StepInput) -> StepOutput:
         else:
             return StepOutput(content=f"Invalid input type: {type(step_input.input)}", success=False)
 
+        # Set project context on first iteration
+        if _state.iteration == 0:
+            _state.set_project_context(workflow_input.project_context)
+
         _state.iteration += 1
         iteration = _state.iteration
 
-        # Generate file paths (same files each iteration - no versioning)
-        paths = _get_file_paths(workflow_input.product_name)
+        # Generate GitHub file paths
+        paths = _get_github_file_paths(workflow_input.product_name)
         _state.code_file_path = paths["code"]
 
         log_info(f"[DEVELOPMENT] Iteration {iteration} for: {workflow_input.product_name}")
+
+        # Build GitHub context string for prompts
+        github_context = ""
+        if _state.github_repo and _state.github_owner:
+            github_context = f"""
+**GitHub Repository:** {_state.github_owner}/{_state.github_repo}
+**Vercel Project:** {_state.vercel_project or 'N/A'} (Team: {_state.vercel_team or 'N/A'})
+**Supabase Project:** {_state.supabase_project or 'N/A'} (Org: {_state.supabase_org or 'N/A'})
+"""
 
         if iteration == 1:
             # First iteration - implement from scratch
@@ -136,44 +208,99 @@ def run_development(step_input: StepInput) -> StepOutput:
 
 **Product/Feature:** {workflow_input.product_name}
 **Task:** {workflow_input.task_description}
-
+{github_context}
 **Technical Architecture:**
 {workflow_input.technical_document}
 
-**Instructions:**
+**Code Requirements:**
 1. Write clean, production-ready Python code
 2. Include proper error handling and input validation
 3. Add docstrings and comments for complex logic
 4. Follow security best practices
 
-**IMPORTANT - Save your code:**
-Use the `save_file` tool to save your implementation to: `{_state.code_file_path}`
+---
 
-After saving, confirm the file path in your response.
+**CRITICAL INSTRUCTIONS - READ CAREFULLY:**
+
+**STEP 1: CREATE THE REPOSITORY (call ONCE)**
+Call `create_repository` with these parameters:
+- name: "{_state.github_repo}"
+- description: "Implementation for {workflow_input.product_name}"
+- private: false
+
+Wait for the result. If repo already exists (error 422), that's fine - proceed.
+
+**STEP 2: SAVE YOUR CODE FILE (call ONCE)**
+Call `create_or_update_file` with these parameters:
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+- path: "{_state.code_file_path}"
+- content: [your Python code as a plain string]
+- message: "feat: implement {workflow_input.product_name}"
+- branch: "main"
+
+**IMPORTANT RULES:**
+- Call each tool EXACTLY ONCE - do NOT retry if you get a result back
+- Do NOT call `get_file_contents` or `get_repository` in this step
+- After `create_or_update_file` returns, STOP calling tools and write your response
+- If a tool call fails with an error, report the error - do NOT retry
+
+After the file is saved, respond with:
+1. A brief summary of the code you implemented
+2. Confirmation: "Saved to: {_state.github_owner}/{_state.github_repo}/{_state.code_file_path}"
 """
         else:
-            # Revision - read current code and feedback, update the same file
+            # Revision - read current code and feedback from GitHub, update the file
             prompt = f"""You are the Software Engineer. Revise your implementation based on review feedback.
 
 **Product/Feature:** {workflow_input.product_name}
 **Task:** {workflow_input.task_description}
+{github_context}
 
-**Instructions:**
-1. Use `read_file` to read the current code from: `{_state.code_file_path}`
-2. Use `read_file` to read code review feedback from: `{_state.code_review_file_path}`
-3. Use `read_file` to read security review feedback from: `{_state.security_review_file_path}`
-4. Address ALL feedback points from both reviews
-5. Use `save_file` to save the revised code to: `{_state.code_file_path}` (overwrite the existing file)
+---
 
-After saving, confirm what changes you made.
+**CRITICAL INSTRUCTIONS - CALL EACH TOOL EXACTLY ONCE:**
+
+**STEP 1: Read your current code** (call `get_file_contents` ONCE)
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+- path: "{_state.code_file_path}"
+
+**STEP 2: Read code review feedback** (call `get_file_contents` ONCE)
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+- path: "{_state.code_review_file_path}"
+
+**STEP 3: Read security review feedback** (call `get_file_contents` ONCE)
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+- path: "{_state.security_review_file_path}"
+
+**STEP 4: Revise your code based on the feedback**
+
+**STEP 5: Save the revised code** (call `create_or_update_file` ONCE)
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+- path: "{_state.code_file_path}"
+- content: [your revised Python code as plain string]
+- message: "fix: address review feedback for {workflow_input.product_name}"
+- branch: "main"
+
+**IMPORTANT RULES:**
+- Call each tool EXACTLY ONCE - do NOT retry if you get a result back
+- After `create_or_update_file` returns, STOP calling tools and write your response
+- If a tool call fails with an error, report the error - do NOT retry
+
+After saving, respond with a summary of changes made.
 """
 
-        result = software_engineer_agent.run(prompt)
+        # Run async agent with MCP tools
+        result = run_async(software_engineer_agent.arun(prompt))
         _state.reset_reviews()
 
         if result.content:
-            log_info(f"[DEVELOPMENT] Completed - Code saved to: {_state.code_file_path}")
-            return StepOutput(content=f"CODE_FILE:{_state.code_file_path}\n\n{result.content}", success=True)
+            log_info(f"[DEVELOPMENT] Completed - Code saved to GitHub: {_state.github_owner}/{_state.github_repo}/{_state.code_file_path}")
+            return StepOutput(content=f"CODE_FILE:{_state.github_owner}/{_state.github_repo}/{_state.code_file_path}\n\n{result.content}", success=True)
         else:
             return StepOutput(content="Development failed - no output", success=False)
 
@@ -194,7 +321,7 @@ development_step = Step(
 # ============================================================================
 
 def run_code_review(step_input: StepInput) -> StepOutput:
-    """Lead Engineer reads code file, reviews, and saves feedback to file."""
+    """Lead Engineer reads code from GitHub, reviews, and saves feedback to GitHub."""
     global _state
 
     try:
@@ -206,35 +333,52 @@ def run_code_review(step_input: StepInput) -> StepOutput:
             workflow_input = None
 
         # Generate review file path (same file each iteration)
-        paths = _get_file_paths(workflow_input.product_name if workflow_input else "unknown")
+        paths = _get_github_file_paths(workflow_input.product_name if workflow_input else "unknown")
         _state.code_review_file_path = paths["code_review"]
 
         log_info(f"[CODE REVIEW] Iteration {_state.iteration}")
 
         prompt = f"""You are the Lead Engineer. Review the code implementation for quality and architecture alignment.
 
-**Instructions:**
-1. Use `read_file` to read the code from: `{_state.code_file_path}`
-2. Review against these criteria:
-   - Code Quality: Clean, readable, well-structured?
-   - Architecture Alignment: Follows the technical spec?
-   - Best Practices: Coding standards followed?
-   - Error Handling: Comprehensive?
-   - Maintainability: Easy to maintain and extend?
+**CRITICAL INSTRUCTIONS - CALL EACH TOOL EXACTLY ONCE:**
 
-3. Write your review with this format:
-   - **Review Status**: APPROVED or CHANGES_REQUESTED
-   - **Quality Score**: 1-10
-   - **Strengths**: What's done well
-   - **Issues Found**: Problems identified (if any)
-   - **Required Changes**: Specific changes needed (if CHANGES_REQUESTED)
+**STEP 1: Read the code** (call `get_file_contents` ONCE)
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+- path: "{_state.code_file_path}"
 
-4. Use `save_file` to save your review to: `{_state.code_review_file_path}`
+**STEP 2: Review the code against these criteria:**
+- Code Quality: Clean, readable, well-structured?
+- Architecture Alignment: Follows the technical spec?
+- Best Practices: Coding standards followed?
+- Error Handling: Comprehensive?
+- Maintainability: Easy to maintain and extend?
 
-After saving, confirm the review status and file path.
+**STEP 3: Write your review with this format:**
+- **Review Status**: APPROVED or CHANGES_REQUESTED
+- **Quality Score**: 1-10
+- **Strengths**: What's done well
+- **Issues Found**: Problems identified (if any)
+- **Required Changes**: Specific changes needed (if CHANGES_REQUESTED)
+
+**STEP 4: Save your review** (call `create_or_update_file` ONCE)
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+- path: "{_state.code_review_file_path}"
+- content: [your review in markdown format as plain string]
+- message: "docs: add code review for iteration {_state.iteration}"
+- branch: "main"
+
+**IMPORTANT RULES:**
+- Call each tool EXACTLY ONCE - do NOT retry if you get a result back
+- After `create_or_update_file` returns, STOP calling tools and write your response
+- If a tool call fails, report the error - do NOT retry
+
+After saving, confirm: "Review Status: [APPROVED/CHANGES_REQUESTED]"
 """
 
-        result = lead_engineer_agent.run(prompt)
+        # Run async agent with MCP tools
+        result = run_async(lead_engineer_agent.arun(prompt))
 
         if result.content:
             content_lower = result.content.lower()
@@ -247,8 +391,8 @@ After saving, confirm the review status and file path.
             else:
                 _state.code_review_status = "changes_requested"
 
-            log_info(f"[CODE REVIEW] Status: {_state.code_review_status} - Saved to: {_state.code_review_file_path}")
-            return StepOutput(content=f"REVIEW_STATUS:{_state.code_review_status}\nREVIEW_FILE:{_state.code_review_file_path}\n\n{result.content}", success=True)
+            log_info(f"[CODE REVIEW] Status: {_state.code_review_status} - Saved to GitHub: {_state.github_owner}/{_state.github_repo}/{_state.code_review_file_path}")
+            return StepOutput(content=f"REVIEW_STATUS:{_state.code_review_status}\nREVIEW_FILE:{_state.github_owner}/{_state.github_repo}/{_state.code_review_file_path}\n\n{result.content}", success=True)
         else:
             return StepOutput(content="Code review failed", success=False)
 
@@ -269,7 +413,7 @@ code_review_step = Step(
 # ============================================================================
 
 def run_security_review(step_input: StepInput) -> StepOutput:
-    """Security Engineer reads code file, reviews for vulnerabilities, saves feedback."""
+    """Security Engineer reads code from GitHub, reviews for vulnerabilities, saves feedback to GitHub."""
     global _state
 
     try:
@@ -281,35 +425,52 @@ def run_security_review(step_input: StepInput) -> StepOutput:
             workflow_input = None
 
         # Generate review file path (same file each iteration)
-        paths = _get_file_paths(workflow_input.product_name if workflow_input else "unknown")
+        paths = _get_github_file_paths(workflow_input.product_name if workflow_input else "unknown")
         _state.security_review_file_path = paths["security_review"]
 
         log_info(f"[SECURITY REVIEW] Iteration {_state.iteration}")
 
         prompt = f"""You are the Security Engineer. Review the code for security vulnerabilities.
 
-**Instructions:**
-1. Use `read_file` to read the code from: `{_state.code_file_path}`
-2. Check for these security issues:
-   - Injection vulnerabilities (SQL, XSS, command injection)
-   - Authentication/Authorization flaws
-   - Sensitive data exposure
-   - Input validation issues
-   - Insecure error handling
-   - OWASP Top 10 vulnerabilities
+**CRITICAL INSTRUCTIONS - CALL EACH TOOL EXACTLY ONCE:**
 
-3. Write your review with this format:
-   - **Security Status**: APPROVED or CHANGES_REQUIRED
-   - **Vulnerabilities Found**: List with severity (Critical/High/Medium/Low)
-   - **Required Fixes**: Specific security fixes needed
-   - **Recommendations**: Additional security improvements
+**STEP 1: Read the code** (call `get_file_contents` ONCE)
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+- path: "{_state.code_file_path}"
 
-4. Use `save_file` to save your review to: `{_state.security_review_file_path}`
+**STEP 2: Check for these security issues:**
+- Injection vulnerabilities (SQL, XSS, command injection)
+- Authentication/Authorization flaws
+- Sensitive data exposure
+- Input validation issues
+- Insecure error handling
+- OWASP Top 10 vulnerabilities
 
-After saving, confirm the security status and file path.
+**STEP 3: Write your review with this format:**
+- **Security Status**: APPROVED or CHANGES_REQUIRED
+- **Vulnerabilities Found**: List with severity (Critical/High/Medium/Low)
+- **Required Fixes**: Specific security fixes needed
+- **Recommendations**: Additional security improvements
+
+**STEP 4: Save your review** (call `create_or_update_file` ONCE)
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+- path: "{_state.security_review_file_path}"
+- content: [your security review in markdown format as plain string]
+- message: "docs: add security review for iteration {_state.iteration}"
+- branch: "main"
+
+**IMPORTANT RULES:**
+- Call each tool EXACTLY ONCE - do NOT retry if you get a result back
+- After `create_or_update_file` returns, STOP calling tools and write your response
+- If a tool call fails, report the error - do NOT retry
+
+After saving, confirm: "Security Status: [APPROVED/CHANGES_REQUIRED]"
 """
 
-        result = security_engineer_agent.run(prompt)
+        # Run async agent with MCP tools
+        result = run_async(security_engineer_agent.arun(prompt))
 
         if result.content:
             content_lower = result.content.lower()
@@ -324,8 +485,8 @@ After saving, confirm the security status and file path.
             else:
                 _state.security_review_status = "approved"
 
-            log_info(f"[SECURITY REVIEW] Status: {_state.security_review_status} - Saved to: {_state.security_review_file_path}")
-            return StepOutput(content=f"SECURITY_STATUS:{_state.security_review_status}\nREVIEW_FILE:{_state.security_review_file_path}\n\n{result.content}", success=True)
+            log_info(f"[SECURITY REVIEW] Status: {_state.security_review_status} - Saved to GitHub: {_state.github_owner}/{_state.github_repo}/{_state.security_review_file_path}")
+            return StepOutput(content=f"SECURITY_STATUS:{_state.security_review_status}\nREVIEW_FILE:{_state.github_owner}/{_state.github_repo}/{_state.security_review_file_path}\n\n{result.content}", success=True)
         else:
             return StepOutput(content="Security review failed", success=False)
 
@@ -381,6 +542,8 @@ def format_final_output(step_input: StepInput) -> StepOutput:
 
         status = "APPROVED" if _state.approved else "COMPLETED_WITH_NOTES"
 
+        github_repo_url = f"https://github.com/{_state.github_owner}/{_state.github_repo}" if _state.github_owner and _state.github_repo else "N/A"
+
         summary = f"""
 ## Implementation Cycle Complete
 
@@ -390,13 +553,16 @@ def format_final_output(step_input: StepInput) -> StepOutput:
 **Code Review**: {_state.code_review_status}
 **Security Review**: {_state.security_review_status}
 
-### Output Files
+### GitHub Repository
+- **Repository**: [{_state.github_owner}/{_state.github_repo}]({github_repo_url})
+
+### Output Files (in GitHub)
 - **Code**: `{_state.code_file_path}`
 - **Code Review**: `{_state.code_review_file_path}`
 - **Security Review**: `{_state.security_review_file_path}`
 """
 
-        log_info(f"[COMPLETE] Status: {status}, Iterations: {_state.iteration}")
+        log_info(f"[COMPLETE] Status: {status}, Iterations: {_state.iteration}, Repo: {_state.github_owner}/{_state.github_repo}")
 
         # Reset state for next run
         final_code_path = _state.code_file_path
@@ -416,19 +582,19 @@ def format_final_output(step_input: StepInput) -> StepOutput:
 implementation_cycle_workflow = Workflow(
     name="Implementation Cycle Workflow",
     stream=False,
-    description="""Implementation cycle with file-based agent communication:
+    description="""Implementation cycle with GitHub-based agent communication:
 
     Loop (max 3 iterations):
-    1. Development - Software Engineer saves/updates code file
-    2. Code Review - Lead Engineer reads code, saves/updates review file
-    3. Security Review - Security Engineer reads code, saves/updates review file
+    1. Development - Software Engineer creates/updates code in GitHub repo
+    2. Code Review - Lead Engineer reads code from GitHub, saves review to GitHub
+    3. Security Review - Security Engineer reads code from GitHub, saves review to GitHub
 
-    On revision: Software Engineer reads feedback files, updates same code file
+    On revision: Software Engineer reads feedback from GitHub, updates code in GitHub
 
-    Output Files (same files updated each iteration):
-    - implementations/software_engineer_[name].py
-    - code_reviews/lead_engineer_review_[name].md
-    - security_reviews/security_engineer_review_[name].md""",
+    Output Files (stored in GitHub repo under .dev-team/):
+    - .dev-team/implementations/software_engineer_[name].py
+    - .dev-team/code_reviews/lead_engineer_review_[name].md
+    - .dev-team/security_reviews/security_engineer_review_[name].md""",
     steps=[
         Loop(
             name="Implementation Review Loop",
@@ -450,25 +616,44 @@ def run_implementation_cycle(
     product_name: str,
     task_description: str,
     architecture_file_path: Optional[str] = None,
+    github_repo: Optional[str] = None,
+    github_owner: Optional[str] = None,
+    vercel_project: Optional[str] = None,
+    vercel_team: Optional[str] = None,
+    supabase_project: Optional[str] = None,
+    supabase_org: Optional[str] = None,
 ) -> dict:
     """Run the implementation cycle workflow."""
     global _state
     _state = ImplementationState()
+
+    # Build project context if GitHub details provided
+    project_ctx = None
+    if github_repo and github_owner:
+        project_ctx = ProjectContext(
+            github_repo=github_repo,
+            github_owner=github_owner,
+            vercel_project=vercel_project,
+            vercel_team=vercel_team,
+            supabase_project=supabase_project,
+            supabase_org=supabase_org,
+        )
 
     workflow_input = ImplementationCycleInput(
         technical_document=technical_document,
         product_name=product_name,
         task_description=task_description,
         architecture_file_path=architecture_file_path,
+        project_context=project_ctx,
     )
 
-    log_info(f"Starting implementation cycle: {product_name}")
+    log_info(f"Starting implementation cycle: {product_name} (GitHub: {github_owner}/{github_repo})")
     result = implementation_cycle_workflow.run(input=workflow_input)
 
     return {
         "success": result.success,
         "content": result.content,
-        "code_file": _state.code_file_path,
+        "code_file": f"{_state.github_owner}/{_state.github_repo}/{_state.code_file_path}" if _state.github_owner else _state.code_file_path,
     }
 
 
@@ -483,6 +668,12 @@ if __name__ == "__main__":
     parser.add_argument("--architecture-file", required=True)
     parser.add_argument("--product-name", required=True)
     parser.add_argument("--task", required=True)
+    parser.add_argument("--github-repo", required=True, help="GitHub repository name")
+    parser.add_argument("--github-owner", required=True, help="GitHub owner/organization")
+    parser.add_argument("--vercel-project", help="Vercel project name")
+    parser.add_argument("--vercel-team", help="Vercel team/org slug")
+    parser.add_argument("--supabase-project", help="Supabase project name/ref")
+    parser.add_argument("--supabase-org", help="Supabase organization")
 
     args = parser.parse_args()
 
@@ -494,6 +685,12 @@ if __name__ == "__main__":
         product_name=args.product_name,
         task_description=args.task,
         architecture_file_path=args.architecture_file,
+        github_repo=args.github_repo,
+        github_owner=args.github_owner,
+        vercel_project=args.vercel_project,
+        vercel_team=args.vercel_team,
+        supabase_project=args.supabase_project,
+        supabase_org=args.supabase_org,
     )
 
     print(result["content"])
