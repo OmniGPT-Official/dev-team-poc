@@ -36,6 +36,7 @@ Usage:
 
 import os
 import sys
+import asyncio
 from datetime import datetime
 from typing import Optional
 from loguru import logger
@@ -51,6 +52,32 @@ from agno.workflow.workflow import Workflow
 from agno.utils.log import log_error, log_info
 
 from agents.product_lead import product_lead_agent
+
+
+# ============================================================================
+# ASYNC HELPER - Run async agent calls from sync workflow steps
+# ============================================================================
+
+# Persistent event loop for running async code from sync context
+_event_loop = None
+
+
+def get_or_create_event_loop():
+    """Get existing event loop or create a new one."""
+    global _event_loop
+    if _event_loop is None or _event_loop.is_closed():
+        _event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_event_loop)
+    return _event_loop
+
+
+def run_async(coro):
+    """
+    Run an async coroutine from synchronous code.
+    Uses a persistent event loop to avoid 'Event loop is closed' errors.
+    """
+    loop = get_or_create_event_loop()
+    return loop.run_until_complete(coro)
 
 
 # ============================================================================
@@ -105,7 +132,8 @@ As the Product Lead, provide a brief analysis:
 Be concise. No hallucination - only analyze what's provided."""
 
         log_info(f"[ANALYSIS] Product Lead analyzing request for: {workflow_input.product_name}")
-        result = product_lead_agent.run(analysis_prompt)
+        # Run async agent (for future MCP tools support)
+        result = run_async(product_lead_agent.arun(analysis_prompt))
 
         if result.content:
             log_info("[ANALYSIS] Analysis completed by Product Lead")
@@ -157,7 +185,7 @@ Research and provide:
 
 **CRITICAL**: Only report what you actually find. Do NOT hallucinate."""
 
-            market_result = product_lead_agent.run(market_prompt)
+            market_result = run_async(product_lead_agent.arun(market_prompt))
             if market_result.content:
                 results.append(f"## Market Research\n\n{market_result.content}")
 
@@ -177,7 +205,7 @@ Analyze and provide:
 
 **CRITICAL**: Only report what you actually find. Do NOT hallucinate."""
 
-            competitor_result = product_lead_agent.run(competitor_prompt)
+            competitor_result = run_async(product_lead_agent.arun(competitor_prompt))
             if competitor_result.content:
                 results.append(f"## Competitor Analysis\n\n{competitor_result.content}")
 
@@ -315,8 +343,8 @@ def create_requirements_document(step_input: StepInput) -> StepOutput:
 - **Acceptance criteria**: Clear and testable
 - **1 page max**"""
 
-        # Run Product Lead agent
-        result = product_lead_agent.run(prd_prompt)
+        # Run Product Lead agent (async for future MCP tools support)
+        result = run_async(product_lead_agent.arun(prd_prompt))
 
         if result.content:
             log_info("[PRD] Requirements document created by Product Lead")

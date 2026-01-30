@@ -23,6 +23,7 @@ Usage:
 
 import os
 import sys
+import asyncio
 from datetime import datetime
 from typing import Optional
 from loguru import logger
@@ -37,6 +38,32 @@ from agno.workflow.workflow import Workflow
 from agno.utils.log import log_error, log_info
 
 from agents.lead_engineer import lead_engineer_agent
+
+
+# ============================================================================
+# ASYNC HELPER - Run async agent calls from sync workflow steps
+# ============================================================================
+
+# Persistent event loop for running async code from sync context
+_event_loop = None
+
+
+def get_or_create_event_loop():
+    """Get existing event loop or create a new one."""
+    global _event_loop
+    if _event_loop is None or _event_loop.is_closed():
+        _event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_event_loop)
+    return _event_loop
+
+
+def run_async(coro):
+    """
+    Run an async coroutine from synchronous code.
+    Uses a persistent event loop to avoid 'Event loop is closed' errors.
+    """
+    loop = get_or_create_event_loop()
+    return loop.run_until_complete(coro)
 
 
 # ============================================================================
@@ -102,7 +129,8 @@ def create_architecture(step_input: StepInput) -> StepOutput:
 """
 
         log_info(f"[ARCHITECTURE] Lead Engineer creating architecture for: {workflow_input.product_name}")
-        result = lead_engineer_agent.run(architecture_prompt)
+        # Run async agent with MCP tools
+        result = run_async(lead_engineer_agent.arun(architecture_prompt))
 
         if result.content:
             log_info("[ARCHITECTURE] Architecture design completed by Lead Engineer")
