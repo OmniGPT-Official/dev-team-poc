@@ -2,7 +2,7 @@
 Lead Engineer Agent Configuration
 
 The Lead Engineer can read PRDs, save architecture documents, code reviews,
-and interact with GitHub and Supabase via MCP.
+and interact with GitHub, Supabase, and Vercel via MCP.
 """
 
 import os
@@ -28,6 +28,10 @@ supabase_mcp = MCPTools(
     command=f"npx -y @supabase/mcp-server-supabase@latest --access-token={os.environ.get('SUPABASE_ACCESS_TOKEN', '')}"
 )
 
+vercel_mcp = MCPTools(
+    command=f"npx -y mcp-remote https://mcp.vercel.com --header \"Authorization: Bearer {os.environ.get('VERCEL_TOKEN', '')}\""
+)
+
 lead_engineer_agent = Agent(
     name="Lead Engineer Agent",
     role="Designs technical architecture, creates technical specifications, provides code review guidance, and offers technical leadership on implementation approaches.",
@@ -45,5 +49,6 @@ lead_engineer_agent = Agent(
         ),
         github_mcp,
         supabase_mcp,
+        vercel_mcp,
     ]
 )

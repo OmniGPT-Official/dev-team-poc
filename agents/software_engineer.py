@@ -2,7 +2,7 @@
 Software Engineer Agent Configuration
 
 The Software Engineer can read technical documents, save implementation code files,
-and interact with GitHub and Supabase via MCP.
+and interact with GitHub, Supabase, and Vercel via MCP.
 """
 
 import os
@@ -28,6 +28,10 @@ supabase_mcp = MCPTools(
     command=f"npx -y @supabase/mcp-server-supabase@latest --access-token={os.environ.get('SUPABASE_ACCESS_TOKEN', '')}"
 )
 
+vercel_mcp = MCPTools(
+    command=f"npx -y mcp-remote https://mcp.vercel.com --header \"Authorization: Bearer {os.environ.get('VERCEL_TOKEN', '')}\""
+)
+
 software_engineer_agent = Agent(
     name="Software Engineer Agent",
     role="Implements code, fixes bugs, writes tests, and creates code documentation. Handles version control and follows coding best practices.",
@@ -45,5 +49,6 @@ software_engineer_agent = Agent(
         ),
         github_mcp,
         supabase_mcp,
+        vercel_mcp,
     ]
 )
