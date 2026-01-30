@@ -8,6 +8,7 @@ All artifacts are stored in GitHub via MCP tools.
 """
 
 import os
+import re
 import sys
 import asyncio
 from typing import List
@@ -56,12 +57,15 @@ def run_development(step_input: StepInput) -> StepOutput:
 </specification>
 
 <instructions>
-1. Write clean, production-ready code based on the specification
-2. Save your code to GitHub:
-   - Use create_or_update_file to save directly (do NOT create_repository first)
-   - If you get "repository not found", THEN use create_repository and retry
-   - If you get "name already exists", the repo exists - just use create_or_update_file
-3. Respond with a summary of what you implemented
+1. Extract the GitHub owner and repo name from the specification
+2. Check if the repository exists using `get_repository`
+3. IMPORTANT - Handle the result:
+   - If `get_repository` SUCCEEDS (returns repo info) → Repository EXISTS → Do NOT call create_repository
+   - If `get_repository` FAILS with 404/Not Found → Repository does NOT exist → Call `create_repository` to create it
+4. Write clean, production-ready code and save using `create_or_update_file`
+5. In your response, ALWAYS include the repository info in this exact format:
+   <repository>owner/repo</repository>
+6. Then provide a summary of what you implemented
 </instructions>"""
     else:
         prompt = f"""<task>Revise your code based on the review feedback below.</task>
@@ -71,10 +75,13 @@ def run_development(step_input: StepInput) -> StepOutput:
 </feedback>
 
 <instructions>
-1. Use GitHub MCP tools to read your current code
-2. Address all issues raised in the feedback
-3. Save the updated code to the repository
-4. Respond with a summary of changes made
+1. Extract the repository info from the <repository> tag in the feedback
+2. Use GitHub MCP tools to read your current code from that repository
+3. Address all issues raised in the feedback
+4. Save the updated code to the repository
+5. In your response, include the same repository info:
+   <repository>owner/repo</repository>
+6. Then provide a summary of changes made
 </instructions>"""
 
     log_info(f"[AGENT:software_engineer] Calling for {'implementation' if _iteration == 1 else 'revision'}")
@@ -101,11 +108,14 @@ def run_code_review(step_input: StepInput) -> StepOutput:
 </context>
 
 <instructions>
-1. Use GitHub MCP tools to read the implementation code
-2. Check code quality, readability, and architecture alignment
-3. Check error handling and best practices
-4. Save your review to GitHub
-5. End with exactly "APPROVED" or "CHANGES_REQUESTED"
+1. Extract the repository info from the <repository> tag in the context above
+2. Use GitHub MCP `get_file_contents` to read the implementation code from that repository
+3. Check code quality, readability, and architecture alignment
+4. Check error handling and best practices
+5. Save your review to the repository using `create_or_update_file`
+6. In your response, FIRST include the repository info:
+   <repository>owner/repo</repository>
+7. Then provide your review and end with exactly "APPROVED" or "CHANGES_REQUESTED"
 </instructions>"""
 
     log_info("[AGENT:lead_engineer] Calling for code review")
@@ -132,11 +142,14 @@ def run_security_review(step_input: StepInput) -> StepOutput:
 </previous_review>
 
 <instructions>
-1. Use GitHub MCP tools to read the implementation code
-2. Check for injection vulnerabilities, auth flaws, input validation issues
-3. Check for OWASP Top 10 vulnerabilities
-4. Save your review to GitHub
-5. End with exactly "APPROVED" or "CHANGES_REQUIRED"
+1. Extract the repository info from the <repository> tag in the previous review
+2. Use GitHub MCP `get_file_contents` to read the implementation code from that repository
+3. Check for injection vulnerabilities, auth flaws, input validation issues
+4. Check for OWASP Top 10 vulnerabilities
+5. Save your review to the repository using `create_or_update_file`
+6. In your response, FIRST include the repository info:
+   <repository>owner/repo</repository>
+7. Then provide your review and end with exactly "APPROVED" or "CHANGES_REQUIRED"
 </instructions>"""
 
     log_info("[AGENT:security_engineer] Calling for security review")
@@ -146,8 +159,18 @@ def run_security_review(step_input: StepInput) -> StepOutput:
     log_info("[STEP:security_review] Complete")
     log_debug(f"[STEP:security_review] OUTPUT:\n{output[:500]}{'...' if len(output) > 500 else ''}")
 
+    # Extract repository tag from output to ensure it's preserved
+    repo_match = re.search(r'<repository>([^<]+)</repository>', output)
+    if not repo_match:
+        # Try to find it in code_review if not in security output
+        repo_match = re.search(r'<repository>([^<]+)</repository>', code_review)
+
+    repo_tag = f"<repository>{repo_match.group(1)}</repository>" if repo_match else ""
+
     # Combine both reviews for the next iteration's feedback
-    combined = f"""<code_review>
+    combined = f"""{repo_tag}
+
+<code_review>
 {code_review}
 </code_review>
 
@@ -188,7 +211,12 @@ def format_summary(step_input: StepInput) -> StepOutput:
 
     log_info(f"[STEP:summary] Generating summary (completed in {iterations} iterations)")
 
-    output = f"## Implementation Complete\n\n**Iterations:** {iterations}"
+    # Extract repository info from previous step
+    previous = step_input.previous_step_content or ""
+    repo_match = re.search(r'<repository>([^<]+)</repository>', previous)
+    repo_info = f"**Repository:** {repo_match.group(1)}\n" if repo_match else ""
+
+    output = f"## Implementation Complete\n\n{repo_info}**Iterations:** {iterations}"
     log_debug(f"[STEP:summary] OUTPUT:\n{output}")
 
     return StepOutput(content=output, success=True)

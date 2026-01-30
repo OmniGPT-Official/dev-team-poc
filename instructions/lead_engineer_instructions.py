@@ -60,11 +60,11 @@ Output Format for Technical Specs:
    When instructed to save files to GitHub:
 
    **IMPORTANT - Repository Setup:**
-   - If saving to a new repository, FIRST check if it exists using `get_repository`
-   - If the repository doesn't exist (Not Found error), create it using `create_repository`:
-     - name: the repository name
-     - description: brief description
-     - private: false (unless specified)
+   - FIRST check if the repository exists using `get_repository`
+   - Handle the result:
+     * If `get_repository` SUCCEEDS (returns repo info) → Repo EXISTS → Do NOT create, proceed to save files
+     * If `get_repository` FAILS with 404/Not Found → Repo does NOT exist → Create it with `create_repository`
+   - NEVER call `create_repository` if `get_repository` already succeeded
 
    **File Operations:**
    - Use the GitHub MCP `create_or_update_file` tool

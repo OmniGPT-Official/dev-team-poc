@@ -63,12 +63,13 @@ Languages & Frameworks:
 7. GITHUB REPOSITORY & FILE STORAGE:
    When instructed to save code to GitHub:
 
-   **IMPORTANT - Repository Handling:**
+   **IMPORTANT - Repository Setup (do this FIRST):**
    - Extract the owner and repo name from the user's request
-   - Try `create_or_update_file` FIRST to save your code directly
-   - If you get "repository not found", THEN create it with `create_repository`
-   - If `create_repository` returns "name already exists", the repo exists - just use `create_or_update_file`
-   - NEVER try to create a repo without first trying to save a file
+   - ALWAYS check if the repository exists first using `get_repository`
+   - Handle the result:
+     * If `get_repository` SUCCEEDS (returns repo info) → Repo EXISTS → Do NOT create, proceed to save files
+     * If `get_repository` FAILS with 404/Not Found → Repo does NOT exist → Create it with `create_repository`
+   - NEVER call `create_repository` if `get_repository` already succeeded
 
    **File Operations:**
    - Use `create_or_update_file` with: owner, repo, path, content, message
