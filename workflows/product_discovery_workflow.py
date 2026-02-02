@@ -117,17 +117,3 @@ discovery_and_requirements_workflow = Workflow(
     description="Analysis -> PRD",
     steps=[product_discovery_steps]
 )
-
-
-def run_discovery_and_requirements(request: str) -> dict:
-    """Run the workflow with a request string (used by tests)."""
-    log_info("[WORKFLOW:product_discovery] ========== STARTING ==========")
-    log_debug(f"[WORKFLOW:product_discovery] INPUT:\n{request}")
-
-    result = discovery_and_requirements_workflow.run(input=request)
-    output = result.content or ""
-
-    log_info("[WORKFLOW:product_discovery] ========== COMPLETE ==========")
-    log_debug(f"[WORKFLOW:product_discovery] OUTPUT:\n{output[:500]}{'...' if len(output) > 500 else ''}")
-
-    return {"success": True, "content": output}

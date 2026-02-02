@@ -5,6 +5,7 @@ Input: PRD + Technical Documentation
 Flow: [Development -> Code Review + Security Review] loops until both approve
 
 Uses Agno's Loop pattern with Parallel reviews.
+State is managed through step outputs - no global variables.
 """
 
 import os
@@ -24,10 +25,6 @@ from agents.security_engineer import security_engineer_agent
 
 MAX_ITERATIONS = 5
 
-# Store state for iterations
-_review_feedback = ""
-_iteration = 0
-
 
 def _run_async(coro):
     """Run async coroutine from sync context."""
@@ -38,19 +35,32 @@ def _run_async(coro):
         loop.close()
 
 
+def _extract_feedback_from_reviews(content: str) -> str:
+    """Extract feedback from previous review outputs if changes were requested."""
+    if not content:
+        return ""
+    # If the previous content contains review feedback markers, extract it
+    if "CHANGES_REQUESTED" in content or "CHANGES_REQUIRED" in content:
+        return content
+    return ""
+
+
 def development_executor(step_input: StepInput) -> StepOutput:
     """Development step: implement or revise code based on PRD, tech docs, and feedback."""
-    global _iteration
-    _iteration += 1
-
-    print(f"\n{'='*60}")
-    print(f"[Development - Iteration {_iteration}]")
-    print(f"{'='*60}")
-
     # Get the original input (PRD + tech docs)
     spec = step_input.input if isinstance(step_input.input, str) else ""
 
-    if _iteration == 1 or not _review_feedback:
+    # Check if this is a revision (previous_step_content has review feedback)
+    previous_content = step_input.previous_step_content or ""
+    feedback = _extract_feedback_from_reviews(previous_content)
+    is_first_iteration = not feedback
+
+    iteration_label = "Initial" if is_first_iteration else "Revision"
+    print(f"\n{'='*60}")
+    print(f"[Development - {iteration_label}]")
+    print(f"{'='*60}")
+
+    if is_first_iteration:
         prompt = f"""Implement the code based on the following specifications:
 
 {spec}
@@ -78,7 +88,7 @@ Original specifications:
 {spec}
 
 Review feedback to address:
-{_review_feedback}
+{feedback}
 
 Instructions:
 - Address the feedback by updating the code
@@ -99,7 +109,7 @@ GITHUB_INFO:
     result = _run_async(software_engineer_agent.arun(prompt))
     output = result.content or ""
 
-    print(f"\n[Development - Iteration {_iteration}] Complete")
+    print(f"\n[Development - {iteration_label}] Complete")
     print(output)
 
     return StepOutput(content=output, success=True)
@@ -108,7 +118,7 @@ GITHUB_INFO:
 def code_review_executor(step_input: StepInput) -> StepOutput:
     """Code review step: review the implementation using GitHub MCP."""
     print(f"\n{'='*60}")
-    print(f"[Code Review - Iteration {_iteration}]")
+    print(f"[Code Review]")
     print(f"{'='*60}")
 
     spec = step_input.input if isinstance(step_input.input, str) else ""
@@ -131,8 +141,6 @@ End your response with exactly one of:
 - APPROVED
 - CHANGES_REQUESTED (followed by specific feedback)"""
 
-    print(f"\n[Code Review Prompt]\n{prompt}\n[End Code Review Prompt]\n")
-
     result = _run_async(lead_engineer_agent.arun(prompt))
     output = result.content or ""
 
@@ -145,7 +153,7 @@ End your response with exactly one of:
 def security_review_executor(step_input: StepInput) -> StepOutput:
     """Security review step: review the implementation for security issues."""
     print(f"\n{'='*60}")
-    print(f"[Security Review - Iteration {_iteration}]")
+    print(f"[Security Review]")
     print(f"{'='*60}")
 
     spec = step_input.input if isinstance(step_input.input, str) else ""
@@ -169,8 +177,6 @@ End your response with exactly one of:
 - APPROVED
 - CHANGES_REQUIRED (followed by specific security concerns)"""
 
-    print(f"\n[Security Review Prompt]\n{prompt}\n[End Security Review Prompt]\n")
-
     result = _run_async(security_engineer_agent.arun(prompt))
     output = result.content or ""
 
@@ -192,13 +198,10 @@ def check_approval(outputs: List[StepOutput]) -> bool:
     Returns True to EXIT the loop when both approve.
     Returns False to CONTINUE looping.
     """
-    global _review_feedback
-
-    if len(outputs) < 3:
+    if len(outputs) < 2:
         return False
 
     # Get the last two outputs (code review and security review from Parallel)
-    # In a loop iteration: [dev, code_review, security_review]
     code_review_output = outputs[-2].content.lower() if outputs[-2].content else ""
     security_review_output = outputs[-1].content.lower() if outputs[-1].content else ""
 
@@ -207,20 +210,11 @@ def check_approval(outputs: List[StepOutput]) -> bool:
 
     if code_approved and security_approved:
         print(f"\n{'='*60}")
-        print(f"[Loop] Both reviews APPROVED after {_iteration} iteration(s)")
+        print(f"[Loop] Both reviews APPROVED")
         print(f"{'='*60}")
-        _review_feedback = ""
         return True
 
-    # Collect feedback for next iteration
-    feedback_parts = []
-    if not code_approved:
-        feedback_parts.append(f"Lead Engineer Feedback:\n{outputs[-2].content}")
-    if not security_approved:
-        feedback_parts.append(f"Security Engineer Feedback:\n{outputs[-1].content}")
-
-    _review_feedback = "\n\n".join(feedback_parts)
-    print(f"\n[Loop] Reviews requested changes - continuing to iteration {_iteration + 1}")
+    print(f"\n[Loop] Reviews requested changes - continuing to next iteration")
     return False
 
 
@@ -239,33 +233,3 @@ implementation_cycle_workflow = Workflow(
         ),
     ],
 )
-
-
-def run_implementation_cycle(prd: str, technical_docs: str) -> dict:
-    """
-    Run the implementation cycle workflow.
-
-    Args:
-        prd: Product Requirements Document
-        technical_docs: Technical documentation/architecture
-
-    Returns:
-        dict with success status and content
-    """
-    global _review_feedback, _iteration
-    _review_feedback = ""
-    _iteration = 0
-
-    input_spec = f"""## PRD (Product Requirements Document)
-
-{prd}
-
-## Technical Documentation
-
-{technical_docs}
-"""
-
-    result = implementation_cycle_workflow.run(input=input_spec)
-    output = result.content or ""
-
-    return {"success": True, "content": output, "iterations": _iteration}

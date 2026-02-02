@@ -2,39 +2,22 @@
 Quick test script for Product Discovery Workflow
 """
 
-from workflows.product_discovery_workflow import run_discovery_and_requirements
+from workflows.product_discovery_workflow import discovery_and_requirements_workflow
 
-print("🚀 Testing Product Discovery Workflow\n")
+print("Testing Product Discovery Workflow\n")
 
-# Test 1: Simple feature (no research)
 print("=" * 60)
-print("TEST 1: Simple Feature (No Research)")
+print("TEST: Simple Feature Request")
 print("=" * 60)
 
-result = run_discovery_and_requirements(
-    product_name="Export to CSV Button",
-    product_context="Add a button to export dashboard data to CSV format",
-    scope="feature",
-    enable_research=False,
-    enable_competitor_analysis=False
-)
+# Workflows take a simple string input
+request = """
+Product: Export to CSV Button
+Context: Add a button to export dashboard data to CSV format
+Scope: Feature enhancement
+"""
 
-print(f"\n✅ Feature document created: {result}\n")
+result = discovery_and_requirements_workflow.run(input=request)
+print(f"\nResult:\n{result.content}\n")
 
-# Test 2: Product with research (uncomment to test)
-# print("=" * 60)
-# print("TEST 2: Product from Scratch (With Research)")
-# print("=" * 60)
-#
-# result = run_discovery_and_requirements(
-#     product_name="Team Collaboration Tool",
-#     product_context="Real-time collaboration tool for remote teams",
-#     target_audience="Remote software development teams",
-#     scope="product",
-#     enable_research=True,
-#     enable_competitor_analysis=True
-# )
-#
-# print(f"\n✅ Product PRD created: {result}\n")
-
-print("\n🎉 Workflow test completed!")
+print("\nWorkflow test completed!")

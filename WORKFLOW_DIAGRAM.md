@@ -190,56 +190,42 @@ product_lead_agent.print_response(
 ### Pattern 2: Direct Workflow
 
 ```python
-from workflows.software_development_workflow import run_software_development
+from workflows.software_development_workflow import software_development_workflow
 
-result = run_software_development(
-    product_name="Blog Post Scheduler",
-    product_context="Schedule posts with publish times",
-    scope="feature"
-)
+# Workflows take a simple string input
+request = "Create a blog post scheduling system"
+result = software_development_workflow.run(input=request)
+print(result.content)
 ```
 
-### Pattern 3: Individual Workflows
+### Pattern 3: Using Product Team (WorkflowTools)
 
 ```python
-# Just Product Discovery
-from workflows.product_discovery_workflow import run_discovery_and_requirements
+from teams.product_team import product_team
 
-prd = run_discovery_and_requirements(
-    product_name="Blog Post Scheduler",
-    product_context="Schedule posts",
-    scope="feature"
-)
-
-# Just Architecture Design
-from workflows.architecture_design_workflow import run_architecture_design
-
-ticket = run_architecture_design(
-    prd_content=prd_content,
-    product_name="Blog Post Scheduler"
+# Team has workflow tools equipped
+product_team.print_response(
+    "Create a blog post scheduling system",
+    stream=True
 )
 ```
 
-## Workflow Parameters
+## Workflow Input
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `product_name` | str | Yes | - | Product/feature name |
-| `product_context` | str | Yes | - | What to build |
-| `target_audience` | str | No | None | Who will use it |
-| `user_prompt` | str | No | None | Original request |
-| `scope` | str | No | "feature" | "product" or "feature" |
-| `enable_research` | bool | No | False | Market research |
-| `enable_competitor_analysis` | bool | No | False | Competitor research |
+Workflows accept a simple string input describing what to build:
 
-## Scope Decision Matrix
+```python
+# Example input
+request = """
+Build a blog post scheduling system for content creators.
+It should allow scheduling posts with specific publish times,
+support multiple social media platforms, and provide analytics.
+"""
 
-| Scenario | Scope | Research | Output |
-|----------|-------|----------|--------|
-| New product from scratch | `product` | `True` | Full PRD + Research |
-| New feature | `feature` | `False` | Simple requirements |
-| Enhancement | `feature` | `False` | Simple requirements |
-| Bug fix | `feature` | `False` | Simple requirements |
+result = software_development_workflow.run(input=request)
+```
+
+The workflow analyzes the request and determines scope automatically.
 
 ## Benefits
 

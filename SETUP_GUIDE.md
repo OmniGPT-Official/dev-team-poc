@@ -44,28 +44,25 @@ product_lead_agent.print_response(
 ### Example 2: Direct Workflow Usage
 
 ```python
-from workflows.software_development_workflow import run_software_development
+from workflows.software_development_workflow import software_development_workflow
 
-result = run_software_development(
-    product_name="Blog Post Scheduler",
-    product_context="Schedule posts with publish times",
-    scope="feature"
-)
+# Workflows take a simple string input
+request = "Create a blog post scheduling system for content creators"
+result = software_development_workflow.run(input=request)
 
-print(result["content"])
+print(result.content)
 ```
 
-### Example 3: Command Line
+### Example 3: Using Product Team with WorkflowTools
 
-```bash
-# Using the agent
-python agents/product_lead.py "Create a task management system"
+```python
+from teams.product_team import product_team
 
-# Using the workflow directly
-python workflows/software_development_workflow.py \
-  --product-name "Task Manager" \
-  --product-context "Help users organize tasks" \
-  --scope feature
+# Team has workflow tools equipped - just describe what you need
+product_team.print_response(
+    "Create a task management system for remote teams",
+    stream=True
+)
 ```
 
 ## Architecture
