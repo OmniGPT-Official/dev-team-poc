@@ -33,14 +33,22 @@ _workflow_tools_added = False
 
 
 def add_workflow_tools():
-    """Add product_requirements_workflow as a tool to the product lead agent."""
+    """
+    Add workflow tools to the product lead agent.
+
+    Adds:
+    - Product Requirements Workflow (for creating PRD/Feature Spec)
+    - Software Development Workflow (for implementation after permission)
+    """
     global _workflow_tools_added
     if _workflow_tools_added:
         return
 
     from agno.tools.workflow import WorkflowTools
     from workflows.product_requirements_workflow import product_requirements_workflow
+    from workflows.software_development_workflow import software_development_workflow
 
+    # Add product requirements workflow
     product_lead_agent.tools.append(
         WorkflowTools(
             workflow=product_requirements_workflow,
@@ -48,4 +56,14 @@ def add_workflow_tools():
             add_instructions=True,
         )
     )
+
+    # Add software development workflow (triggered after permission)
+    product_lead_agent.tools.append(
+        WorkflowTools(
+            workflow=software_development_workflow,
+            enable_run_workflow=True,
+            add_instructions=True,
+        )
+    )
+
     _workflow_tools_added = True
