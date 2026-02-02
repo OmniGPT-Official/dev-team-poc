@@ -469,7 +469,11 @@ Feedback written to: SECURITY_REVIEW.md
 # =============================================================================
 
 def check_approval(outputs: List[StepOutput]) -> bool:
-    """Check if both reviews approved. Returns True to EXIT loop."""
+    """Check if both reviews approved. Returns True to EXIT loop.
+
+    Loop structure: [Development, Parallel(Code Review, Security Review)]
+    So outputs[-1] is the Parallel step with nested steps for each review.
+    """
     print(f"\n{'='*60}")
     print(f"[CHECK_APPROVAL]")
     print(f"{'='*60}")
@@ -483,9 +487,10 @@ def check_approval(outputs: List[StepOutput]) -> bool:
         print(f"    step_type: {out.step_type}")
         print(f"    content length: {len(out.content or '')}")
         print(f"    success: {out.success}")
-        # Check if this output has nested steps (e.g., from Parallel)
         if out.steps:
             print(f"    nested steps: {[s.step_name for s in out.steps]}")
+            for nested in out.steps:
+                print(f"      - {nested.step_name}: {len(nested.content or '')} chars")
 
     if len(outputs) < 2:
         print(f"\n[DEBUG check_approval] === RESULT ===")
@@ -493,24 +498,40 @@ def check_approval(outputs: List[StepOutput]) -> bool:
         print(f"{'='*60}")
         return False
 
-    code_review = outputs[-2].content or ""
-    security_review = outputs[-1].content or ""
+    # Find the Parallel step (Reviews) which contains nested Code Review and Security Review
+    reviews_output = outputs[-1]  # Last output should be the Parallel step
+
+    code_review_content = ""
+    security_review_content = ""
+
+    if reviews_output.steps:
+        # Extract from nested steps inside Parallel
+        for nested_step in reviews_output.steps:
+            if nested_step.step_name == "Code Review":
+                code_review_content = nested_step.content or ""
+            elif nested_step.step_name == "Security Review":
+                security_review_content = nested_step.content or ""
+        print(f"\n[DEBUG check_approval] Found reviews in Parallel nested steps")
+    else:
+        # Fallback: maybe structure is different
+        print(f"\n[DEBUG check_approval] WARNING: No nested steps in outputs[-1], using content directly")
+        code_review_content = outputs[-1].content or ""
 
     print(f"\n[DEBUG check_approval] === REVIEW ANALYSIS ===")
-    print(f"  Code Review (output[-2]):")
-    print(f"    step_name: {outputs[-2].step_name}")
-    print(f"    content preview: {code_review[:300]}{'...' if len(code_review) > 300 else ''}")
-    print(f"    contains 'APPROVED': {'APPROVED' in code_review}")
-    print(f"    contains 'CHANGES_REQUESTED': {'CHANGES_REQUESTED' in code_review}")
+    print(f"  Code Review:")
+    print(f"    content length: {len(code_review_content)}")
+    print(f"    content preview: {code_review_content[:300]}{'...' if len(code_review_content) > 300 else ''}")
+    print(f"    contains 'APPROVED': {'APPROVED' in code_review_content}")
+    print(f"    contains 'CHANGES_REQUESTED': {'CHANGES_REQUESTED' in code_review_content}")
 
-    print(f"\n  Security Review (output[-1]):")
-    print(f"    step_name: {outputs[-1].step_name}")
-    print(f"    content preview: {security_review[:300]}{'...' if len(security_review) > 300 else ''}")
-    print(f"    contains 'APPROVED': {'APPROVED' in security_review}")
-    print(f"    contains 'CHANGES_REQUIRED': {'CHANGES_REQUIRED' in security_review}")
+    print(f"\n  Security Review:")
+    print(f"    content length: {len(security_review_content)}")
+    print(f"    content preview: {security_review_content[:300]}{'...' if len(security_review_content) > 300 else ''}")
+    print(f"    contains 'APPROVED': {'APPROVED' in security_review_content}")
+    print(f"    contains 'CHANGES_REQUIRED': {'CHANGES_REQUIRED' in security_review_content}")
 
-    code_ok = "APPROVED" in code_review and "CHANGES_REQUESTED" not in code_review
-    security_ok = "APPROVED" in security_review and "CHANGES_REQUIRED" not in security_review
+    code_ok = "APPROVED" in code_review_content and "CHANGES_REQUESTED" not in code_review_content
+    security_ok = "APPROVED" in security_review_content and "CHANGES_REQUIRED" not in security_review_content
 
     print(f"\n[DEBUG check_approval] === RESULT ===")
     print(f"  code_approved: {code_ok}")
