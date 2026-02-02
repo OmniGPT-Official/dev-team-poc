@@ -6,6 +6,17 @@ It imports agents, teams, and workflows from their respective modules.
 """
 
 import os
+import asyncio
+import sys
+
+# Fix for asyncio event loop issues on Python 3.11+
+# This ensures a consistent event loop policy across the application
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+else:
+    # On Unix/Linux, use the default event loop policy but ensure it's set
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
 from agno.os import AgentOS
 from agents.product_lead import product_lead_agent, add_workflow_tools
 from agents.research_agent import research_agent
