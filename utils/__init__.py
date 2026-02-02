@@ -30,12 +30,9 @@ from utils.github_mcp_wrapper import (
     GitHubMCPError,
 )
 
-# Knowledge base for project context
+# Knowledge base for project context (Agno's native Knowledge system)
 from utils.knowledge_base import (
-    KnowledgeBase,
     get_knowledge_base,
-    ProjectContext,
-    FeatureSpec,
 )
 
 __all__ = [
@@ -55,8 +52,5 @@ __all__ = [
     "smart_fetch_file",
     "GitHubMCPError",
     # Knowledge base
-    "KnowledgeBase",
     "get_knowledge_base",
-    "ProjectContext",
-    "FeatureSpec",
 ]

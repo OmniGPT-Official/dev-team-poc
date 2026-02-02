@@ -14,23 +14,43 @@ AI-powered product development system with end-to-end workflow automation.
 
 ## Quick Start
 
-### 1. Run the Server
+### 1. Create .env file
+
+Copy the example file and add your credentials:
 
 ```bash
-./run.sh
+cp .env.example .env
 ```
 
-Or with environment variables:
+Then edit `.env` and add your actual credentials:
 
 ```bash
-ANTHROPIC_API_KEY='your-anthropic-api-key' \
-OS_SECURITY_KEY='omnigpt' \
-GITHUB_TOKEN='your-github-token' \
-SUPABASE_ACCESS_TOKEN='your-supabase-token' \
+ANTHROPIC_API_KEY=your-anthropic-api-key-here
+OS_SECURITY_KEY=omnigpt
+GITHUB_TOKEN=your-github-token-here
+SUPABASE_ACCESS_TOKEN=your-supabase-token-here
+GOOGLE_CLIENT_ID=your-google-client-id-here
+GOOGLE_CLIENT_SECRET=your-google-client-secret-here
+```
+
+### 2. Run the Server
+
+```bash
+source .env
 uvicorn agno_agent:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 2. Enable Google Docs (Optional)
+Or use environment variables directly:
+
+```bash
+export ANTHROPIC_API_KEY='your-key'
+export OS_SECURITY_KEY='omnigpt'
+export GITHUB_TOKEN='your-token'
+export SUPABASE_ACCESS_TOKEN='your-token'
+uvicorn agno_agent:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### 3. Enable Google Docs (Optional)
 
 To enable Google Docs creation, run the OAuth server once:
 
@@ -42,10 +62,16 @@ Visit `http://localhost:8000/authorize` and authorize the app. The token will be
 
 ## Environment Variables
 
-- `ANTHROPIC_API_KEY`: Your Anthropic API key (required)
+**Required:**
+- `ANTHROPIC_API_KEY`: Your Anthropic API key
 - `OS_SECURITY_KEY`: Security key for the system (default: `omnigpt`)
-- `GITHUB_TOKEN`: GitHub Personal Access Token (optional, for GitHub operations)
-- `SUPABASE_ACCESS_TOKEN`: Supabase access token (optional, for Supabase MCP)
+- `DATABASE_URL`: PostgreSQL connection string for Knowledge Base
+
+**Optional:**
+- `GITHUB_TOKEN`: GitHub Personal Access Token (for GitHub operations)
+- `SUPABASE_ACCESS_TOKEN`: Supabase access token (for Supabase MCP)
+- `GOOGLE_CLIENT_ID`: Google OAuth Client ID (for Google Docs integration)
+- `GOOGLE_CLIENT_SECRET`: Google OAuth Client Secret (for Google Docs integration)
 
 ## Architecture
 

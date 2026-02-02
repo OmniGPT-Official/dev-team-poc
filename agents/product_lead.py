@@ -2,7 +2,8 @@
 Product Lead Agent
 
 Asks business questions, creates PRD or Feature Spec, writes to Google Docs.
-Equipped with: KnowledgeBaseTools, GoogleDocsTools, product_requirements_workflow (lazy).
+Equipped with: GoogleDocsTools, product_requirements_workflow (lazy).
+Knowledge base is provided by the team.
 """
 
 from agno.agent import Agent
@@ -10,7 +11,6 @@ from agno.db.sqlite import SqliteDb
 from agno.models.anthropic import Claude
 
 from instructions.product_lead_instructions import PRODUCT_LEAD_INSTRUCTIONS
-from tools.knowledge_base_tools import KnowledgeBaseTools
 from tools.google_docs_tools import GoogleDocsTools
 
 
@@ -23,7 +23,6 @@ product_lead_agent = Agent(
     markdown=True,
     instructions=PRODUCT_LEAD_INSTRUCTIONS,
     tools=[
-        KnowledgeBaseTools(),
         GoogleDocsTools(),
     ],
 )

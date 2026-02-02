@@ -15,6 +15,7 @@ from agents.product_lead import product_lead_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
 from agents.security_engineer import security_engineer_agent
+from utils.knowledge_base import get_knowledge_base
 
 
 product_team = Team(
@@ -26,6 +27,9 @@ product_team = Team(
         software_engineer_agent,
         security_engineer_agent,
     ],
+    knowledge=get_knowledge_base(),
+    search_knowledge=True,
+    add_knowledge_to_context=True,
     instructions=[
         """You are the Product Development Team.
 
@@ -36,7 +40,8 @@ product_team = Team(
 - Determines if this is a NEW project or EXISTING product
 - Creates PRD (new) or Feature Spec (existing)
 - Writes documents to Google Docs and shares the link
-- Has: KnowledgeBaseTools, GoogleDocsTools, WorkflowTools
+- Has: GoogleDocsTools, WorkflowTools
+- Can search knowledge base (automatic via team)
 
 **Lead Engineer**
 - Designs technical architecture
@@ -69,10 +74,11 @@ product_team = Team(
 
 ## RULES
 
-1. **DELEGATE TO PRODUCT LEAD FIRST** - The user talks to Product Lead for requirements
-2. **NO TECHNICAL JARGON WITH USER** - Keep it business-focused and simple
-3. **ALWAYS CREATE GOOGLE DOC** - Every PRD/Feature Spec must be saved to Google Docs
-4. **ALWAYS SHARE THE LINK** - User must get a document link at the end
+1. **ALWAYS SEARCH KNOWLEDGE BASE FIRST** - Before starting any work, search the knowledge base for relevant context
+2. **DELEGATE TO PRODUCT LEAD FIRST** - The user talks to Product Lead for requirements
+3. **NO TECHNICAL JARGON WITH USER** - Keep it business-focused and simple
+4. **ALWAYS CREATE GOOGLE DOC** - Every PRD/Feature Spec must be saved to Google Docs
+5. **ALWAYS SHARE THE LINK** - User must get a document link at the end
 """,
     ],
     markdown=True,

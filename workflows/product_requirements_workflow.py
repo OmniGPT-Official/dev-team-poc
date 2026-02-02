@@ -27,7 +27,7 @@ from agno.workflow.condition import Condition
 from agno.workflow.types import StepInput, StepOutput
 from agno.utils.log import log_info, log_debug
 
-from utils.knowledge_base import get_knowledge_base
+# Knowledge base is handled automatically by Agno when attached to team/agent
 
 
 # ============================================================================
@@ -256,23 +256,13 @@ def create_feature_spec(step_input: StepInput) -> StepOutput:
     feature_name = extract_param(context, "FEATURE_NAME") or "New Feature"
     description = extract_param(context, "DESCRIPTION") or context
 
-    # Get existing project context from knowledge base
-    kb = get_knowledge_base()
-    existing_context = ""
-    if hasattr(kb, 'list_projects'):
-        projects = kb.list_projects()
-        for project in projects:
-            if hasattr(project, 'project_name') and project.project_name.lower() == project_name.lower():
-                existing_context = kb.get_project_context_summary(project.project_id)
-                break
+    # Note: Existing project context is automatically provided by Agno's Knowledge system
+    # when the team has knowledge base attached
 
     prompt = f"""Create a Feature Specification for this EXISTING product:
 
 **Project Name**: {project_name}
 **Feature Name**: {feature_name}
-
-**Existing Product Context**:
-{existing_context if existing_context else "No existing context available."}
 
 **Feature Request**:
 {description}
@@ -293,54 +283,18 @@ Create a focused Feature Spec now. Use only the information provided above.
 
 def store_and_create_doc(step_input: StepInput) -> StepOutput:
     """
-    Store the document in knowledge base and create Google Doc.
+    Create Google Doc (knowledge base storage is automatic via Agno).
     """
     content = step_input.previous_step_content or ""
 
-    log_info("[STEP:store_and_create_doc] Storing document")
+    log_info("[STEP:store_and_create_doc] Creating document")
 
     # Extract metadata
     project_type = "new" if "project_type: new" in content.lower() else "existing"
     project_name = extract_param(content, "PROJECT_NAME") or "Unnamed"
-    slug = project_name.lower().replace(" ", "-")
 
-    # Store in knowledge base
-    kb = get_knowledge_base()
-
-    # Try to find existing project by name
-    existing = None
-    if hasattr(kb, 'list_projects'):
-        projects = kb.list_projects()
-        for project in projects:
-            if hasattr(project, 'project_name') and project.project_name.lower() == project_name.lower():
-                existing = project
-                break
-
-    if existing:
-        if project_type == "new":
-            kb.update_project(existing.project_id, prd_content=content)
-        else:
-            feature_name = extract_param(content, "FEATURE_NAME") or "New Feature"
-            kb.add_feature(
-                project_id=existing.project_id,
-                feature_name=feature_name,
-                description=content[:500],
-                requirements=content,
-                acceptance_criteria=[],
-                priority="P1"
-            )
-        project_id = existing.project_id
-    else:
-        project = kb.create_project(
-            project_name=project_name,
-            project_type=project_type,
-            github_owner="pending",
-            github_repo=slug,
-            description=content[:500]
-        )
-        if project_type == "new":
-            kb.update_project(project.project_id, prd_content=content)
-        project_id = project.project_id
+    # Note: Content is automatically stored in Agno's Knowledge base
+    # when the team has knowledge=get_knowledge_base() attached
 
     # Create Google Doc
     from tools.google_docs_tools import GoogleDocsTools
@@ -380,7 +334,6 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
 
 - **Type:** {doc_type}
 - **Project:** {project_name}
-- **Knowledge Base ID:** {project_id}
 """
 
     if doc_url:
