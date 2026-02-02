@@ -222,15 +222,21 @@ def run_development(step_input: StepInput) -> StepOutput:
 
 **CRITICAL INSTRUCTIONS - READ CAREFULLY:**
 
-**STEP 1: CREATE THE REPOSITORY (call ONCE)**
+**STEP 1: CHECK IF REPOSITORY EXISTS (call ONCE)**
+Call `get_repository` with these parameters:
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+
+If you get a successful response (repository exists), skip to STEP 3.
+If you get a "Not Found" error, proceed to STEP 2.
+
+**STEP 2: CREATE THE REPOSITORY (ONLY if Step 1 returned "Not Found")**
 Call `create_repository` with these parameters:
 - name: "{_state.github_repo}"
 - description: "Implementation for {workflow_input.product_name}"
 - private: false
 
-Wait for the result. If repo already exists (error 422), that's fine - proceed.
-
-**STEP 2: SAVE YOUR CODE FILE (call ONCE)**
+**STEP 3: SAVE YOUR CODE FILE (call ONCE)**
 Call `create_or_update_file` with these parameters:
 - owner: "{_state.github_owner}"
 - repo: "{_state.github_repo}"
@@ -240,8 +246,9 @@ Call `create_or_update_file` with these parameters:
 - branch: "main"
 
 **IMPORTANT RULES:**
-- Call each tool EXACTLY ONCE - do NOT retry if you get a result back
-- Do NOT call `get_file_contents` or `get_repository` in this step
+- Call `get_repository` first to check if the repo exists
+- Only call `create_repository` if the repo does NOT exist (Not Found error)
+- NEVER call `create_repository` if the repo already exists - this causes errors
 - After `create_or_update_file` returns, STOP calling tools and write your response
 - If a tool call fails with an error, report the error - do NOT retry
 

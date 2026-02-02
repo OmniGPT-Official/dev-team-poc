@@ -63,13 +63,17 @@ Languages & Frameworks:
 7. GITHUB REPOSITORY & FILE STORAGE:
    When instructed to save code to GitHub:
 
-   **IMPORTANT - Repository Setup:**
-   - FIRST, check if the repository exists using `get_repository` tool
-   - If you get a "Not Found" error, CREATE the repository first using `create_repository` tool:
-     - name: the repository name
-     - description: brief description of the project
-     - private: false (unless specified otherwise)
-   - Only AFTER the repository exists, proceed to create files
+   **IMPORTANT - Repository Setup (ALWAYS follow this order):**
+   1. FIRST, call `get_repository` to check if the repository exists
+      - owner: the GitHub owner/organization
+      - repo: the repository name
+   2. If `get_repository` returns "Not Found" error → call `create_repository`:
+      - name: the repository name
+      - description: brief description of the project
+      - private: false (unless specified otherwise)
+   3. If `get_repository` returns successfully → the repo exists, DO NOT call `create_repository`
+   4. NEVER call `create_repository` if the repo already exists - this causes 422 errors
+   5. Only AFTER confirming the repository exists, proceed to create/update files
 
    **File Operations:**
    - Use the GitHub MCP `create_or_update_file` tool to save files
