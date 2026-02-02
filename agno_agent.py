@@ -7,7 +7,7 @@ It imports agents, teams, and workflows from their respective modules.
 
 import os
 from agno.os import AgentOS
-from agents.product_lead import product_lead_agent, add_workflow_tools
+from agents.product_lead import product_lead_agent
 from agents.research_agent import research_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
@@ -16,14 +16,11 @@ from workflows.product_discovery_workflow import discovery_and_requirements_work
 from workflows.architecture_design_workflow import architecture_design_workflow
 from workflows.software_development_workflow import software_development_workflow
 
-# Add workflow tools to product lead agent (after all imports to avoid circular dependency)
-add_workflow_tools()
-
 # Initialize Agent OS
 agent_os = AgentOS(
     name="Agent OS",
     agents=[
-        product_lead_agent,  # Main orchestrator - has Software Development workflow as tool
+        product_lead_agent,
         research_agent,
         lead_engineer_agent,
         software_engineer_agent
@@ -32,7 +29,7 @@ agent_os = AgentOS(
         product_team,  # Product Development Team with Product Lead as leader
     ],
     workflows=[
-        software_development_workflow,  # Main workflow (orchestrates Product Discovery + Architecture Design + Implementation Cycle)
+        software_development_workflow,  # PRD + Architecture workflow
         architecture_design_workflow,
         discovery_and_requirements_workflow,
     ],

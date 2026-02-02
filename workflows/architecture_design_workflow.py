@@ -1,9 +1,11 @@
 """
-Architecture Design Workflow
+Architecture Design Steps
 
-Flow: PRD → Technical Architecture
+Flow: PRD -> Technical Architecture
 Input: PRD (string)
 Output: Architecture (string)
+
+Uses grouped steps pattern for composition into larger workflows.
 """
 
 import os
@@ -12,7 +14,7 @@ import asyncio
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agno.workflow import Step, Workflow
+from agno.workflow import Step, Steps, Workflow
 from agno.workflow.types import StepInput, StepOutput
 from agno.utils.log import log_info, log_debug
 
@@ -61,36 +63,19 @@ Format as clear markdown.
     return StepOutput(content=output, success=True)
 
 
-architecture_design_workflow = Workflow(
+# Grouped steps for architecture design (reusable in larger workflows)
+architecture_design_steps = Steps(
     name="Architecture Design",
-    stream=False,
-    description="PRD → Architecture",
+    description="Technical architecture creation sequence",
     steps=[
         Step(name="architecture_design", executor=run_architecture_design),
     ]
 )
 
-
-def run_architecture_design_workflow(prd: str) -> dict:
-    """Run the workflow with PRD string."""
-    log_info("[WORKFLOW:architecture_design] ========== STARTING ==========")
-    log_debug(f"[WORKFLOW:architecture_design] INPUT:\n{prd[:500]}{'...' if len(prd) > 500 else ''}")
-
-    result = architecture_design_workflow.run(input=prd)
-    output = result.content or ""
-
-    log_info("[WORKFLOW:architecture_design] ========== COMPLETE ==========")
-    log_debug(f"[WORKFLOW:architecture_design] OUTPUT:\n{output[:500]}{'...' if len(output) > 500 else ''}")
-
-    return {"success": True, "content": output}
-
-
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--prd-file", required=True)
-    args = parser.parse_args()
-    with open(args.prd_file) as f:
-        prd = f.read()
-    result = run_architecture_design_workflow(prd)
-    print(result["content"])
+# Standalone workflow for direct use (registered with AgentOS)
+architecture_design_workflow = Workflow(
+    name="Architecture Design",
+    stream=False,
+    description="PRD -> Architecture",
+    steps=[architecture_design_steps]
+)

@@ -1,9 +1,11 @@
 """
-Product Discovery Workflow
+Product Discovery Steps
 
-Flow: Analysis → PRD Creation
+Flow: Analysis -> PRD Creation
 Input: User request (string)
 Output: PRD (string)
+
+Uses grouped steps pattern for composition into larger workflows.
 """
 
 import os
@@ -12,7 +14,7 @@ import asyncio
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agno.workflow import Step, Workflow
+from agno.workflow import Step, Steps, Workflow
 from agno.workflow.types import StepInput, StepOutput
 from agno.utils.log import log_info, log_debug
 
@@ -98,38 +100,34 @@ NO HALLUCINATION. Keep it concise.
     return StepOutput(content=output, success=True)
 
 
-product_discovery_workflow = Workflow(
+# Grouped steps for product discovery (reusable in larger workflows)
+product_discovery_steps = Steps(
     name="Product Discovery",
-    stream=False,
-    description="Analysis → PRD",
+    description="Analysis -> PRD creation sequence",
     steps=[
         Step(name="analysis", executor=run_analysis),
         Step(name="prd_creation", executor=run_prd_creation),
     ]
 )
 
-# Alias
-discovery_and_requirements_workflow = product_discovery_workflow
+# Standalone workflow for direct use (registered with AgentOS)
+discovery_and_requirements_workflow = Workflow(
+    name="Product Discovery",
+    stream=False,
+    description="Analysis -> PRD",
+    steps=[product_discovery_steps]
+)
 
 
 def run_discovery_and_requirements(request: str) -> dict:
-    """Run the workflow with a request string."""
+    """Run the workflow with a request string (used by tests)."""
     log_info("[WORKFLOW:product_discovery] ========== STARTING ==========")
     log_debug(f"[WORKFLOW:product_discovery] INPUT:\n{request}")
 
-    result = product_discovery_workflow.run(input=request)
+    result = discovery_and_requirements_workflow.run(input=request)
     output = result.content or ""
 
     log_info("[WORKFLOW:product_discovery] ========== COMPLETE ==========")
     log_debug(f"[WORKFLOW:product_discovery] OUTPUT:\n{output[:500]}{'...' if len(output) > 500 else ''}")
 
     return {"success": True, "content": output}
-
-
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--request", required=True)
-    args = parser.parse_args()
-    result = run_discovery_and_requirements(args.request)
-    print(result["content"])
