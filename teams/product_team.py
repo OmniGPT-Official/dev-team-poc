@@ -29,6 +29,7 @@ software_dev_tools = WorkflowTools(
 
 implementation_tools = WorkflowTools(
     workflow=implementation_cycle_workflow,
+    async_mode=True,  # Required for async executors using MCP tools
 )
 
 # Product Development Team with workflow tools
