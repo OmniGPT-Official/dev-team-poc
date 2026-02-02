@@ -32,12 +32,25 @@ git push origin main
 
 In your Railway project dashboard, go to **Variables** and add:
 
+#### Required Variables:
 ```
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 OS_SECURITY_KEY=omnigpt
+GITHUB_TOKEN=your_github_personal_access_token_here
 ```
 
-**Important:** Replace `your_anthropic_api_key_here` with your actual Anthropic API key.
+#### Optional Variables (for additional features):
+```
+SUPABASE_ACCESS_TOKEN=your_supabase_token_here
+VERCEL_TOKEN=your_vercel_token_here
+```
+
+**Important:**
+- Replace `your_anthropic_api_key_here` with your actual Anthropic API key from https://console.anthropic.com/
+- Replace `your_github_personal_access_token_here` with a GitHub Personal Access Token
+  - Create one at: https://github.com/settings/tokens
+  - Required scopes: `repo` (full control of private repositories)
+  - **Without this token, workflows will fail when trying to create repos or store files**
 
 ### 4. Deploy
 
@@ -56,11 +69,18 @@ Railway will automatically:
 
 ## Running Locally
 
-To test the configuration locally:
+To test the configuration locally, first copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and add your tokens. Run the server:
 
 ```bash
 export ANTHROPIC_API_KEY='your_api_key_here'
 export OS_SECURITY_KEY='omnigpt'
+export GITHUB_TOKEN='your_github_token_here'
 export PORT=8000
 
 uvicorn agno_agent:app --host 0.0.0.0 --port 8000
@@ -69,8 +89,10 @@ uvicorn agno_agent:app --host 0.0.0.0 --port 8000
 Or use the Python script directly:
 
 ```bash
-ANTHROPIC_API_KEY='your_api_key_here' OS_SECURITY_KEY='omnigpt' python agno_agent.py
+ANTHROPIC_API_KEY='your_api_key' OS_SECURITY_KEY='omnigpt' GITHUB_TOKEN='your_github_token' python agno_agent.py
 ```
+
+**Important:** Without the `GITHUB_TOKEN`, workflows will fail when agents try to create repositories or store files.
 
 ## Access Your Deployment
 
@@ -102,6 +124,14 @@ Check your deployment logs in the Railway dashboard:
 - Verify environment variables are set correctly
 - Check deployment logs for error messages
 - Ensure ANTHROPIC_API_KEY is valid
+- Ensure GITHUB_TOKEN is set and has correct scopes (repo access)
+- If workflows fail with "Unauthorized" errors, check GitHub token
+
+### MCP Server Initialization Errors
+- MCP servers are downloaded via `npx` on first run (may take 30-60 seconds)
+- Check logs for "MCP server initialization" messages
+- If timeout errors occur, the server is likely still downloading packages
+- Railway deployments may need longer timeouts on first deploy
 
 ### Port Issues
 - Railway automatically sets the PORT environment variable

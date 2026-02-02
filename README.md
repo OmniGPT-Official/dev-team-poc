@@ -4,7 +4,9 @@ A modular AI agent system powered by Claude Sonnet 4.5, featuring end-to-end pro
 
 ## 📚 Documentation
 
+- **[MCP_SETUP_GUIDE.md](MCP_SETUP_GUIDE.md)** - 🔥 **REQUIRED**: MCP servers & GitHub token setup
 - **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Quick start guide for the Product Team Lead agent
+- **[RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md)** - Deploy to Railway with environment variables
 - **[Software Development Workflow](workflow_readme/software_development_workflow.md)** - Complete workflow documentation
 - **[Product Discovery Workflow](workflow_readme/product_discovery_worklow.md)** - PRD creation workflow
 - **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** - Project organization guide
@@ -18,17 +20,29 @@ A modular AI agent system powered by Claude Sonnet 4.5, featuring end-to-end pro
 source venv/bin/activate
 ```
 
-### 2. Set Up API Key
+### 2. Set Up Environment Variables
 
-Create a `.env` file and add your Anthropic API key:
+Create a `.env` file from the example:
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env` and replace `your_api_key_here` with your actual Anthropic API key.
+Then edit `.env` and add your tokens:
 
-Get your API key from: https://console.anthropic.com/
+#### Required Variables:
+- **ANTHROPIC_API_KEY** - Get from https://console.anthropic.com/
+- **OS_SECURITY_KEY** - Use `omnigpt` (or your custom security key)
+- **GITHUB_TOKEN** - 🔥 **CRITICAL**: Required for workflows to work!
+  - Create at: https://github.com/settings/tokens
+  - Required scope: `repo` (full control of private repositories)
+  - See [MCP_SETUP_GUIDE.md](MCP_SETUP_GUIDE.md) for detailed instructions
+
+#### Optional Variables:
+- **SUPABASE_ACCESS_TOKEN** - Only if using Supabase features
+- **VERCEL_TOKEN** - Only if using Vercel deployment features
+
+**⚠️ Without GITHUB_TOKEN, workflows will fail!** See the [MCP Setup Guide](MCP_SETUP_GUIDE.md) for complete instructions.
 
 ### 3. Run the Agent
 
