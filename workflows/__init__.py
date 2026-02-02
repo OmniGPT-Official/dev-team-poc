@@ -1,35 +1,23 @@
 """
 Workflows Module
 
-Simple string-in, string-out workflows.
+Only 2 workflows:
+- product_requirements_workflow: Creates PRD or Feature Spec + Google Doc
+- software_development_workflow: End-to-end development (PRD -> Architecture -> Implementation)
 """
 
-from workflows.product_discovery_workflow import (
-    product_discovery_workflow,
-    discovery_and_requirements_workflow,
-    run_discovery_and_requirements,
-)
-from workflows.architecture_design_workflow import (
-    architecture_design_workflow,
-    run_architecture_design_workflow,
+from workflows.product_requirements_workflow import (
+    product_requirements_workflow,
+    run_product_requirements,
 )
 from workflows.software_development_workflow import (
     software_development_workflow,
     run_software_development,
 )
-from workflows.implementation_cycle_workflow import (
-    implementation_cycle_workflow,
-    run_implementation_cycle,
-)
 
 __all__ = [
-    "product_discovery_workflow",
-    "discovery_and_requirements_workflow",
-    "run_discovery_and_requirements",
-    "architecture_design_workflow",
-    "run_architecture_design_workflow",
+    "product_requirements_workflow",
+    "run_product_requirements",
     "software_development_workflow",
     "run_software_development",
-    "implementation_cycle_workflow",
-    "run_implementation_cycle",
 ]

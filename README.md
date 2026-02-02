@@ -1,200 +1,86 @@
-# Agent OS - Product Development AI System
+# Agent-OS
 
-A modular AI agent system powered by Claude Sonnet 4.5, featuring end-to-end product development workflows from requirements to technical architecture.
+AI-powered product development system with end-to-end workflow automation.
 
-## 📚 Documentation
+## Features
 
-- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Quick start guide for the Product Team Lead agent
-- **[Software Development Workflow](workflow_readme/software_development_workflow.md)** - Complete workflow documentation
-- **[Product Discovery Workflow](workflow_readme/product_discovery_worklow.md)** - PRD creation workflow
-- **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** - Project organization guide
-- **[STRUCTURE.md](STRUCTURE.md)** - Detailed architecture documentation
+- **Product Lead Agent**: Conducts product discovery, creates PRDs and Feature Specs
+- **Lead Engineer Agent**: Designs technical architecture
+- **Software Engineer Agent**: Implements code
+- **Security Engineer Agent**: Reviews code for security
+- **Google Docs Integration**: Automatically creates PRDs and Feature Specs in Google Docs
+- **Knowledge Base**: Stores project context and requirements
+- **2 Workflows**: Product Requirements + Software Development
 
-## Setup Instructions
+## Quick Start
 
-### 1. Activate Virtual Environment
-
-```bash
-source venv/bin/activate
-```
-
-### 2. Set Up API Key
-
-Create a `.env` file and add your Anthropic API key:
+### 1. Run the Server
 
 ```bash
-cp .env.example .env
+./run.sh
 ```
 
-Then edit `.env` and replace `your_api_key_here` with your actual Anthropic API key.
-
-Get your API key from: https://console.anthropic.com/
-
-### 3. Run the Agent
-
-Using environment variables:
+Or with environment variables:
 
 ```bash
-ANTHROPIC_API_KEY='your-key' OS_SECURITY_KEY='omnigpt' ./venv/bin/uvicorn agno_agent:app --host 0.0.0.0 --port 8000 --reload
+ANTHROPIC_API_KEY='your-anthropic-api-key' \
+OS_SECURITY_KEY='omnigpt' \
+GITHUB_TOKEN='your-github-token' \
+SUPABASE_ACCESS_TOKEN='your-supabase-token' \
+uvicorn agno_agent:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Or export them first:
+### 2. Enable Google Docs (Optional)
+
+To enable Google Docs creation, run the OAuth server once:
 
 ```bash
-export ANTHROPIC_API_KEY='your-key'
-export OS_SECURITY_KEY='omnigpt'
-./venv/bin/uvicorn agno_agent:app --host 0.0.0.0 --port 8000 --reload
+python tests/google_docs/oauth_server.py
 ```
 
-The agent will start running on http://localhost:8000 with hot-reload enabled.
+Visit `http://localhost:8000/authorize` and authorize the app. The token will be saved to `tests/google_docs/token.json`.
 
-## Project Structure
+## Environment Variables
+
+- `ANTHROPIC_API_KEY`: Your Anthropic API key (required)
+- `OS_SECURITY_KEY`: Security key for the system (default: `omnigpt`)
+- `GITHUB_TOKEN`: GitHub Personal Access Token (optional, for GitHub operations)
+- `SUPABASE_ACCESS_TOKEN`: Supabase access token (optional, for Supabase MCP)
+
+## Architecture
 
 ```
 Agent-Os/
-├── agno_agent.py           # Main application entry point
-│
-├── agents/                 # Agent definitions (each agent = 1 file)
-│   ├── product_lead.py          # 🆕 Product Lead (orchestrator with WorkflowTools)
-│   ├── lead_engineer.py         # Lead Engineer agent
-│   ├── software_engineer.py     # Software Engineer agent
-│   └── research_agent.py        # Research agent with DuckDuckGo
-│
-├── instructions/           # Agent instructions (each agent = 1 file)
-│   ├── product_lead_instructions.py
-│   ├── lead_engineer_instructions.py
-│   └── research_agent_instructions.py
-│
-├── tools/                  # Custom tools (each tool = 1 file)
-│   └── product_discovery_tool.py
-│
-├── teams/                  # Team configurations (each team = 1 file)
-│   └── product_team.py
-│
-├── workflows/              # Workflows (each workflow = 1 file)
-│   ├── software_development_workflow.py    # 🆕 Main orchestrator
-│   ├── product_discovery_workflow.py       # PRD creation
-│   ├── architecture_design_workflow.py     # 🆕 Architecture design
-│   └── code_review_workflow.py             # Code review
-│
-├── workflow_readme/        # Workflow documentation
-│   ├── software_development_workflow.md    # 🆕 Complete guide
-│   └── product_discovery_worklow.md
-│
-├── requirements.txt        # Python dependencies
-├── .env                    # Environment variables (API keys)
-├── SETUP_GUIDE.md         # 🆕 Quick start guide
-└── venv/                   # Virtual environment
+├── agents/              # 4 agents: product_lead, lead_engineer, software_engineer, security_engineer
+├── teams/               # product_team (all 4 agents)
+├── workflows/           # 2 workflows: product_requirements, software_development
+├── tools/               # Custom tools: GoogleDocsTools, KnowledgeBaseTools, GitHubTools
+├── instructions/        # Agent instructions
+├── utils/               # Knowledge base utilities
+└── tests/               # Test files for Google Docs, GitHub MCP, etc.
 ```
 
-**📖 See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for complete guide on where to add new agents, tools, teams, and workflows.**
+## Workflows
 
-## 🚀 Product Lead Agent (Enhanced)
+### Product Requirements Workflow
+- Asks business questions (new vs existing project)
+- Creates PRD (new) or Feature Spec (existing)
+- Saves to knowledge base
+- Creates Google Doc with shareable link
 
-**The ultimate orchestrator** - Talk to one agent that manages the entire software development process.
+### Software Development Workflow
+1. Product Requirements (PRD/Feature Spec)
+2. Architecture Design (Lead Engineer)
+3. Implementation (Software Engineer)
+4. Summary with links
 
-### Features:
-- **Automated Workflow Orchestration** - Triggers complete software development workflow
-- **End-to-End Process** - From idea to implementation plan
-- **Nested Workflows** - Product Discovery + Architecture Design
-- **File Outputs** - Generates PRD and ticket.md files
-- **Conversational Interface** - Just describe what you want to build
+## API
 
-### Quick Start:
+The server runs on `http://localhost:8000` with FastAPI endpoints for agents, teams, and workflows.
 
-```python
-from agents.product_lead import product_lead_agent
+## Testing
 
-product_lead_agent.print_response(
-    "Create a blog post scheduling system",
-    stream=True
-)
-```
-
-**Output:**
-- `prd_blog_post_scheduling_[timestamp].md` - Product Requirements
-- `ticket_blog_post_scheduling_[timestamp].md` - Technical Architecture
-
-See [SETUP_GUIDE.md](SETUP_GUIDE.md) for complete usage examples.
-
----
-
-## 🔄 Software Development Workflow (NEW)
-
-**Nested workflow** that combines Product Discovery + Architecture Design:
-
-```
-Product Lead Agent
-    ↓
-Software Development Workflow
-    ├── Product Discovery Workflow
-    │   └── Creates PRD (prd_[name]_[timestamp].md)
-    │
-    └── Architecture Design Workflow
-        └── Creates Ticket (ticket_[name]_[timestamp].md)
-```
-
-### Features:
-- ✅ Automatic PRD creation
-- ✅ Technical architecture design
-- ✅ Implementation task breakdown
-- ✅ Conditional market research
-- ✅ Pass data between workflows
-- ✅ Persistent documentation files
-
-See [Software Development Workflow Documentation](workflow_readme/software_development_workflow.md) for details.
-
----
-
-## 👥 Agents
-
-### Product Lead Agent (Orchestrator)
-- Manages complete software development process
-- Uses WorkflowTools to trigger nested workflows
-- Creates PRD + Architecture tickets
-- Creates PRDs and requirements documents
-- Defines goals and acceptance criteria
-- RICE prioritization framework
-
-### Lead Engineer Agent
-- Designs technical architecture
-- Creates technical specifications
-- Defines implementation approach
-
-### Software Engineer Agent
-- Implements features
-- Code reviews
-- Technical execution
-
-## Research Agent Features
-
-The Research Agent provides:
-- DuckDuckGo web search capabilities
-- Market trends and competitor analysis
-- User insights and industry research
-- Data synthesis and recommendations
-
-## System Features
-
-- Claude Sonnet 4.5 model
-- SQLite database for conversation history
-- Modular architecture (separate agents, teams, instructions)
-- DuckDuckGo web search integration
-- Markdown support
-- Auto-reload on code changes
-- Extensible design for adding new agents
-
-## Adding New Components
-
-**See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for complete step-by-step guides on:**
-- Creating new agents (each in separate file)
-- Adding custom tools (each in separate file)
-- Building teams (each team in separate file)
-- Creating workflows (each workflow in separate file)
-- Adding instructions (each agent's instructions in separate file)
-
-**Quick Summary:**
-- **New Agent** → `agents/agent_name.py` + `instructions/agent_name_instructions.py`
-- **New Tool** → `tools/tool_name.py`
-- **New Team** → `teams/team_name.py`
-- **New Workflow** → `workflows/workflow_name.py`
+- Google Docs: `tests/google_docs/`
+- GitHub MCP: `tests/github_mcp/`
+- Supabase MCP: `tests/supabase_mcp/`
+- Vercel MCP: `tests/vercel_mcp/`

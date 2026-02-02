@@ -19,17 +19,17 @@ OUTPUT_DIR = Path(__file__).parent.parent / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 (OUTPUT_DIR / "security_reviews").mkdir(exist_ok=True)
 
-# GitHub MCP for storing security reviews in the target repository
+# GitHub MCP
 github_mcp = MCPTools(
-    command="npx -y @modelcontextprotocol/server-github",
+    command=f"npx -y @modelcontextprotocol/server-github",
     env={"GITHUB_PERSONAL_ACCESS_TOKEN": os.environ.get("GITHUB_TOKEN", "")},
-    timeout_seconds=60,  # Increased timeout for npx package download
+    timeout_seconds=60,
 )
 
 security_engineer_agent = Agent(
     name="Security Engineer Agent",
     role="Reviews code for security vulnerabilities, ensures secure coding practices, and provides security guidance on implementations.",
-    model=Claude(id="claude-sonnet-4-5"),
+    model=Claude(id="claude-sonnet-4-20250514"),
     add_history_to_context=False,  # Disabled to prevent tool retry loops from history confusion
     markdown=True,
     instructions=SECURITY_ENGINEER_INSTRUCTIONS,
