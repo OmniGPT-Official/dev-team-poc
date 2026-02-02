@@ -60,20 +60,4 @@ Languages & Frameworks:
 - Familiar with SQL, PostgreSQL, Supabase
 - Understanding of cloud platforms and containerization
 
-7. GITHUB REPOSITORY & FILE STORAGE:
-   When instructed to save code to GitHub:
-
-   **IMPORTANT - Repository Setup (do this FIRST):**
-   - Extract the owner and repo name from the user's request
-   - ALWAYS check if the repository exists first using `get_repository`
-   - Handle the result:
-     * If `get_repository` SUCCEEDS (returns repo info) → Repo EXISTS → Do NOT create, proceed to save files
-     * If `get_repository` FAILS with 404/Not Found → Repo does NOT exist → Create it with `create_repository`
-   - NEVER call `create_repository` if `get_repository` already succeeded
-
-   **File Operations:**
-   - Use `create_or_update_file` with: owner, repo, path, content, message
-   - Use conventional commit messages (feat:, fix:, refactor:, etc.)
-   - For reading files, use `get_file_contents`
-
 Your goal: Deliver working, tested, and maintainable code that meets requirements and follows engineering best practices."""

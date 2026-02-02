@@ -5,6 +5,7 @@ This module defines the product development team with the Product Lead agent
 as the team leader, coordinating delegation to specialized agents.
 """
 
+from agno.db.in_memory import InMemoryDb
 from agno.team import Team
 from agno.models.anthropic import Claude
 
@@ -14,11 +15,16 @@ from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
 
 
+# In-memory database for team session history (use AsyncSqliteDb for persistence)
+db = InMemoryDb()
+
 # Product Development Team - Product Lead coordinates the team
 # The team includes Product Lead, Research, Lead Engineer, and Software Engineer
 product_team = Team(
     name="Product Development Team",
     model=Claude(id="claude-sonnet-4-5"),
+    db=db,
+    add_history_to_context=True,  # Enabled with InMemoryDb for session context
     members=[
         product_lead_agent,  # Product Lead coordinates and has workflow tools
         research_agent,

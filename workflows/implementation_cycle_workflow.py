@@ -1,27 +1,67 @@
 """
 Implementation Cycle Workflow
 
-Flow: Dev → Code Review → Security Review → (loop if changes requested)
+Flow: Setup -> [Development -> Code Review -> Security Review] (loop until approved) -> Summary
 
-Each agent receives the previous agent's output as a string via step_input.previous_step_content.
+The workflow loops until both lead engineer and security engineer approve the code.
+Errors don't break the loop - they become feedback for the next iteration to self-correct.
 All artifacts are stored in GitHub via MCP tools.
 """
 
 import os
-import re
 import sys
+import json
 import asyncio
+import traceback
+from datetime import datetime
+from pathlib import Path
 from typing import List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from agno.db.in_memory import InMemoryDb
 from agno.workflow import Loop, Step, Workflow
 from agno.workflow.types import StepInput, StepOutput
-from agno.utils.log import log_info, log_debug
 
 from agents.software_engineer import software_engineer_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.security_engineer import security_engineer_agent
+
+
+# Logging setup
+LOG_DIR = Path(__file__).parent.parent / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+_log_file = None
+_iteration = 0
+
+
+def init_log():
+    """Initialize log file with timestamp."""
+    global _log_file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _log_file = LOG_DIR / f"workflow_run_{timestamp}.log"
+    return _log_file
+
+
+def log_entry(category: str, name: str, data: dict):
+    """Append a log entry with timestamp, category, name, and data."""
+    if _log_file is None:
+        init_log()
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "category": category,
+        "name": name,
+        "data": data
+    }
+    with open(_log_file, "a") as f:
+        f.write(json.dumps(entry, indent=2) + "\n---\n")
+    print(f"[{category}:{name}] logged")
+
+
+# Hardcoded for testing - replace with actual values
+OWNER = "OmniGPT-Official"
+REPO = "test-demo-repo"
 
 
 def _run_async(coro):
@@ -33,144 +73,237 @@ def _run_async(coro):
         loop.close()
 
 
-# Simple iteration counter
-_iteration = 0
+def step_setup(step_input: StepInput) -> StepOutput:
+    """Setup step: Create repository if needed."""
+    spec = step_input.input if isinstance(step_input.input, str) else ""
+
+    prompt = f"""Create a GitHub repository named '{REPO}' under owner '{OWNER}'.
+
+Instructions:
+1. First check if the repository exists using `get_repository`
+2. If it does NOT exist (404 error), create it with `create_repository`
+3. If it already exists, skip creation
+4. Confirm the repository is ready
+
+Respond with a brief confirmation of what you did."""
+
+    log_entry("step", "setup", {
+        "input": spec[:500] if spec else "(no input)",
+        "prompt": prompt
+    })
+
+    try:
+        print(f"\n[Setup] Creating/verifying repository {OWNER}/{REPO}...")
+        result = _run_async(software_engineer_agent.arun(prompt))
+        output = result.content or ""
+
+        log_entry("agent", "software_engineer", {
+            "action": "setup",
+            "output": output
+        })
+
+        print(f"[Setup] Complete")
+        return StepOutput(content=output, success=True)
+
+    except Exception as e:
+        error_msg = f"Setup error: {str(e)}\n{traceback.format_exc()}"
+        log_entry("error", "setup", {"error": error_msg})
+        print(f"[Setup] Error: {str(e)}")
+        # Return error as content - workflow continues, error becomes feedback
+        return StepOutput(
+            content=f"<error>Setup failed: {str(e)}. Please retry.</error>",
+            success=False,
+            error=str(e)
+        )
 
 
-def run_development(step_input: StepInput) -> StepOutput:
-    """Software Engineer implements or revises code."""
+def step_development(step_input: StepInput) -> StepOutput:
+    """Development step: Implement or revise code based on feedback."""
     global _iteration
     _iteration += 1
 
     spec = step_input.input if isinstance(step_input.input, str) else ""
     feedback = step_input.previous_step_content or ""
 
-    log_info(f"[STEP:development] Starting iteration {_iteration}")
-    log_debug(f"[STEP:development] INPUT (spec):\n{spec[:500]}{'...' if len(spec) > 500 else ''}")
-    log_debug(f"[STEP:development] INPUT (feedback):\n{feedback[:500]}{'...' if len(feedback) > 500 else ''}")
+    log_entry("step", "development", {
+        "iteration": _iteration,
+        "input": spec[:500] if spec else "(no input)",
+        "feedback": feedback[:500] if feedback else "(no feedback)"
+    })
 
-    if _iteration == 1:
-        prompt = f"""<task>Implement the feature described in the specification below.</task>
+    # Check if previous step had an error - include it in context
+    has_error = "<error>" in feedback.lower()
 
-<specification>
-{spec}
-</specification>
+    if _iteration == 1 and not has_error:
+        # First iteration: implement the initial code
+        prompt = f"""Create a README.md file in the repository {OWNER}/{REPO}.
 
-<instructions>
-1. Extract the GitHub owner and repo name from the specification
-2. Check if the repository exists using `get_repository`
-3. IMPORTANT - Handle the result:
-   - If `get_repository` SUCCEEDS (returns repo info) → Repository EXISTS → Do NOT call create_repository
-   - If `get_repository` FAILS with 404/Not Found → Repository does NOT exist → Call `create_repository` to create it
-4. Write clean, production-ready code and save using `create_or_update_file`
-5. In your response, ALWAYS include the repository info in this exact format:
-   <repository>owner/repo</repository>
-6. Then provide a summary of what you implemented
-</instructions>"""
+The README should contain:
+- Project title: Test Demo Repo
+- A brief description saying this is a demo repository for testing the implementation workflow
+- A simple "Getting Started" section
+
+Use `create_or_update_file` to save the file with:
+- owner: {OWNER}
+- repo: {REPO}
+- path: README.md
+- message: "docs: add initial README"
+
+Respond with a confirmation of what you created."""
     else:
-        prompt = f"""<task>Revise your code based on the review feedback below.</task>
+        # Subsequent iterations OR error recovery: revise based on feedback
+        prompt = f"""{"Fix the error and " if has_error else ""}Revise your code based on the feedback below.
 
 <feedback>
 {feedback}
 </feedback>
 
-<instructions>
-1. Extract the repository info from the <repository> tag in the feedback
-2. Use GitHub MCP tools to read your current code from that repository
-3. Address all issues raised in the feedback
-4. Save the updated code to the repository
-5. In your response, include the same repository info:
-   <repository>owner/repo</repository>
-6. Then provide a summary of changes made
-</instructions>"""
+Instructions:
+1. {"First, understand what went wrong and fix it. " if has_error else ""}Read the current README.md from {OWNER}/{REPO} using `get_file_contents`
+2. Address all issues raised in the feedback
+3. Update the file using `create_or_update_file`
+4. Respond with a summary of changes made
 
-    log_info(f"[AGENT:software_engineer] Calling for {'implementation' if _iteration == 1 else 'revision'}")
-    result = _run_async(software_engineer_agent.arun(prompt))
-    output = result.content or ""
+If you encounter any errors, describe them clearly so they can be addressed in the next iteration."""
 
-    log_info(f"[STEP:development] Iteration {_iteration} complete")
-    log_debug(f"[STEP:development] OUTPUT:\n{output[:500]}{'...' if len(output) > 500 else ''}")
+    try:
+        print(f"\n[Development - Iteration {_iteration}] {'Error recovery' if has_error else 'Implementing' if _iteration == 1 else 'Revising'}...")
+        result = _run_async(software_engineer_agent.arun(prompt))
+        output = result.content or ""
 
-    return StepOutput(content=output, success=True)
+        log_entry("agent", "software_engineer", {
+            "iteration": _iteration,
+            "action": "error_recovery" if has_error else ("implement" if _iteration == 1 else "revise"),
+            "output": output
+        })
+
+        print(f"[Development - Iteration {_iteration}] Complete")
+        return StepOutput(content=output, success=True)
+
+    except Exception as e:
+        error_msg = f"Development error (iteration {_iteration}): {str(e)}\n{traceback.format_exc()}"
+        log_entry("error", "development", {"iteration": _iteration, "error": error_msg})
+        print(f"[Development - Iteration {_iteration}] Error: {str(e)}")
+        # Return error as content - loop continues, error becomes feedback for next iteration
+        return StepOutput(
+            content=f"<error>Development failed (iteration {_iteration}): {str(e)}. Please analyze this error and fix it in the next iteration.</error>",
+            success=False,
+            error=str(e)
+        )
 
 
-def run_code_review(step_input: StepInput) -> StepOutput:
-    """Lead Engineer reviews code quality."""
+def step_code_review(step_input: StepInput) -> StepOutput:
+    """Code review step: Lead engineer reviews the code."""
     dev_output = step_input.previous_step_content or ""
 
-    log_info("[STEP:code_review] Starting")
-    log_debug(f"[STEP:code_review] INPUT:\n{dev_output[:500]}{'...' if len(dev_output) > 500 else ''}")
+    # Check if development had an error
+    has_error = "<error>" in dev_output.lower()
 
-    prompt = f"""<task>Review the code implementation for quality and best practices.</task>
+    if has_error:
+        # Pass through the error - don't try to review broken code
+        log_entry("step", "code_review", {
+            "iteration": _iteration,
+            "skipped": True,
+            "reason": "development had error"
+        })
+        print(f"\n[Code Review - Iteration {_iteration}] Skipped (development had error)")
+        return StepOutput(
+            content=f"{dev_output}\n\n<code_review>CHANGES_REQUESTED: Development step failed. Please fix the error first.</code_review>",
+            success=True  # success=True so workflow continues
+        )
 
-<context>
-{dev_output}
-</context>
+    prompt = f"""Review the code implementation in {OWNER}/{REPO}.
 
-<instructions>
-1. Extract the repository info from the <repository> tag in the context above
-2. Use GitHub MCP `get_file_contents` to read the implementation code from that repository
-3. Check code quality, readability, and architecture alignment
-4. Check error handling and best practices
-5. Save your review to the repository using `create_or_update_file`
-6. In your response, FIRST include the repository info:
-   <repository>owner/repo</repository>
-7. Then provide your review and end with exactly "APPROVED" or "CHANGES_REQUESTED"
-</instructions>"""
+Instructions:
+1. Use `get_file_contents` to read README.md from the repository
+2. Review the content for:
+   - Clarity and completeness
+   - Best practices
+   - Any issues that need to be addressed
+3. Provide your review verdict
 
-    log_info("[AGENT:lead_engineer] Calling for code review")
-    result = _run_async(lead_engineer_agent.arun(prompt))
-    output = result.content or ""
+End your response with exactly one of:
+- APPROVED (if the code meets standards)
+- CHANGES_REQUESTED (if improvements are needed, list what needs to change)"""
 
-    log_info("[STEP:code_review] Complete")
-    log_debug(f"[STEP:code_review] OUTPUT:\n{output[:500]}{'...' if len(output) > 500 else ''}")
+    log_entry("step", "code_review", {
+        "iteration": _iteration,
+        "input": dev_output[:500] if dev_output else "(no input)"
+    })
 
-    return StepOutput(content=output, success=True)
+    try:
+        print(f"\n[Code Review - Iteration {_iteration}] Lead engineer reviewing...")
+        result = _run_async(lead_engineer_agent.arun(prompt))
+        output = result.content or ""
+
+        log_entry("agent", "lead_engineer", {
+            "iteration": _iteration,
+            "output": output
+        })
+
+        print(f"[Code Review - Iteration {_iteration}] Complete")
+        return StepOutput(content=output, success=True)
+
+    except Exception as e:
+        error_msg = f"Code review error (iteration {_iteration}): {str(e)}\n{traceback.format_exc()}"
+        log_entry("error", "code_review", {"iteration": _iteration, "error": error_msg})
+        print(f"[Code Review - Iteration {_iteration}] Error: {str(e)}")
+        # Return error as feedback - loop continues
+        return StepOutput(
+            content=f"<error>Code review failed (iteration {_iteration}): {str(e)}. CHANGES_REQUESTED: Please retry.</error>",
+            success=False,
+            error=str(e)
+        )
 
 
-def run_security_review(step_input: StepInput) -> StepOutput:
-    """Security Engineer reviews for vulnerabilities."""
+def step_security_review(step_input: StepInput) -> StepOutput:
+    """Security review step: Security engineer reviews for vulnerabilities."""
     code_review = step_input.previous_step_content or ""
 
-    log_info("[STEP:security_review] Starting")
-    log_debug(f"[STEP:security_review] INPUT:\n{code_review[:500]}{'...' if len(code_review) > 500 else ''}")
+    # Check if previous steps had errors
+    has_error = "<error>" in code_review.lower()
 
-    prompt = f"""<task>Review the code for security vulnerabilities.</task>
-
-<previous_review>
+    if has_error:
+        # Pass through the error - don't try to review broken code
+        log_entry("step", "security_review", {
+            "iteration": _iteration,
+            "skipped": True,
+            "reason": "previous step had error"
+        })
+        print(f"\n[Security Review - Iteration {_iteration}] Skipped (previous step had error)")
+        # Combine for feedback
+        combined = f"""<code_review>
 {code_review}
-</previous_review>
+</code_review>
 
-<instructions>
-1. Extract the repository info from the <repository> tag in the previous review
-2. Use GitHub MCP `get_file_contents` to read the implementation code from that repository
-3. Check for injection vulnerabilities, auth flaws, input validation issues
-4. Check for OWASP Top 10 vulnerabilities
-5. Save your review to the repository using `create_or_update_file`
-6. In your response, FIRST include the repository info:
-   <repository>owner/repo</repository>
-7. Then provide your review and end with exactly "APPROVED" or "CHANGES_REQUIRED"
-</instructions>"""
+<security_review>CHANGES_REQUIRED: Previous steps failed. Please fix errors first.</security_review>"""
+        return StepOutput(content=combined, success=True)
 
-    log_info("[AGENT:security_engineer] Calling for security review")
-    result = _run_async(security_engineer_agent.arun(prompt))
-    output = result.content or ""
+    prompt = f"""Review the code in {OWNER}/{REPO} for security vulnerabilities.
 
-    log_info("[STEP:security_review] Complete")
-    log_debug(f"[STEP:security_review] OUTPUT:\n{output[:500]}{'...' if len(output) > 500 else ''}")
+Instructions:
+1. Use `get_file_contents` to read README.md from the repository
+2. Check for any security concerns:
+   - Sensitive information exposure
+   - Any security anti-patterns
+3. Provide your security assessment
 
-    # Extract repository tag from output to ensure it's preserved
-    repo_match = re.search(r'<repository>([^<]+)</repository>', output)
-    if not repo_match:
-        # Try to find it in code_review if not in security output
-        repo_match = re.search(r'<repository>([^<]+)</repository>', code_review)
+End your response with exactly one of:
+- APPROVED (if no security issues found)
+- CHANGES_REQUIRED (if security issues exist, list what needs to be fixed)"""
 
-    repo_tag = f"<repository>{repo_match.group(1)}</repository>" if repo_match else ""
+    log_entry("step", "security_review", {
+        "iteration": _iteration,
+        "input": code_review[:500] if code_review else "(no input)"
+    })
 
-    # Combine both reviews for the next iteration's feedback
-    combined = f"""{repo_tag}
+    try:
+        print(f"\n[Security Review - Iteration {_iteration}] Security engineer reviewing...")
+        result = _run_async(security_engineer_agent.arun(prompt))
+        output = result.content or ""
 
-<code_review>
+        # Combine code review and security review for feedback to next iteration
+        combined = f"""<code_review>
 {code_review}
 </code_review>
 
@@ -178,101 +311,166 @@ def run_security_review(step_input: StepInput) -> StepOutput:
 {output}
 </security_review>"""
 
-    return StepOutput(content=combined, success=True)
+        log_entry("agent", "security_engineer", {
+            "iteration": _iteration,
+            "output": output
+        })
+
+        print(f"[Security Review - Iteration {_iteration}] Complete")
+        return StepOutput(content=combined, success=True)
+
+    except Exception as e:
+        error_msg = f"Security review error (iteration {_iteration}): {str(e)}\n{traceback.format_exc()}"
+        log_entry("error", "security_review", {"iteration": _iteration, "error": error_msg})
+        print(f"[Security Review - Iteration {_iteration}] Error: {str(e)}")
+        # Return error as feedback - loop continues
+        combined = f"""<code_review>
+{code_review}
+</code_review>
+
+<security_review>
+<error>Security review failed (iteration {_iteration}): {str(e)}. CHANGES_REQUIRED: Please retry.</error>
+</security_review>"""
+        return StepOutput(
+            content=combined,
+            success=False,
+            error=str(e)
+        )
 
 
 def should_continue(outputs: List[StepOutput]) -> bool:
-    """Return True to break loop when approved or max iterations reached."""
-    global _iteration
-
-    log_info(f"[LOOP] Checking end condition (iteration {_iteration})")
-
-    if _iteration >= 3:
-        log_info("[LOOP] Max iterations reached - ending loop")
-        return True
+    """
+    End condition for the loop.
+    Returns True to EXIT the loop when both reviews are approved (and no errors).
+    Returns False to CONTINUE looping.
+    """
+    if not outputs:
+        return False  # Continue if no outputs yet
 
     last_output = outputs[-1].content.lower() if outputs else ""
-    code_ok = "approved" in last_output and "changes_requested" not in last_output
-    security_ok = "approved" in last_output and "changes_required" not in last_output
 
-    if code_ok and security_ok:
-        log_info("[LOOP] All reviews approved - ending loop")
-        return True
+    # Check for errors - if there are errors, continue looping to fix them
+    if "<error>" in last_output:
+        log_entry("loop", "end_condition", {
+            "iteration": _iteration,
+            "result": "ERROR DETECTED - continuing loop to self-correct"
+        })
+        print(f"\n[Loop] Error detected - continuing to iteration {_iteration + 1} to self-correct")
+        return False  # Continue loop to fix error
 
-    log_info("[LOOP] Changes requested - continuing to next iteration")
-    return False
+    # Check for approval - both code review and security review must approve
+    code_approved = "approved" in last_output and "changes_requested" not in last_output
+    security_approved = "approved" in last_output and "changes_required" not in last_output
+
+    if code_approved and security_approved:
+        log_entry("loop", "end_condition", {
+            "iteration": _iteration,
+            "result": "APPROVED - exiting loop"
+        })
+        print(f"\n[Loop] Both reviews APPROVED - exiting loop after {_iteration} iteration(s)")
+        return True  # Exit loop
+
+    log_entry("loop", "end_condition", {
+        "iteration": _iteration,
+        "result": "CHANGES REQUESTED - continuing loop"
+    })
+    print(f"\n[Loop] Changes requested - continuing to iteration {_iteration + 1}")
+    return False  # Continue loop
 
 
-def format_summary(step_input: StepInput) -> StepOutput:
+def step_summary(step_input: StepInput) -> StepOutput:
     """Generate final summary."""
+    _ = step_input  # Available if needed for dynamic summary
     global _iteration
     iterations = _iteration
     _iteration = 0  # Reset for next run
 
-    log_info(f"[STEP:summary] Generating summary (completed in {iterations} iterations)")
+    output = f"""## Implementation Complete
 
-    # Extract repository info from previous step
-    previous = step_input.previous_step_content or ""
-    repo_match = re.search(r'<repository>([^<]+)</repository>', previous)
-    repo_info = f"**Repository:** {repo_match.group(1)}\n" if repo_match else ""
+**Repository:** {OWNER}/{REPO}
+**Iterations:** {iterations}
 
-    output = f"## Implementation Complete\n\n{repo_info}**Iterations:** {iterations}"
-    log_debug(f"[STEP:summary] OUTPUT:\n{output}")
+### Summary
+- Repository created/verified
+- Code implemented and reviewed
+- Lead engineer: APPROVED
+- Security engineer: APPROVED
 
+All reviews passed. Implementation complete."""
+
+    log_entry("step", "summary", {
+        "iterations": iterations,
+        "output": output
+    })
+
+    print(f"\n[Summary] Workflow complete in {iterations} iteration(s)")
     return StepOutput(content=output, success=True)
 
 
-# Workflow definition
+# In-memory database for workflow session history
+workflow_db = InMemoryDb()
+
+# Workflow definition with review loop (no max_iterations - loops until approved)
+# Errors don't break the loop - they become feedback for self-correction
 implementation_cycle_workflow = Workflow(
     name="Implementation Cycle",
     stream=False,
-    description="Dev → Code Review → Security Review loop",
+    description="Development -> Code Review -> Security Review loop until approved (self-correcting on errors)",
+    db=workflow_db,
+    add_workflow_history_to_steps=True,
     steps=[
+        Step(name="setup", executor=step_setup),
         Loop(
             name="Review Loop",
             steps=[
-                Step(name="development", executor=run_development),
-                Step(name="code_review", executor=run_code_review),
-                Step(name="security_review", executor=run_security_review),
+                Step(name="development", executor=step_development),
+                Step(name="code_review", executor=step_code_review),
+                Step(name="security_review", executor=step_security_review),
             ],
             end_condition=should_continue,
-            max_iterations=3,
+            # No max_iterations - loops until both reviews approve
         ),
-        Step(name="summary", executor=format_summary),
+        Step(name="summary", executor=step_summary),
     ]
 )
 
 
-def run_implementation_cycle(spec: str) -> dict:
-    """Run the workflow with a specification string."""
+def run_implementation_cycle(spec: str = "") -> dict:
+    """Run the workflow with an optional specification string."""
     global _iteration
     _iteration = 0
 
-    log_info("[WORKFLOW:implementation_cycle] ========================================")
-    log_info("[WORKFLOW:implementation_cycle] ========== STARTING ==========")
-    log_info("[WORKFLOW:implementation_cycle] ========================================")
-    log_debug(f"[WORKFLOW:implementation_cycle] INPUT:\n{spec[:500]}{'...' if len(spec) > 500 else ''}")
+    log_file = init_log()
+
+    log_entry("workflow", "start", {
+        "input": spec[:500] if spec else "(no input)",
+        "owner": OWNER,
+        "repo": REPO
+    })
+
+    print("=" * 60)
+    print("STARTING IMPLEMENTATION CYCLE WORKFLOW")
+    print(f"Repository: {OWNER}/{REPO}")
+    print(f"Log file: {log_file}")
+    print("Loops until both Lead Engineer and Security Engineer approve")
+    print("Errors trigger self-correction (loop continues)")
+    print("=" * 60)
 
     result = implementation_cycle_workflow.run(input=spec)
     output = result.content or ""
 
-    log_info("[WORKFLOW:implementation_cycle] ========================================")
-    log_info("[WORKFLOW:implementation_cycle] ========== COMPLETE ==========")
-    log_info("[WORKFLOW:implementation_cycle] ========================================")
-    log_debug(f"[WORKFLOW:implementation_cycle] OUTPUT:\n{output}")
+    log_entry("workflow", "complete", {
+        "output": output
+    })
 
-    return {"success": True, "content": output}
+    print("=" * 60)
+    print("WORKFLOW COMPLETE")
+    print("=" * 60)
+    print(output)
+
+    return {"success": True, "content": output, "log_file": str(log_file)}
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--spec-file", required=True, help="Path to specification file")
-    args = parser.parse_args()
-
-    with open(args.spec_file) as f:
-        spec = f.read()
-
-    result = run_implementation_cycle(spec)
-    print(result["content"])
+    result = run_implementation_cycle()
+    print(f"\nLog file: {result['log_file']}")
