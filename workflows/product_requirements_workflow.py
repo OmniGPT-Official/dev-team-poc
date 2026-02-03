@@ -286,12 +286,38 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
     Create Google Doc (knowledge base storage is automatic via Agno).
     """
     content = step_input.previous_step_content or ""
+    original_input = step_input.input if isinstance(step_input.input, str) else ""
 
     log_info("[STEP:store_and_create_doc] Creating document")
 
-    # Extract metadata
-    project_type = "new" if "project_type: new" in content.lower() else "existing"
-    project_name = extract_param(content, "PROJECT_NAME") or "Unnamed"
+    # DEBUG: show what we received
+    print(f"\n[DEBUG:store_and_create_doc] previous_step_content length: {len(content)}")
+    print(f"[DEBUG:store_and_create_doc] original_input length: {len(original_input)}")
+    print(f"[DEBUG:store_and_create_doc] original_input preview: {original_input[:300]}\n")
+
+    # Determine project type — check BOTH previous step content AND original input
+    # This handles the case where conditions failed and no PRD/FS was created
+    combined = (content + "\n" + original_input).lower()
+    if "project_type: new" in combined or "project_type:new" in combined:
+        project_type = "new"
+    elif "project_type: existing" in combined or "project_type:existing" in combined:
+        project_type = "existing"
+    else:
+        # Fallback: keyword check on original input
+        new_keywords = ["new project", "from scratch", "build a new", "create a new", "start a new"]
+        if any(kw in original_input.lower() for kw in new_keywords):
+            project_type = "new"
+        else:
+            project_type = "existing"
+
+    print(f"[DEBUG:store_and_create_doc] Determined project_type: {project_type}\n")
+
+    # If no PRD/FS was created by conditions (both failed), create content now
+    if not content.strip():
+        print("[DEBUG:store_and_create_doc] No previous step content — creating document from original input\n")
+        content = original_input
+
+    project_name = extract_param(content, "PROJECT_NAME") or extract_param(original_input, "PROJECT_NAME") or "Unnamed"
 
     # Note: Content is automatically stored in Agno's Knowledge base
     # when the team has knowledge=get_knowledge_base() attached
@@ -307,7 +333,7 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
             project_name=project_name,
         )
     else:
-        feature_name = extract_param(content, "FEATURE_NAME") or "New Feature"
+        feature_name = extract_param(content, "FEATURE_NAME") or extract_param(original_input, "FEATURE_NAME") or "New Feature"
         doc_result_str = docs_tool.create_feature_spec_document(
             title=f"Feature: {feature_name}",
             content=content,
