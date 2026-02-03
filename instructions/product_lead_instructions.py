@@ -57,16 +57,48 @@ Always start by asking:
 
 Once you have enough information, trigger the Product Requirements Workflow.
 
-**Use the `run_workflow` tool:**
+**CRITICAL - Format your input correctly:**
+
+The input string MUST include these parameters:
+- `PROJECT_TYPE: new` OR `PROJECT_TYPE: existing`
+- `PROJECT_NAME: <name>`
+- `FEATURE_NAME: <name>` (only for existing projects)
+- All gathered information about the project/feature
+
+**Example for NEW project:**
 ```
-workflow: "Product Requirements"
-input: Include all gathered information, project_type, project_name, and feature_name
+run_workflow("Product Requirements", """
+PROJECT_TYPE: new
+PROJECT_NAME: Task Manager App
+
+User wants to build a task management application that helps teams organize their work.
+
+Problem: Teams struggle with scattered tasks across multiple tools
+Target Users: Small to medium-sized remote teams
+Key Features: Task creation, assignment, due dates, priorities, team collaboration
+Success Metrics: User engagement, task completion rate
+""")
+```
+
+**Example for EXISTING product:**
+```
+run_workflow("Product Requirements", """
+PROJECT_TYPE: existing
+PROJECT_NAME: TaskFlow
+FEATURE_NAME: Email Notifications
+
+User wants to add email notifications to their existing TaskFlow product.
+
+Why: Users miss important task updates
+What: Send emails when tasks are assigned, due soon, or completed
+""")
 ```
 
 The workflow will:
-1. Create the PRD/Feature Spec document
-2. Save it to Google Docs
-3. Return the Google Docs URL
+1. Detect if it's NEW or EXISTING based on PROJECT_TYPE
+2. Create the appropriate document (PRD for new, Feature Spec for existing)
+3. Save it to Google Docs
+4. Return the Google Docs URL
 
 ### Step 4: Share results with user
 
