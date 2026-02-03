@@ -360,18 +360,31 @@ def is_new_project(step_input: StepInput) -> bool:
     content = step_input.input if isinstance(step_input.input, str) else ""
     content_lower = content.lower()
 
-    # Check explicit marker
-    if "project_type: new" in content_lower or "project_type:new" in content_lower:
-        log_info("[CONDITION] Detected: NEW project")
+    # DEBUG LOGGING
+    print(f"\n[DEBUG:is_new_project] Input type: {type(step_input.input)}")
+    print(f"[DEBUG:is_new_project] Input content (first 300 chars): {content[:300]}")
+    print(f"[DEBUG:is_new_project] Checking for 'new' project markers...\n")
+
+    # Check explicit marker (multiple formats)
+    if any(marker in content_lower for marker in [
+        "project_type: new",
+        "project_type:new",
+        "project type: new",
+        "project type:new",
+        "type: new",
+        "type:new"
+    ]):
+        log_info("[CONDITION] ✓ Detected: NEW project (explicit marker)")
         return True
 
     # Check keywords
-    new_keywords = ["new project", "from scratch", "build a new", "create a new", "start a new"]
-    if any(kw in content_lower for kw in new_keywords):
-        log_info("[CONDITION] Detected: NEW project (by keywords)")
-        return True
+    new_keywords = ["new project", "from scratch", "build a new", "create a new", "start a new", "starting a new"]
+    for kw in new_keywords:
+        if kw in content_lower:
+            log_info(f"[CONDITION] ✓ Detected: NEW project (keyword: '{kw}')")
+            return True
 
-    log_info("[CONDITION] Not a new project")
+    log_info("[CONDITION] ✗ Not a new project")
     return False
 
 
@@ -380,18 +393,31 @@ def is_existing_project(step_input: StepInput) -> bool:
     content = step_input.input if isinstance(step_input.input, str) else ""
     content_lower = content.lower()
 
-    # Check explicit marker
-    if "project_type: existing" in content_lower or "project_type:existing" in content_lower:
-        log_info("[CONDITION] Detected: EXISTING project")
+    # DEBUG LOGGING
+    print(f"\n[DEBUG:is_existing_project] Input type: {type(step_input.input)}")
+    print(f"[DEBUG:is_existing_project] Input content (first 300 chars): {content[:300]}")
+    print(f"[DEBUG:is_existing_project] Checking for 'existing' project markers...\n")
+
+    # Check explicit marker (multiple formats)
+    if any(marker in content_lower for marker in [
+        "project_type: existing",
+        "project_type:existing",
+        "project type: existing",
+        "project type:existing",
+        "type: existing",
+        "type:existing"
+    ]):
+        log_info("[CONDITION] ✓ Detected: EXISTING project (explicit marker)")
         return True
 
     # Check keywords
-    existing_keywords = ["existing", "add feature", "add to", "enhance", "update", "modify"]
-    if any(kw in content_lower for kw in existing_keywords):
-        log_info("[CONDITION] Detected: EXISTING project (by keywords)")
-        return True
+    existing_keywords = ["existing product", "existing project", "add feature", "add a feature", "add to", "enhance", "update", "modify", "improve existing"]
+    for kw in existing_keywords:
+        if kw in content_lower:
+            log_info(f"[CONDITION] ✓ Detected: EXISTING project (keyword: '{kw}')")
+            return True
 
-    log_info("[CONDITION] Not an existing project")
+    log_info("[CONDITION] ✗ Not an existing project")
     return False
 
 
