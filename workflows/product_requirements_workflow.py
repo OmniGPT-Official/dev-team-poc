@@ -62,26 +62,45 @@ def clean_workflow_content(content: str) -> str:
     if not content:
         return ""
 
-    # Remove common workflow debug patterns
-    lines_to_remove = [
-        "condition",
-        "not met",
-        "skipped",
-        "steps",
+    # Remove ONLY lines that start with workflow debug patterns (more precise)
+    lines_to_remove_prefix = [
         "[debug",
         "[info",
         "[step:",
         "[condition]",
         "[agent:",
         "[workflow:",
+        "info ",
+        "debug ",
+        "error ",
+        "warning ",
+    ]
+
+    # Remove lines that are ONLY workflow status messages
+    exact_patterns = [
+        "condition",
+        "not met",
+        "skipped",
     ]
 
     cleaned_lines = []
     for line in content.split('\n'):
-        line_lower = line.lower().strip()
-        # Skip lines that are workflow debug messages
-        if any(pattern in line_lower for pattern in lines_to_remove):
+        line_stripped = line.strip()
+        line_lower = line_stripped.lower()
+
+        # Skip empty lines
+        if not line_stripped:
+            cleaned_lines.append(line)
             continue
+
+        # Skip if line starts with debug prefix
+        if any(line_lower.startswith(pattern) for pattern in lines_to_remove_prefix):
+            continue
+
+        # Skip if line is ONLY a workflow status message (all patterns in one line and short)
+        if len(line_stripped) < 100 and all(pattern in line_lower for pattern in exact_patterns):
+            continue
+
         cleaned_lines.append(line)
 
     return '\n'.join(cleaned_lines).strip()
@@ -263,6 +282,11 @@ def create_prd(step_input: StepInput) -> StepOutput:
         project_name = extract_param(context, "PROJECT_NAME") or "Unnamed Project"
         description = extract_param(context, "DESCRIPTION") or context
 
+    print(f"\n[DEBUG:create_prd] STEP STARTED")
+    print(f"[DEBUG:create_prd] Input type: {type(step_input.input)}")
+    print(f"[DEBUG:create_prd] Project name: {project_name}")
+    print(f"[DEBUG:create_prd] Description length: {len(description)}\n")
+
     log_info("[STEP:create_prd] Creating PRD for new project")
     log_debug(f"[STEP:create_prd] INPUT:\n{context[:500]}")
 
@@ -276,13 +300,16 @@ def create_prd(step_input: StepInput) -> StepOutput:
 Create a comprehensive PRD now. Use only the information provided above.
 """
 
+    print(f"[DEBUG:create_prd] Calling PRD creation agent...")
     log_info("[AGENT:prd_creator] Creating PRD")
     result = _run_async(prd_creation_agent.arun(prompt))
     output = result.content or ""
+    print(f"[DEBUG:create_prd] Agent returned {len(output)} characters\n")
 
     # Add metadata
     output += f"\n\n<metadata>\nPROJECT_TYPE: new\nPROJECT_NAME: {project_name}\n</metadata>"
 
+    print(f"[DEBUG:create_prd] STEP COMPLETE - output length: {len(output)}\n")
     log_info("[STEP:create_prd] Complete")
     return StepOutput(content=output, success=True)
 
@@ -397,6 +424,19 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
     # CLEAN CONTENT: Remove workflow debug messages before creating Google Doc
     cleaned_content = clean_workflow_content(content)
     print(f"[DEBUG:store_and_create_doc] Content cleaned - before: {len(content)} chars, after: {len(cleaned_content)} chars\n")
+
+    # FALLBACK: If cleaning removed everything (PRD/FS didn't generate), use original input
+    if not cleaned_content.strip() and original_input.strip():
+        print("[DEBUG:store_and_create_doc] Cleaned content empty - using original input as document content\n")
+        cleaned_content = original_input
+
+    # Validate we have content to create document
+    if not cleaned_content.strip():
+        print("[ERROR:store_and_create_doc] No content available to create document!\n")
+        return StepOutput(
+            content="ERROR: No content generated for document. Both PRD/Feature Spec creation and original input are empty.",
+            success=False
+        )
 
     # Note: Content is automatically stored in Agno's Knowledge base
     # when the team has knowledge=get_knowledge_base() attached
