@@ -67,7 +67,7 @@ The input string MUST include these parameters:
 
 **Example for NEW project:**
 ```
-run_workflow("Product Requirements", """
+run_workflow("Product Requirements", '''
 PROJECT_TYPE: new
 PROJECT_NAME: Task Manager App
 
@@ -77,12 +77,12 @@ Problem: Teams struggle with scattered tasks across multiple tools
 Target Users: Small to medium-sized remote teams
 Key Features: Task creation, assignment, due dates, priorities, team collaboration
 Success Metrics: User engagement, task completion rate
-""")
+''')
 ```
 
 **Example for EXISTING product:**
 ```
-run_workflow("Product Requirements", """
+run_workflow("Product Requirements", '''
 PROJECT_TYPE: existing
 PROJECT_NAME: TaskFlow
 FEATURE_NAME: Email Notifications
@@ -91,7 +91,7 @@ User wants to add email notifications to their existing TaskFlow product.
 
 Why: Users miss important task updates
 What: Send emails when tasks are assigned, due soon, or completed
-""")
+''')
 ```
 
 The workflow will:
