@@ -1,31 +1,65 @@
 """
-Software Development Workflow - Implementation Only
+Software Development Workflow - Implementation with Review Cycle
 
-This workflow handles ONLY implementation. It does NOT create PRDs.
-The PRD should already exist and the document_url is provided as input.
+This workflow handles implementation with code review and security review iterations.
+The PRD and Architecture should already exist (created by Product Requirements Workflow).
 
 Flow:
-1. Read PRD -> Fetch PRD content from the provided Google Docs URL
-2. Create Architecture -> Design tech stack and architecture
-3. Create GitHub Repo -> Initialize repository
-4. Write Code -> Implement using Supabase MCP
-5. Deploy to Vercel -> Deploy and get preview link
-6. Summary -> Return architecture + deployment link
+1. Read PRD+Architecture URLs -> Extract PRD and Architecture content from Google Docs
+2. Create GitHub Repo -> Initialize repository
+3. Implementation Cycle (Loop max 3 iterations):
+   - Development: Software Engineer writes/revises code
+   - Code Review: Lead Engineer reviews code
+   - Security Review: Security Engineer reviews for vulnerabilities
+   - Loop continues until both reviews approve OR max iterations reached
+4. Deploy to Vercel -> Deploy and get preview link
+5. Summary -> Return deployment link
 
-Input: document_url (PRD/Feature Spec already created by Product Lead)
-Output: Architecture document + Vercel deployment link
+Input: document_url (PRD URL) and architecture_url (Architecture Doc URL)
+Output: Vercel deployment link + GitHub repo
 """
 
 import os
 import sys
 import re
 import asyncio
+from typing import List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agno.workflow import Step, Workflow
+from agno.workflow import Step, Workflow, Loop
 from agno.workflow.types import StepInput, StepOutput
-from agno.utils.log import log_info
+from agno.utils.log import log_info, log_error
+
+
+# ============================================================================
+# SESSION STATE FOR TRACKING FILES AND REVIEWS
+# ============================================================================
+
+class ImplementationState:
+    """Tracks file paths, review statuses, and project context across workflow."""
+    def __init__(self):
+        self.iteration = 0
+        self.code_file_path = ""
+        self.code_review_file_path = ""
+        self.security_review_file_path = ""
+        self.code_review_status = "pending"
+        self.security_review_status = "pending"
+        self.approved = False
+        self.github_repo = ""
+        self.github_owner = ""
+        self.project_name = ""
+        self.prd_content = ""
+        self.architecture_content = ""
+
+    def reset_reviews(self):
+        """Reset review statuses for a new iteration."""
+        self.code_review_status = "pending"
+        self.security_review_status = "pending"
+
+
+# Global state instance
+_state = ImplementationState()
 
 
 # ============================================================================
@@ -33,226 +67,160 @@ from agno.utils.log import log_info
 # ============================================================================
 
 def _run_async(coro):
-    """
-    Run async coroutine from sync context.
-    Uses the existing event loop if available, creates one if not.
-    Does NOT close the loop to allow Agno to use it for cleanup.
-    """
+    """Run async coroutine from sync context."""
     try:
-        # Try to get the current event loop
         loop = asyncio.get_event_loop()
         if loop.is_closed():
-            # Loop exists but closed - create a new one
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
     except RuntimeError:
-        # No event loop exists - create a new one
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
-    # Run the coroutine and return result
-    # DO NOT close the loop - Agno needs it for cleanup
     return loop.run_until_complete(coro)
 
 
-def parse_document_url(input_str: str) -> str:
+def parse_input_urls(input_str: str) -> dict:
     """
-    Parse input string to extract ONLY the document URL.
+    Parse input string to extract PRD URL and Architecture URL.
 
-    Required:
-    - DOCUMENT_URL: <url> (Google Docs URL of the PRD/Feature Spec)
+    Expected format:
+    - PRD_URL: <url>
+    - ARCHITECTURE_URL: <url>
     OR
-    - Just the raw URL anywhere in the input
+    - DOCUMENT_URL: <prd_url> (for backward compatibility)
+    - ARCHITECTURE_URL: <arch_url>
     """
-    print(f"\n[DEBUG:parse_document_url] Parsing input (length {len(input_str)})")
-    print(f"[DEBUG:parse_document_url] Input preview: {input_str[:300]}\n")
+    print(f"\n[DEBUG:parse_input] Parsing input (length {len(input_str)})")
 
-    # Extract document URL
-    doc_url_match = re.search(r'DOCUMENT_URL:\s*(https://[^\s]+)', input_str, re.I)
-    if not doc_url_match:
-        # Try to find Google Docs URL anywhere in the string
-        doc_url_match = re.search(r'https://docs\.google\.com/document/d/[^\s)]+', input_str)
+    result = {
+        "prd_url": None,
+        "architecture_url": None,
+        "github_repo": None,
+        "github_owner": None,
+        "project_name": None,
+    }
 
-    if doc_url_match:
-        url = doc_url_match.group(1) if doc_url_match.lastindex else doc_url_match.group(0)
-        print(f"[DEBUG:parse_document_url] ✓ Found document_url: {url}\n")
-        return url
-    else:
-        print(f"[DEBUG:parse_document_url] ❌ No document_url found in input!\n")
-        return None
+    # Extract PRD URL
+    prd_match = re.search(r'(?:PRD_URL|DOCUMENT_URL):\s*(https://[^\s]+)', input_str, re.I)
+    if prd_match:
+        result["prd_url"] = prd_match.group(1)
+        print(f"[DEBUG:parse_input] ✓ Found PRD URL: {result['prd_url']}")
+
+    # Extract Architecture URL
+    arch_match = re.search(r'ARCHITECTURE_URL:\s*(https://[^\s]+)', input_str, re.I)
+    if arch_match:
+        result["architecture_url"] = arch_match.group(1)
+        print(f"[DEBUG:parse_input] ✓ Found Architecture URL: {result['architecture_url']}")
+
+    # Extract GitHub info (optional)
+    repo_match = re.search(r'GITHUB_REPO:\s*([^\s]+)', input_str, re.I)
+    if repo_match:
+        result["github_repo"] = repo_match.group(1)
+
+    owner_match = re.search(r'GITHUB_OWNER:\s*([^\s]+)', input_str, re.I)
+    if owner_match:
+        result["github_owner"] = owner_match.group(1)
+
+    # Extract project name (optional)
+    name_match = re.search(r'PROJECT_NAME:\s*([^\n]+)', input_str, re.I)
+    if name_match:
+        result["project_name"] = name_match.group(1).strip()
+
+    return result
+
+
+def _get_github_file_paths(product_name: str):
+    """Generate consistent GitHub file paths for code and reviews."""
+    safe_name = product_name.lower().replace(" ", "_").replace("/", "_")[:30]
+    return {
+        "code": f".dev-team/implementations/{safe_name}.py",
+        "code_review": f".dev-team/code_reviews/{safe_name}_review.md",
+        "security_review": f".dev-team/security_reviews/{safe_name}_security.md",
+    }
 
 
 # ============================================================================
 # WORKFLOW STEP FUNCTIONS
 # ============================================================================
 
-def read_prd(step_input: StepInput) -> StepOutput:
+def read_documents(step_input: StepInput) -> StepOutput:
     """
-    Step 1: Read PRD from Google Docs URL
+    Step 1: Read PRD and Architecture from Google Docs URLs
 
-    Fetches the PRD/Feature Spec content from the provided document URL.
-    This is the ONLY input to the workflow - we do NOT create a new PRD.
-
-    Input: Just the document URL (nothing else needed)
-    Output: Full PRD content from Google Docs
+    Input: String with PRD_URL and ARCHITECTURE_URL
+    Output: Combined PRD + Architecture content
     """
+    global _state
+
     input_str = step_input.input if isinstance(step_input.input, str) else ""
 
-    # EXTENSIVE LOGGING
     print("\n" + "="*80)
-    print("[DEBUG:read_prd] === STEP 1: READ PRD ===")
-    print(f"[DEBUG:read_prd] step_input.input TYPE: {type(step_input.input)}")
-    print(f"[DEBUG:read_prd] step_input.input VALUE:\n{repr(input_str)[:500]}")
+    print("[DEBUG:read_documents] === STEP 1: READ DOCUMENTS ===")
     print("="*80 + "\n")
 
-    document_url = parse_document_url(input_str)
+    parsed = parse_input_urls(input_str)
 
-    if not document_url:
-        error_msg = "ERROR: No document_url provided. The software development workflow requires a PRD/Feature Spec URL."
-        print(f"\n❌ [ERROR:read_prd] {error_msg}\n")
-        log_info(f"[STEP:read_prd] {error_msg}")
+    if not parsed["prd_url"]:
+        error_msg = "ERROR: No PRD_URL provided"
+        log_error(f"[STEP:read_documents] {error_msg}")
         return StepOutput(content=error_msg, success=False)
 
-    print(f"\n✓ [DEBUG:read_prd] Found document_url: {document_url}\n")
-    log_info(f"[STEP:read_prd] Reading PRD from: {document_url}")
+    if not parsed["architecture_url"]:
+        error_msg = "ERROR: No ARCHITECTURE_URL provided"
+        log_error(f"[STEP:read_documents] {error_msg}")
+        return StepOutput(content=error_msg, success=False)
+
+    log_info(f"[STEP:read_documents] Reading PRD from: {parsed['prd_url']}")
+    log_info(f"[STEP:read_documents] Reading Architecture from: {parsed['architecture_url']}")
 
     from tools.google_docs_tools import GoogleDocsTools
+    google_docs = GoogleDocsTools()
 
-    # Try to read the document
     try:
-        google_docs = GoogleDocsTools()
-        # Extract document ID from URL
-        doc_id_match = re.search(r'/document/d/([a-zA-Z0-9-_]+)', document_url)
-        if not doc_id_match:
-            error_msg = f"ERROR: Invalid Google Docs URL: {document_url}"
-            log_info(f"[STEP:read_prd] {error_msg}")
-            return StepOutput(content=error_msg, success=False)
+        # Read PRD
+        prd_doc_id = re.search(r'/document/d/([a-zA-Z0-9-_]+)', parsed["prd_url"]).group(1)
+        _state.prd_content = google_docs.read_document(prd_doc_id)
+        print(f"[DEBUG:read_documents] ✓ PRD read: {len(_state.prd_content)} chars")
 
-        doc_id = doc_id_match.group(1)
+        # Read Architecture
+        arch_doc_id = re.search(r'/document/d/([a-zA-Z0-9-_]+)', parsed["architecture_url"]).group(1)
+        _state.architecture_content = google_docs.read_document(arch_doc_id)
+        print(f"[DEBUG:read_documents] ✓ Architecture read: {len(_state.architecture_content)} chars")
 
-        # Read the actual document content using Google Docs API
-        try:
-            print(f"\n[DEBUG:read_prd] Calling google_docs.read_document({doc_id})\n")
-            prd_content = google_docs.read_document(doc_id)
-            print(f"\n✓ [DEBUG:read_prd] Document read successfully!")
-            print(f"[DEBUG:read_prd] Content length: {len(prd_content)} chars")
-            print(f"[DEBUG:read_prd] Content preview: {prd_content[:200]}...\n")
+        # Store project info
+        _state.github_repo = parsed["github_repo"]
+        _state.github_owner = parsed["github_owner"]
+        _state.project_name = parsed["project_name"] or "project"
 
-            log_info("[STEP:read_prd] PRD content retrieved successfully")
+        combined_content = f"""=== PRD ===
+{_state.prd_content}
 
-            # Include URL and content
-            full_content = f"""PRD Document URL: {document_url}
-Document ID: {doc_id}
+=== ARCHITECTURE ===
+{_state.architecture_content}
 
-=== PRD CONTENT ===
-{prd_content}
-===================
+=== PROJECT INFO ===
+GitHub Repo: {_state.github_repo}
+GitHub Owner: {_state.github_owner}
+Project Name: {_state.project_name}
 """
-            print(f"\n✓ [DEBUG:read_prd] Returning StepOutput with {len(full_content)} chars\n")
-            return StepOutput(content=full_content, success=True)
 
-        except Exception as read_error:
-            log_info(f"[STEP:read_prd] Could not read document content: {read_error}")
-            # If reading fails, at least pass the URL
-            prd_content = f"PRD Document URL: {document_url}\nDocument ID: {doc_id}\n\nWARNING: Could not read document content. Error: {str(read_error)}"
-            return StepOutput(content=prd_content, success=True)
+        log_info("[STEP:read_documents] Documents read successfully")
+        return StepOutput(content=combined_content, success=True)
 
     except Exception as e:
-        error_msg = f"ERROR: Failed to process document URL: {str(e)}"
-        log_info(f"[STEP:read_prd] {error_msg}")
+        error_msg = f"ERROR: Failed to read documents: {str(e)}"
+        log_error(f"[STEP:read_documents] {error_msg}")
         return StepOutput(content=error_msg, success=False)
-
-
-def create_architecture(step_input: StepInput) -> StepOutput:
-    """
-    Step 2: Create Architecture Document
-
-    Lead Engineer reads the PRD (from previous step) and creates architecture with tech stack selection.
-    - New project: Choose between Next.js+Supabase+Vercel OR Python+FastAPI
-    - Existing project: Use existing stack
-
-    Input: Original document URL (from workflow input)
-    Previous Step Output: Full PRD content
-    Output: Architecture document
-    """
-    prd_content = step_input.previous_step_content or ""
-    input_str = step_input.input if isinstance(step_input.input, str) else ""
-
-    # EXTENSIVE LOGGING
-    print("\n" + "="*80)
-    print("[DEBUG:create_architecture] === STEP 2: CREATE ARCHITECTURE ===")
-    print(f"[DEBUG:create_architecture] PRD content length: {len(prd_content)} chars")
-    print(f"[DEBUG:create_architecture] PRD content PREVIEW:\n{prd_content[:500]}")
-    print("="*80 + "\n")
-
-    # Extract document URL from original input (for reference)
-    document_url = parse_document_url(input_str)
-
-    log_info("[STEP:architecture] Creating architecture document")
-
-    from agents.lead_engineer import lead_engineer_agent
-
-    prompt = f"""You are creating the technical architecture for this project.
-
-**CRITICAL INSTRUCTION:** DO NOT use any workflow tools. DO NOT run the Software Development Workflow. You are INSIDE the workflow already. Just design the architecture directly.
-
-**IMPORTANT:** The PRD has already been read from Google Docs. Your job is to design the architecture, NOT create or fetch the PRD.
-
-=== PRD CONTENT (ALREADY FETCHED FROM GOOGLE DOCS) ===
-{prd_content}
-============================================================
-
-## Your Task
-
-1. **Read the PRD content above** (it's already provided - do NOT try to fetch it again)
-2. **Determine project type** from the PRD (new project or existing product feature)
-3. **Select Tech Stack:**
-   - For NEW web projects: **Next.js + Supabase + Vercel**
-   - For NEW API/backend projects: **Python + FastAPI + PostgreSQL + Vercel**
-   - For EXISTING projects: Identify and use the current stack from the PRD
-
-4. **Create Complete Architecture Document:**
-   - Tech Stack Selection (with justification based on PRD requirements)
-   - System Architecture (components, data flow)
-   - Database Schema (tables, columns, relationships)
-   - API Design (endpoints, methods, request/response)
-   - Security Considerations
-   - Deployment Strategy (Vercel deployment plan)
-
-5. **Output Format:**
-   Plain text formatting (NOT markdown):
-   - Clear headings with spacing
-   - Bullet points with "•" or "-"
-   - Line breaks for structure
-   - No markdown symbols
-
-Be specific and implementation-ready. Focus on actionable technical details.
-
-REMEMBER: DO NOT use workflow tools or try to fetch documents. Just write the architecture based on the PRD content provided above.
-"""
-
-    print(f"\n[DEBUG:create_architecture] Calling lead_engineer_agent.arun()\n")
-
-    log_info("[AGENT:lead_engineer] Designing architecture")
-    result = _run_async(lead_engineer_agent.arun(prompt))
-    output = result.content or ""
-
-    print(f"\n✓ [DEBUG:create_architecture] Agent returned {len(output)} chars\n")
-
-    log_info("[STEP:architecture] Architecture created")
-    return StepOutput(content=output, success=True)
 
 
 def create_github_repo(step_input: StepInput) -> StepOutput:
     """
-    Step 3: Create GitHub Repository
+    Step 2: Create GitHub Repository
 
-    Input: Original document URL
-    Previous Step Output: Architecture document
+    Input: Combined PRD + Architecture content
     Output: GitHub repository info
     """
-    architecture = step_input.previous_step_content or ""
-    input_str = step_input.input if isinstance(step_input.input, str) else ""
+    global _state
 
     log_info("[STEP:create_repo] Creating GitHub repository")
 
@@ -260,81 +228,242 @@ def create_github_repo(step_input: StepInput) -> StepOutput:
 
     prompt = f"""Create a new GitHub repository for this project.
 
-**Architecture Document:**
-{architecture}
+**Project Name:** {_state.project_name}
+**GitHub Owner:** {_state.github_owner or "your-username"}
+**Repository Name:** {_state.github_repo or _state.project_name.lower().replace(" ", "-")}
+
+**Architecture Overview:**
+{_state.architecture_content[:1000]}
 
 ## Instructions
 
-1. **Extract project name** from the architecture document above
-2. **Create repository name** by converting project name to lowercase kebab-case
-3. **Use GitHubTools** to create a new repository
-4. Initialize with README
-5. Add .gitignore based on tech stack from architecture
-6. Set up initial project structure
-7. Add .env.example with required environment variables
+1. **Check if repository exists** using get_repository
+   - owner: "{_state.github_owner}"
+   - repo: "{_state.github_repo}"
 
-Return the repository URL and initial structure.
+2. **If repo doesn't exist**, create it using create_repository
+   - name: "{_state.github_repo}"
+   - description: "{_state.project_name}"
+   - private: false
+
+3. **Create initial project structure**:
+   - README.md with project description
+   - .gitignore based on tech stack
+   - .env.example with required environment variables
+   - Basic folder structure
+
+4. **Save files to GitHub** using create_or_update_file
+
+Return confirmation with repository URL.
 """
 
     log_info("[AGENT:software_engineer] Creating repository")
     result = _run_async(software_engineer_agent.arun(prompt))
     output = result.content or ""
 
-    log_info("[STEP:create_repo] Repository created")
+    # Extract repo URL
+    repo_url_match = re.search(r'https://github\.com/[^\s]+', output)
+    if repo_url_match:
+        repo_url = repo_url_match.group(0)
+        log_info(f"[STEP:create_repo] Repository created: {repo_url}")
+
     return StepOutput(content=output, success=True)
 
 
-def write_code(step_input: StepInput) -> StepOutput:
-    """
-    Step 4: Write Code with Supabase MCP
-    """
-    repo_info = step_input.previous_step_content or ""
-    input_str = step_input.input if isinstance(step_input.input, str) else ""
+# ============================================================================
+# IMPLEMENTATION CYCLE STEPS (Loop)
+# ============================================================================
 
-    log_info("[STEP:write_code] Implementing code")
+def development(step_input: StepInput) -> StepOutput:
+    """Software Engineer implements code and saves to GitHub."""
+    global _state
+
+    _state.iteration += 1
+    iteration = _state.iteration
+
+    # Generate GitHub file paths
+    paths = _get_github_file_paths(_state.project_name)
+    _state.code_file_path = paths["code"]
+    _state.code_review_file_path = paths["code_review"]
+    _state.security_review_file_path = paths["security_review"]
+
+    log_info(f"[DEVELOPMENT] Iteration {iteration}")
 
     from agents.software_engineer import software_engineer_agent
 
-    prompt = f"""Implement the complete codebase for this project.
+    if iteration == 1:
+        # First iteration - implement from scratch
+        prompt = f"""You are the Software Engineer. Implement the code based on the architecture.
 
-**Repository Info:**
-{repo_info}
+**Project:** {_state.project_name}
+**GitHub:** {_state.github_owner}/{_state.github_repo}
 
-## Instructions
+**PRD (Requirements):**
+{_state.prd_content[:2000]}
 
-1. **Write Complete Code:**
-   - Implement all features from the architecture
-   - Follow best practices for the tech stack
-   - Include error handling and validation
-   - Add necessary comments
+**Architecture (Technical Design):**
+{_state.architecture_content}
 
-2. **Database Setup with Supabase MCP:**
-   - Create database tables
-   - Set up Row Level Security (RLS)
-   - Configure authentication if needed
-   - Add initial seed data
+**Your Task:**
+1. Write clean, production-ready code following the architecture
+2. Include proper error handling and validation
+3. Add docstrings and comments
+4. Follow security best practices
 
-3. **Commit to GitHub:**
-   - Use GitHub MCP tools to commit and push
-   - Organize files properly
-   - Write clear commit messages
+**Save Code to GitHub:**
+Call create_or_update_file ONCE:
+- owner: "{_state.github_owner}"
+- repo: "{_state.github_repo}"
+- path: "{_state.code_file_path}"
+- content: [your Python code]
+- message: "feat: implement {_state.project_name}"
+- branch: "main"
 
-Use GitHub MCP and Supabase MCP tools.
+After saving, respond with a summary of what you implemented.
+"""
+    else:
+        # Revision iteration - read feedback and update
+        prompt = f"""You are the Software Engineer. Revise your code based on review feedback.
+
+**Project:** {_state.project_name}
+**GitHub:** {_state.github_owner}/{_state.github_repo}
+
+**Steps:**
+1. Read your current code: get_file_contents(owner="{_state.github_owner}", repo="{_state.github_repo}", path="{_state.code_file_path}")
+2. Read code review: get_file_contents(owner="{_state.github_owner}", repo="{_state.github_repo}", path="{_state.code_review_file_path}")
+3. Read security review: get_file_contents(owner="{_state.github_owner}", repo="{_state.github_repo}", path="{_state.security_review_file_path}")
+4. Revise your code to address ALL feedback
+5. Save revised code: create_or_update_file(owner="{_state.github_owner}", repo="{_state.github_repo}", path="{_state.code_file_path}", content=[revised code], message="fix: address review feedback", branch="main")
+
+Call each tool EXACTLY ONCE. After saving, respond with changes made.
 """
 
-    log_info("[AGENT:software_engineer] Writing code")
     result = _run_async(software_engineer_agent.arun(prompt))
-    output = result.content or ""
+    _state.reset_reviews()
 
-    log_info("[STEP:write_code] Code complete")
-    return StepOutput(content=output, success=True)
+    log_info(f"[DEVELOPMENT] Code saved to: {_state.github_owner}/{_state.github_repo}/{_state.code_file_path}")
+    return StepOutput(content=f"CODE:{_state.code_file_path}\n{result.content}", success=True)
 
+
+def code_review(step_input: StepInput) -> StepOutput:
+    """Lead Engineer reviews code and saves feedback to GitHub."""
+    global _state
+
+    log_info(f"[CODE_REVIEW] Iteration {_state.iteration}")
+
+    from agents.lead_engineer import lead_engineer_agent
+
+    prompt = f"""You are the Lead Engineer. Review the code implementation.
+
+**Project:** {_state.project_name}
+**GitHub:** {_state.github_owner}/{_state.github_repo}
+
+**Steps:**
+1. Read the code: get_file_contents(owner="{_state.github_owner}", repo="{_state.github_repo}", path="{_state.code_file_path}")
+
+2. Review against these criteria:
+   - Code Quality: Clean, readable, well-structured?
+   - Architecture Alignment: Follows the technical spec?
+   - Best Practices: Coding standards followed?
+   - Error Handling: Comprehensive?
+   - Maintainability: Easy to maintain?
+
+3. Write review with this format:
+   - **Review Status**: APPROVED or CHANGES_REQUESTED
+   - **Quality Score**: 1-10
+   - **Strengths**: What's done well
+   - **Issues Found**: Problems (if any)
+   - **Required Changes**: Specific changes needed (if CHANGES_REQUESTED)
+
+4. Save review: create_or_update_file(owner="{_state.github_owner}", repo="{_state.github_repo}", path="{_state.code_review_file_path}", content=[your review], message="docs: code review iteration {_state.iteration}", branch="main")
+
+Call each tool EXACTLY ONCE. After saving, confirm: "Review Status: [APPROVED/CHANGES_REQUESTED]"
+"""
+
+    result = _run_async(lead_engineer_agent.arun(prompt))
+    content_lower = result.content.lower()
+
+    _state.code_review_status = "approved" if "approved" in content_lower and "changes_requested" not in content_lower else "changes_requested"
+
+    log_info(f"[CODE_REVIEW] Status: {_state.code_review_status}")
+    return StepOutput(content=f"REVIEW:{_state.code_review_status}\n{result.content}", success=True)
+
+
+def security_review(step_input: StepInput) -> StepOutput:
+    """Security Engineer reviews code for vulnerabilities and saves feedback to GitHub."""
+    global _state
+
+    log_info(f"[SECURITY_REVIEW] Iteration {_state.iteration}")
+
+    from agents.security_engineer import security_engineer_agent
+
+    prompt = f"""You are the Security Engineer. Review the code for security vulnerabilities.
+
+**Project:** {_state.project_name}
+**GitHub:** {_state.github_owner}/{_state.github_repo}
+
+**Steps:**
+1. Read the code: get_file_contents(owner="{_state.github_owner}", repo="{_state.github_repo}", path="{_state.code_file_path}")
+
+2. Check for security issues:
+   - Injection vulnerabilities (SQL, XSS, command injection)
+   - Authentication/Authorization flaws
+   - Sensitive data exposure
+   - Input validation issues
+   - Insecure error handling
+   - OWASP Top 10 vulnerabilities
+
+3. Write review with this format:
+   - **Security Status**: APPROVED or CHANGES_REQUIRED
+   - **Vulnerabilities Found**: List with severity (Critical/High/Medium/Low)
+   - **Required Fixes**: Specific security fixes
+   - **Recommendations**: Additional improvements
+
+4. Save review: create_or_update_file(owner="{_state.github_owner}", repo="{_state.github_repo}", path="{_state.security_review_file_path}", content=[your review], message="docs: security review iteration {_state.iteration}", branch="main")
+
+Call each tool EXACTLY ONCE. After saving, confirm: "Security Status: [APPROVED/CHANGES_REQUIRED]"
+"""
+
+    result = _run_async(security_engineer_agent.arun(prompt))
+    content_lower = result.content.lower()
+
+    # Determine security status
+    if "changes_required" in content_lower or "critical" in content_lower:
+        _state.security_review_status = "changes_required"
+    else:
+        _state.security_review_status = "approved"
+
+    log_info(f"[SECURITY_REVIEW] Status: {_state.security_review_status}")
+    return StepOutput(content=f"SECURITY:{_state.security_review_status}\n{result.content}", success=True)
+
+
+def reviews_passed(outputs: List[StepOutput]) -> bool:
+    """Check if both reviews passed. Returns True to break loop."""
+    global _state
+
+    code_approved = _state.code_review_status == "approved"
+    security_approved = _state.security_review_status == "approved"
+
+    if code_approved and security_approved:
+        _state.approved = True
+        log_info("[LOOP] All reviews APPROVED - breaking loop")
+        return True
+
+    if _state.iteration >= 3:
+        log_info("[LOOP] Max iterations (3) reached - breaking loop")
+        return True
+
+    log_info(f"[LOOP] Continuing - Code: {_state.code_review_status}, Security: {_state.security_review_status}")
+    return False
+
+
+# ============================================================================
+# DEPLOYMENT AND SUMMARY
+# ============================================================================
 
 def deploy_to_vercel(step_input: StepInput) -> StepOutput:
-    """
-    Step 5: Deploy to Vercel
-    """
-    code_info = step_input.previous_step_content or ""
+    """Step 4: Deploy to Vercel"""
+    global _state
 
     log_info("[STEP:deploy] Deploying to Vercel")
 
@@ -342,73 +471,51 @@ def deploy_to_vercel(step_input: StepInput) -> StepOutput:
 
     prompt = f"""Deploy the project to Vercel.
 
-**Code Implementation:**
-{code_info}
+**Project:** {_state.project_name}
+**GitHub Repository:** {_state.github_owner}/{_state.github_repo}
 
-## Instructions
-
+**Instructions:**
 1. Use Vercel MCP tools to deploy
 2. Connect the GitHub repository
-3. Configure environment variables
-4. Set up Supabase connection strings
-5. Verify deployment
-6. Return the preview URL
+3. Configure environment variables from .env.example
+4. Verify deployment
+5. Return the preview URL
 
 Use Vercel MCP tools.
 """
 
     log_info("[AGENT:software_engineer] Deploying")
     result = _run_async(software_engineer_agent.arun(prompt))
-    output = result.content or ""
 
     log_info("[STEP:deploy] Deployment complete")
-    return StepOutput(content=output, success=True)
+    return StepOutput(content=result.content, success=True)
 
 
 def create_summary(step_input: StepInput) -> StepOutput:
-    """
-    Step 6: Create Final Summary
+    """Step 5: Create Final Summary"""
+    global _state
 
-    Input: Original document URL
-    Previous Step Output: Deployment info
-    Output: Final summary with all links
-    """
     deployment_info = step_input.previous_step_content or ""
-    input_str = step_input.input if isinstance(step_input.input, str) else ""
 
     log_info("[STEP:summary] Creating summary")
 
-    # Extract document URL
-    document_url = parse_document_url(input_str)
-
-    # Extract URLs from deployment info
+    # Extract URLs
     deploy_url_match = re.search(r'https://[^\s]+vercel\.app[^\s]*', deployment_info)
     deploy_url = deploy_url_match.group(0) if deploy_url_match else "Deployment in progress"
 
-    repo_url_match = re.search(r'https://github\.com/[^\s]+', deployment_info)
-    repo_url = repo_url_match.group(0) if repo_url_match else "Repository created"
+    repo_url = f"https://github.com/{_state.github_owner}/{_state.github_repo}" if _state.github_owner and _state.github_repo else "Repository created"
 
-    # Extract project name from repo URL or use generic name
-    project_name = "Your Project"
-    if repo_url and repo_url != "Repository created":
-        # Extract from github.com/owner/repo-name
-        repo_name_match = re.search(r'github\.com/[^/]+/([^/\s]+)', repo_url)
-        if repo_name_match:
-            project_name = repo_name_match.group(1).replace('-', ' ').title()
+    status = "APPROVED" if _state.approved else "COMPLETED_WITH_NOTES"
 
     summary = f"""
 ## 🎉 Implementation Complete!
 
-### Project: {project_name}
+### Project: {_state.project_name}
 
-**Good news! Your product has been successfully built and deployed.**
-
----
-
-### 📋 Documents
-
-**Requirements (PRD/Feature Spec):**
-{document_url}
+**Status:** `{status}`
+**Review Iterations:** {_state.iteration}
+**Code Review:** {_state.code_review_status}
+**Security Review:** {_state.security_review_status}
 
 ---
 
@@ -419,31 +526,39 @@ def create_summary(step_input: StepInput) -> StepOutput:
 
 ---
 
+### 📁 Implementation Files (in GitHub)
+
+**Code:** `{_state.code_file_path}`
+**Code Review:** `{_state.code_review_file_path}`
+**Security Review:** `{_state.security_review_file_path}`
+
+---
+
 ### ✅ What Was Done
 
-1. ✓ Read PRD from Google Docs
-2. ✓ Designed architecture with tech stack
-3. ✓ Created GitHub repository
-4. ✓ Implemented complete codebase
-5. ✓ Configured database with Supabase
-6. ✓ Deployed to Vercel
+1. ✓ Read PRD and Architecture from Google Docs
+2. ✓ Created GitHub repository with initial structure
+3. ✓ Implementation cycle ({_state.iteration} iterations):
+   - Development by Software Engineer
+   - Code review by Lead Engineer
+   - Security review by Security Engineer
+4. ✓ Deployed to Vercel
 
 ---
 
-### 🔗 Full Details
+### 🔗 Next Steps
 
-{deployment_info}
-
----
-
-**Next Steps:**
 1. Visit the preview link to test your product
-2. Review the code in GitHub
+2. Review the code and feedback in GitHub
 3. Configure custom domain (optional)
 4. Set up production environment variables
 """
 
     log_info("[STEP:summary] Summary complete")
+
+    # Reset state for next run
+    _state.__init__()
+
     return StepOutput(content=summary, success=True)
 
 
@@ -454,25 +569,36 @@ def create_summary(step_input: StepInput) -> StepOutput:
 software_development_workflow = Workflow(
     name="Software Development",
     stream=False,
-    description="""Implementation workflow (does NOT create PRD).
+    description="""Implementation workflow with code review and security review cycle.
 
-    Input: Google Docs URL of PRD/Feature Spec (ONLY)
+    Input: PRD_URL and ARCHITECTURE_URL (from Product Requirements Workflow)
 
     Sequential Steps:
-    1. Read PRD from Google Docs URL
-    2. Create Architecture (based on PRD content)
-    3. Create GitHub Repo
-    4. Write Code (using Supabase MCP)
-    5. Deploy to Vercel
-    6. Return summary + deployment link
+    1. Read PRD + Architecture from Google Docs
+    2. Create GitHub Repository
+    3. Implementation Cycle (Loop max 3 iterations):
+       - Development: Software Engineer writes/revises code
+       - Code Review: Lead Engineer reviews
+       - Security Review: Security Engineer reviews
+       - Loop until both approve OR max iterations
+    4. Deploy to Vercel
+    5. Return summary + deployment link
 
-    Each step receives the original document URL and output from previous step.
+    All code and reviews are stored in GitHub repository under .dev-team/ directory.
     """,
     steps=[
-        Step(name="read_prd", executor=read_prd),
-        Step(name="architecture", executor=create_architecture),
+        Step(name="read_documents", executor=read_documents),
         Step(name="create_repo", executor=create_github_repo),
-        Step(name="write_code", executor=write_code),
+        Loop(
+            name="implementation_cycle",
+            steps=[
+                Step(name="development", executor=development),
+                Step(name="code_review", executor=code_review),
+                Step(name="security_review", executor=security_review),
+            ],
+            end_condition=reviews_passed,
+            max_iterations=3,
+        ),
         Step(name="deploy", executor=deploy_to_vercel),
         Step(name="summary", executor=create_summary),
     ]
