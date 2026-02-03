@@ -11,8 +11,10 @@ from agno.agent import Agent
 from agno.models.anthropic import Claude
 from agno.tools.file import FileTools
 from agno.tools.mcp import MCPTools
+from agno.tools.workflow import WorkflowTools
 from instructions.lead_engineer_instructions import LEAD_ENGINEER_INSTRUCTIONS
 from tools.github_tools import GitHubTools
+from workflows.software_development_workflow import software_development_workflow
 
 
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
@@ -43,5 +45,10 @@ lead_engineer_agent = Agent(
         ),
         github_tools,
         supabase_mcp,
+        WorkflowTools(
+            workflow=software_development_workflow,
+            enable_run_workflow=True,
+            add_instructions=True,
+        ),
     ]
 )
