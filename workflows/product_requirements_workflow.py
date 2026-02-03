@@ -54,6 +54,39 @@ def extract_param(text: str, param: str) -> Optional[str]:
     return match.group(1).strip() if match else None
 
 
+def clean_workflow_content(content: str) -> str:
+    """
+    Remove workflow debug messages and system noise from content.
+    Only keeps the actual PRD/Feature Spec content.
+    """
+    if not content:
+        return ""
+
+    # Remove common workflow debug patterns
+    lines_to_remove = [
+        "condition",
+        "not met",
+        "skipped",
+        "steps",
+        "[debug",
+        "[info",
+        "[step:",
+        "[condition]",
+        "[agent:",
+        "[workflow:",
+    ]
+
+    cleaned_lines = []
+    for line in content.split('\n'):
+        line_lower = line.lower().strip()
+        # Skip lines that are workflow debug messages
+        if any(pattern in line_lower for pattern in lines_to_remove):
+            continue
+        cleaned_lines.append(line)
+
+    return '\n'.join(cleaned_lines).strip()
+
+
 # ============================================================================
 # AGENTS FOR PRD AND FEATURE SPEC CREATION
 # ============================================================================
@@ -361,6 +394,10 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
     else:
         project_name = extract_param(content, "PROJECT_NAME") or extract_param(original_input, "PROJECT_NAME") or "Unnamed"
 
+    # CLEAN CONTENT: Remove workflow debug messages before creating Google Doc
+    cleaned_content = clean_workflow_content(content)
+    print(f"[DEBUG:store_and_create_doc] Content cleaned - before: {len(content)} chars, after: {len(cleaned_content)} chars\n")
+
     # Note: Content is automatically stored in Agno's Knowledge base
     # when the team has knowledge=get_knowledge_base() attached
 
@@ -371,7 +408,7 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
     if project_type == "new":
         doc_result_str = docs_tool.create_prd_document(
             title=f"PRD: {project_name}",
-            content=content,
+            content=cleaned_content,
             project_name=project_name,
         )
     else:
@@ -382,7 +419,7 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
             feature_name = extract_param(content, "FEATURE_NAME") or extract_param(original_input, "FEATURE_NAME") or "New Feature"
         doc_result_str = docs_tool.create_feature_spec_document(
             title=f"Feature: {feature_name}",
-            content=content,
+            content=cleaned_content,
             feature_name=feature_name,
             project_name=project_name,
         )
@@ -399,7 +436,7 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
     # Prepare output with document link prominently displayed
     doc_type = "PRD" if project_type == "new" else "Feature Spec"
 
-    output = f"""{content}
+    output = f"""{cleaned_content}
 
 ---
 ## Document Created
