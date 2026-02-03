@@ -7,16 +7,13 @@ Clean architecture with 4 agents, 1 team, and 2 workflows.
 
 import os
 from agno.os import AgentOS
-from agents.product_lead import product_lead_agent, add_workflow_tools
+from agents.product_lead import product_lead_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
 from agents.security_engineer import security_engineer_agent
 from teams.product_team import product_team
 from workflows.product_requirements_workflow import product_requirements_workflow
 from workflows.software_development_workflow import software_development_workflow
-
-# Add workflow tools to product lead agent (after all imports to avoid circular dependency)
-add_workflow_tools()
 
 # Initialize Agent OS
 agent_os = AgentOS(
