@@ -456,7 +456,29 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
     """
     Create Google Doc (knowledge base storage is automatic via Agno).
     """
-    content = step_input.previous_step_content or ""
+    # Get PRD/Feature Spec content from workflow run results
+    # Since create_prd/create_feature_spec are inside Condition steps,
+    # we need to access the workflow run to get their actual output
+    content = ""
+
+    # Try to get content from workflow run step results
+    if hasattr(step_input, 'workflow_run') and step_input.workflow_run:
+        print(f"\n[DEBUG:store_and_create_doc] Accessing workflow_run.step_results")
+        for step_result in step_input.workflow_run.step_results:
+            # Look for Condition steps that contain create_prd or create_feature_spec
+            if hasattr(step_result, 'steps') and step_result.steps:
+                for inner_step in step_result.steps:
+                    if inner_step.step_name in ['create_prd', 'create_feature_spec']:
+                        content = inner_step.content or ""
+                        print(f"[DEBUG:store_and_create_doc] Found {inner_step.step_name} output: {len(content)} chars\n")
+                        break
+            if content:
+                break
+
+    # Fallback to previous_step_content if workflow_run not available
+    if not content:
+        content = step_input.previous_step_content or ""
+        print(f"[DEBUG:store_and_create_doc] Using previous_step_content: {len(content)} chars\n")
 
     # Handle both string and dict inputs
     if isinstance(step_input.input, dict):
@@ -473,7 +495,7 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
 
     # DEBUG: show what we received
     print(f"\n[DEBUG:store_and_create_doc] Input type: {type(step_input.input)}")
-    print(f"[DEBUG:store_and_create_doc] previous_step_content length: {len(content)}")
+    print(f"[DEBUG:store_and_create_doc] PRD/FS content length: {len(content)}")
     print(f"[DEBUG:store_and_create_doc] original_input length: {len(original_input)}")
     print(f"[DEBUG:store_and_create_doc] original_input preview: {original_input[:300]}\n")
 
