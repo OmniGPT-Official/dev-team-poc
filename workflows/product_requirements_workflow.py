@@ -110,10 +110,13 @@ def clean_workflow_content(content: str) -> str:
 # AGENTS FOR PRD AND FEATURE SPEC CREATION
 # ============================================================================
 
+from tools.google_docs_tools import GoogleDocsTools
+
 prd_creation_agent = Agent(
     name="PRD Creator",
     model=Claude(id="claude-sonnet-4-20250514"),
     markdown=True,
+    tools=[GoogleDocsTools()],
     instructions="""You are a Product Requirements Document (PRD) creator for NEW projects.
 
 Your role is to transform business requirements into a comprehensive, structured PRD that engineers can implement.
@@ -270,9 +273,19 @@ PRD: [Product Name]
    • Use spacing and simple formatting
    • NO markdown symbols
 
-End your PRD with:
+## SAVING TO GOOGLE DOCS
 
-PRD_COMPLETE: true
+After creating your comprehensive PRD, save it to Google Docs using the tool:
+
+create_prd_document(
+    title="PRD: [Project Name]",
+    content="[Your complete PRD content]",
+    project_name="[Project Name]"
+)
+
+Return the Google Docs URL to the user.
+
+End your response with the document URL.
 """,
 )
 
@@ -280,6 +293,7 @@ feature_spec_agent = Agent(
     name="Feature Spec Creator",
     model=Claude(id="claude-sonnet-4-20250514"),
     markdown=True,
+    tools=[GoogleDocsTools()],
     instructions="""You create Feature Specifications for EXISTING products.
 
 **Your Task**: Create a focused Feature Spec based on the provided context.
@@ -344,7 +358,20 @@ CRITICAL: NO HALLUCINATION
 • Mark unknowns as "Open Questions"
 • Use PLAIN TEXT formatting (no markdown)
 
-End with: FEATURE_SPEC_COMPLETE: true
+## SAVING TO GOOGLE DOCS
+
+After creating your comprehensive Feature Spec, save it to Google Docs using the tool:
+
+create_feature_spec_document(
+    title="Feature: [Feature Name]",
+    content="[Your complete Feature Spec content]",
+    feature_name="[Feature Name]",
+    project_name="[Project Name]"
+)
+
+Return the Google Docs URL to the user.
+
+End your response with the document URL.
 """,
 )
 
@@ -736,14 +763,14 @@ product_requirements_workflow = Workflow(
     name="Product Requirements Workflow",
     stream=False,
     description="""Conditional workflow for product requirements:
-    - NEW project: Create PRD
-    - EXISTING product: Create Feature Spec
-    Then stores in knowledge base and creates Google Doc.""",
+    - NEW project: PRD Creator agent creates PRD and saves to Google Docs
+    - EXISTING product: Feature Spec Creator agent creates Feature Spec and saves to Google Docs
+    The agents handle both content creation and Google Docs storage.""",
     steps=[
         # Conditional: New Project Path
         Condition(
             name="new_project_path",
-            description="Create PRD for new projects",
+            description="Create PRD for new projects and save to Google Docs",
             evaluator=is_new_project,
             steps=[
                 Step(name="create_prd", executor=create_prd),
@@ -752,14 +779,12 @@ product_requirements_workflow = Workflow(
         # Conditional: Existing Project Path
         Condition(
             name="existing_project_path",
-            description="Create Feature Spec for existing products",
+            description="Create Feature Spec for existing products and save to Google Docs",
             evaluator=is_existing_project,
             steps=[
                 Step(name="create_feature_spec", executor=create_feature_spec),
             ],
         ),
-        # Always run: Store and create document
-        Step(name="store_and_create_doc", executor=store_and_create_doc),
     ]
 )
 
