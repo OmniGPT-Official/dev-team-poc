@@ -6,18 +6,12 @@ and interact with GitHub and Supabase.
 """
 
 import os
-from pathlib import Path
 from agno.agent import Agent
 from agno.models.anthropic import Claude
-from agno.tools.file import FileTools
 from agno.tools.mcp import MCPTools
 from instructions.software_engineer_instructions import SOFTWARE_ENGINEER_INSTRUCTIONS
 from tools.github_tools import GitHubTools
 
-
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-(OUTPUT_DIR / "implementations").mkdir(exist_ok=True)
 
 # GitHub Tools (direct API - more reliable than MCP)
 github_tools = GitHubTools()
@@ -41,12 +35,6 @@ software_engineer_agent = Agent(
     markdown=True,
     instructions=SOFTWARE_ENGINEER_INSTRUCTIONS,
     tools=[
-        FileTools(
-            base_dir=OUTPUT_DIR,
-            enable_read_file=True,
-            enable_save_file=True,
-            enable_list_files=True,
-        ),
         github_tools,
         supabase_mcp,
     ],
