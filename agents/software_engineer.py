@@ -36,7 +36,8 @@ software_engineer_agent = Agent(
     name="Software Engineer Agent",
     role="Implements code, fixes bugs, writes tests, and creates code documentation. Handles version control and follows coding best practices.",
     model=Claude(id="claude-sonnet-4-20250514"),
-    add_history_to_context=False,  # Disabled to prevent tool retry loops from history confusion
+    add_history_to_context=True,
+    num_history_messages=15,  # Keep last 15 messages in context
     markdown=True,
     instructions=SOFTWARE_ENGINEER_INSTRUCTIONS,
     tools=[
@@ -48,5 +49,7 @@ software_engineer_agent = Agent(
         ),
         github_tools,
         supabase_mcp,
-    ]
+    ],
+    tool_call_limit=100,  # Higher limit for code implementation
+    debug_mode=False,
 )

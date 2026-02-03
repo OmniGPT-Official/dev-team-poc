@@ -78,6 +78,7 @@ class GoogleDocsTools(Toolkit):
         tools = [
             self.create_prd_document,
             self.create_feature_spec_document,
+            self.create_document,
         ]
 
         super().__init__(
@@ -85,7 +86,8 @@ class GoogleDocsTools(Toolkit):
             tools=tools,
             instructions="""Use these tools to create Google Docs:
 - create_prd_document: Create a PRD in Google Docs. Returns a shareable URL.
-- create_feature_spec_document: Create a Feature Spec in Google Docs. Returns a shareable URL.""",
+- create_feature_spec_document: Create a Feature Spec in Google Docs. Returns a shareable URL.
+- create_document: Create a generic document in Google Docs (for architecture docs, etc.). Returns a shareable URL.""",
             add_instructions=True,
             **kwargs,
         )
@@ -179,6 +181,52 @@ class GoogleDocsTools(Toolkit):
                 "document_id": doc_id,
                 "title": f"Feature Spec: {feature_name}",
                 "message": f"Feature Spec created successfully. View at: {doc_url}",
+            })
+
+        except FileNotFoundError as e:
+            return json.dumps({"success": False, "error": str(e)})
+        except HttpError as e:
+            return json.dumps({"success": False, "error": f"Google API error: {e}"})
+        except Exception as e:
+            return json.dumps({"success": False, "error": str(e)})
+
+    def create_document(
+        self,
+        title: str,
+        content: str,
+    ) -> str:
+        """
+        Create a generic document in Google Docs (for architecture docs, technical specs, etc.).
+
+        Args:
+            title: Document title (used as-is, no prefix added)
+            content: Document content in plain text format
+
+        Returns:
+            JSON string with document_url, document_id, and title
+        """
+        try:
+            service = _get_docs_service()
+
+            doc = service.documents().create(
+                body={"title": title}
+            ).execute()
+
+            doc_id = doc["documentId"]
+
+            service.documents().batchUpdate(
+                documentId=doc_id,
+                body={"requests": [{"insertText": {"location": {"index": 1}, "text": content}}]},
+            ).execute()
+
+            doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
+
+            return json.dumps({
+                "success": True,
+                "document_url": doc_url,
+                "document_id": doc_id,
+                "title": title,
+                "message": f"Document created successfully. View at: {doc_url}",
             })
 
         except FileNotFoundError as e:

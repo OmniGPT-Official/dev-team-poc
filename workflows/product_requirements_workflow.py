@@ -107,273 +107,19 @@ def clean_workflow_content(content: str) -> str:
 
 
 # ============================================================================
-# AGENTS FOR PRD AND FEATURE SPEC CREATION
+# IMPORT AGENTS (Product Lead and Lead Engineer have Google Docs tools)
 # ============================================================================
 
-from tools.google_docs_tools import GoogleDocsTools
+# Import agents - avoid circular imports by lazy loading
+def get_product_lead_agent():
+    from agents.product_lead import product_lead_agent
+    return product_lead_agent
 
-prd_creation_agent = Agent(
-    name="PRD Creator",
-    model=Claude(id="claude-sonnet-4-20250514"),
-    markdown=True,
-    tools=[GoogleDocsTools()],
-    instructions="""You are a Product Requirements Document (PRD) creator for NEW projects.
+def get_lead_engineer_agent():
+    from agents.lead_engineer import lead_engineer_agent
+    return lead_engineer_agent
 
-Your role is to transform business requirements into a comprehensive, structured PRD that engineers can implement.
 
-## FORMATTING REQUIREMENTS (CRITICAL)
-
-This PRD will be inserted into Google Docs, so:
-• Use PLAIN TEXT formatting only (no markdown)
-• Use "====" under section headings for emphasis
-• Use simple bullet points with "•" or "-"
-• Use blank lines for spacing between sections
-• NO MARKDOWN syntax (no **, __, ##, `, [], etc.)
-• Number lists as "1.", "2.", etc.
-
-## PRD STRUCTURE (FOLLOW EXACTLY)
-
-Create a complete PRD with these sections:
-
----
-
-PRD: [Product Name]
-====================================
-
-1. EXECUTIVE SUMMARY
-   Brief overview (2-3 sentences) of what we're building and why it matters.
-
-2. PROBLEM STATEMENT
-   The specific problem this product solves.
-   • Who has this problem
-   • Why existing solutions don't work
-   • Impact of not solving this problem
-
-3. TARGET USERS
-   Who will use this product:
-   • Primary user persona
-   • User characteristics
-   • User needs and pain points
-
-4. PRODUCT VISION & SOLUTION
-   What we're building:
-   • High-level product description
-   • How it solves the problem
-   • What makes it different/better
-
-5. GOALS & SUCCESS METRICS
-   How we'll measure success:
-   • Goal 1: [Specific metric] - [Target/benchmark]
-   • Goal 2: [Specific metric] - [Target/benchmark]
-   • Goal 3: [Specific metric] - [Target/benchmark]
-
-6. FEATURE REQUIREMENTS
-
-   P0 - MUST HAVE (MVP):
-   Critical features for launch:
-
-   • Feature 1: [Name]
-     Description: [What it does]
-     User Story: As a [user type], I want [action/capability] so that [benefit]
-     Acceptance Criteria:
-       - Criterion 1
-       - Criterion 2
-       - Criterion 3
-
-   • Feature 2: [Name]
-     Description: [What it does]
-     User Story: As a [user type], I want [action/capability] so that [benefit]
-     Acceptance Criteria:
-       - Criterion 1
-       - Criterion 2
-
-   P1 - SHOULD HAVE:
-   Important but not critical for MVP:
-
-   • Feature 1: [Name]
-     Description: [What it does]
-     User Story: As a [user type], I want [action/capability] so that [benefit]
-
-   P2 - NICE TO HAVE:
-   Future enhancements:
-
-   • Feature 1: [Name]
-     Description: [What it does]
-
-7. USER FLOW
-   High-level user journey:
-   1. User lands on [entry point]
-   2. User [action]
-   3. System [response]
-   4. User achieves [outcome]
-
-8. TECHNICAL CONSIDERATIONS
-   • Preferred technology stack (if specified)
-   • Performance requirements
-   • Security requirements
-   • Scalability considerations
-   • Integration needs
-   • Browser/device support
-
-9. OUT OF SCOPE (V1)
-   What this version will NOT include:
-   • Feature/capability 1 - [reason]
-   • Feature/capability 2 - [reason]
-
-10. ASSUMPTIONS & CONSTRAINTS
-    Assumptions:
-    • Assumption 1
-    • Assumption 2
-
-    Constraints:
-    • Constraint 1 (budget, timeline, technical, etc.)
-    • Constraint 2
-
-11. RISKS & MITIGATION
-    • Risk 1: [Description] - Mitigation: [Strategy]
-    • Risk 2: [Description] - Mitigation: [Strategy]
-
-12. OPEN QUESTIONS
-    Unknowns that need resolution:
-    • Question 1: [What needs to be determined]
-    • Question 2: [What needs to be determined]
-
-13. TIMELINE & MILESTONES
-    • Phase 1: [Milestone] - [Timeframe if known, or "TBD"]
-    • Phase 2: [Milestone] - [Timeframe if known, or "TBD"]
-
----
-
-## CRITICAL RULES
-
-1. NO HALLUCINATION:
-   • Only use information explicitly provided in the context
-   • If information is missing, mark it in "Open Questions"
-   • Never invent features, metrics, or requirements
-   • Don't assume technical details unless specified
-
-2. COMPLETENESS:
-   • Fill out ALL sections above
-   • If a section has no information, write "To be determined" or add to Open Questions
-   • Infer reasonable user stories and acceptance criteria from provided context
-
-3. CLARITY:
-   • Be specific and actionable
-   • Use clear, simple language
-   • Avoid jargon unless necessary
-   • Each requirement should be testable/measurable
-
-4. USER-FOCUSED:
-   • Frame everything around user value
-   • Every feature should have a clear user benefit
-   • Prioritize based on user needs
-
-5. PLAIN TEXT ONLY:
-   • Remember: this goes into Google Docs
-   • Use spacing and simple formatting
-   • NO markdown symbols
-
-## SAVING TO GOOGLE DOCS
-
-After creating your comprehensive PRD, save it to Google Docs using the tool:
-
-create_prd_document(
-    title="PRD: [Project Name]",
-    content="[Your complete PRD content]",
-    project_name="[Project Name]"
-)
-
-Return the Google Docs URL to the user.
-
-End your response with the document URL.
-""",
-)
-
-feature_spec_agent = Agent(
-    name="Feature Spec Creator",
-    model=Claude(id="claude-sonnet-4-20250514"),
-    markdown=True,
-    tools=[GoogleDocsTools()],
-    instructions="""You create Feature Specifications for EXISTING products.
-
-**Your Task**: Create a focused Feature Spec based on the provided context.
-
-**IMPORTANT - GOOGLE DOCS FORMATTING**:
-- This will be inserted into Google Docs, so use PLAIN TEXT formatting only
-- Use headings with proper spacing (not markdown # symbols)
-- Use simple bullet points with "•" or "-"
-- For tables, use plain text with clear spacing or bullet lists
-- NO MARKDOWN syntax (no **, __, ##, `, [], etc.)
-- Use line breaks and spacing for structure
-
-**Feature Spec Structure**:
-
-Feature Spec: [Feature Name]
-
-1. Overview
-What this feature does (2-3 sentences).
-
-2. Background
-Why this feature is needed and what triggered the request.
-
-3. User Story
-As a [user type], I want [capability], so that [benefit].
-
-4. Functional Requirements
-FR-1: [Requirement]
-  Priority: P0
-  Acceptance Criteria:
-    - Criterion 1
-    - Criterion 2
-
-FR-2: [Requirement]
-  Priority: P1
-  Acceptance Criteria:
-    - Criterion 1
-
-5. Non-Functional Requirements
-• Performance: ...
-• Security: ...
-• Scalability: ...
-
-6. Affected Components
-Which parts of the existing system this touches.
-
-7. Dependencies
-What this feature depends on.
-
-8. Edge Cases
-Scenarios to handle.
-
-9. Out of Scope
-What this feature will NOT do.
-
-10. Open Questions
-Any unknowns.
-
----
-CRITICAL: NO HALLUCINATION
-• Only use information explicitly provided
-• Don't assume existing product architecture
-• Mark unknowns as "Open Questions"
-• Use PLAIN TEXT formatting (no markdown)
-
-## SAVING TO GOOGLE DOCS
-
-After creating your comprehensive Feature Spec, save it to Google Docs using the tool:
-
-create_feature_spec_document(
-    title="Feature: [Feature Name]",
-    content="[Your complete Feature Spec content]",
-    feature_name="[Feature Name]",
-    project_name="[Project Name]"
-)
-
-Return the Google Docs URL to the user.
-
-End your response with the document URL.
-""",
-)
 
 
 # ============================================================================
@@ -406,28 +152,56 @@ def create_prd(step_input: StepInput) -> StepOutput:
     log_info("[STEP:create_prd] Creating PRD for new project")
     log_debug(f"[STEP:create_prd] INPUT:\n{context[:500]}")
 
-    prompt = f"""Create a PRD for this NEW project:
+    prompt = f"""Create a comprehensive PRD for this NEW project:
 
 **Project Name**: {project_name}
 
 **Context & Requirements**:
 {description}
 
-Create a comprehensive PRD now. Use only the information provided above.
+**IMPORTANT**:
+1. Create the COMPLETE PRD with all 13 sections
+2. Use PLAIN TEXT formatting (no markdown)
+3. Save it to Google Docs using create_prd_document tool
+4. Return BOTH the full PRD content AND the Google Docs URL
+
+Format your response as:
+[FULL PRD CONTENT HERE]
+
+---
+Google Docs URL: [URL]
 """
 
-    print(f"[DEBUG:create_prd] Calling PRD creation agent...")
-    log_info("[AGENT:prd_creator] Creating PRD")
-    result = _run_async(prd_creation_agent.arun(prompt))
+    print(f"[DEBUG:create_prd] Calling Product Lead agent for PRD creation...")
+    log_info("[AGENT:product_lead] Creating PRD")
+    product_lead = get_product_lead_agent()
+    result = _run_async(product_lead.arun(prompt))
     output = result.content or ""
-    print(f"[DEBUG:create_prd] Agent returned {len(output)} characters\n")
+    print(f"[DEBUG:create_prd] Product Lead agent returned {len(output)} characters\n")
 
-    # Add metadata
-    output += f"\n\n<metadata>\nPROJECT_TYPE: new\nPROJECT_NAME: {project_name}\n</metadata>"
+    # Extract PRD content and URL
+    prd_content = output
+    doc_url = None
+    if "Google Docs URL:" in output or "docs.google.com" in output:
+        # Extract the URL
+        import re
+        url_match = re.search(r'https://docs\.google\.com/document/d/[a-zA-Z0-9_-]+/edit', output)
+        if url_match:
+            doc_url = url_match.group(0)
+            print(f"[DEBUG:create_prd] Extracted Google Docs URL: {doc_url}\n")
 
-    print(f"[DEBUG:create_prd] STEP COMPLETE - output length: {len(output)}\n")
+    # Add metadata (keep full content for next step)
+    output_with_metadata = f"""{prd_content}
+
+<metadata>
+PROJECT_TYPE: new
+PROJECT_NAME: {project_name}
+DOC_URL: {doc_url or 'Not created'}
+</metadata>"""
+
+    print(f"[DEBUG:create_prd] STEP COMPLETE - output length: {len(output_with_metadata)}\n")
     log_info("[STEP:create_prd] Complete")
-    return StepOutput(content=output, success=True)
+    return StepOutput(content=output_with_metadata, success=True)
 
 
 def create_feature_spec(step_input: StepInput) -> StepOutput:
@@ -457,7 +231,7 @@ def create_feature_spec(step_input: StepInput) -> StepOutput:
     # Note: Existing project context is automatically provided by Agno's Knowledge system
     # when the team has knowledge base attached
 
-    prompt = f"""Create a Feature Specification for this EXISTING product:
+    prompt = f"""Create a comprehensive Feature Specification for this EXISTING product:
 
 **Project Name**: {project_name}
 **Feature Name**: {feature_name}
@@ -465,17 +239,307 @@ def create_feature_spec(step_input: StepInput) -> StepOutput:
 **Feature Request**:
 {description}
 
-Create a focused Feature Spec now. Use only the information provided above.
+**IMPORTANT**:
+1. Create the COMPLETE Feature Spec with all 10 sections
+2. Use PLAIN TEXT formatting (no markdown)
+3. Save it to Google Docs using create_feature_spec_document tool
+4. Return BOTH the full Feature Spec content AND the Google Docs URL
+
+Format your response as:
+[FULL FEATURE SPEC CONTENT HERE]
+
+---
+Google Docs URL: [URL]
 """
 
-    log_info("[AGENT:feature_spec_creator] Creating Feature Spec")
-    result = _run_async(feature_spec_agent.arun(prompt))
+    log_info("[AGENT:product_lead] Creating Feature Spec")
+    product_lead = get_product_lead_agent()
+    result = _run_async(product_lead.arun(prompt))
     output = result.content or ""
 
-    # Add metadata
-    output += f"\n\n<metadata>\nPROJECT_TYPE: existing\nPROJECT_NAME: {project_name}\nFEATURE_NAME: {feature_name}\n</metadata>"
+    # Extract Feature Spec content and URL
+    fs_content = output
+    doc_url = None
+    if "Google Docs URL:" in output or "docs.google.com" in output:
+        # Extract the URL
+        import re
+        url_match = re.search(r'https://docs\.google\.com/document/d/[a-zA-Z0-9_-]+/edit', output)
+        if url_match:
+            doc_url = url_match.group(0)
+            print(f"[DEBUG:create_feature_spec] Extracted Google Docs URL: {doc_url}\n")
+
+    # Add metadata (keep full content for next step)
+    output_with_metadata = f"""{fs_content}
+
+<metadata>
+PROJECT_TYPE: existing
+PROJECT_NAME: {project_name}
+FEATURE_NAME: {feature_name}
+DOC_URL: {doc_url or 'Not created'}
+</metadata>"""
 
     log_info("[STEP:create_feature_spec] Complete")
+    return StepOutput(content=output_with_metadata, success=True)
+
+
+def create_architecture_document(step_input: StepInput) -> StepOutput:
+    """
+    Create an Architecture Document using Lead Engineer agent.
+    This step runs after PRD/Feature Spec creation.
+
+    For NEW projects: Creates architecture based on PRD
+    For EXISTING projects: Searches knowledge base for GitHub link, reads repo, creates architecture based on FS + existing code
+    """
+    # Get PRD/Feature Spec content - try multiple approaches
+    prd_content = ""
+    prd_doc_url = None
+
+    # First, try to extract PRD URL from the original workflow input
+    # The URL should have been included in the workflow execution context
+    print(f"[DEBUG:create_architecture] Attempting to extract PRD URL from workflow context\n")
+
+    # Try to get content from workflow run step results (Condition contains inner steps)
+    if hasattr(step_input, 'workflow_run') and step_input.workflow_run:
+        if hasattr(step_input.workflow_run, 'step_results'):
+            print(f"[DEBUG:create_architecture] Searching {len(step_input.workflow_run.step_results)} step results for PRD/FS content\n")
+            for i, step_result in enumerate(step_input.workflow_run.step_results):
+                # Look for Condition steps that contain create_prd or create_feature_spec
+                if hasattr(step_result, 'steps') and step_result.steps:
+                    for inner_step in step_result.steps:
+                        if hasattr(inner_step, 'step_name') and inner_step.step_name in ['create_prd', 'create_feature_spec']:
+                            prd_content = inner_step.content or ""
+                            print(f"[DEBUG:create_architecture] ✓ Found {inner_step.step_name} output: {len(prd_content)} chars\n")
+                            # Extract URL from this content
+                            if "docs.google.com" in prd_content:
+                                import re
+                                url_match = re.search(r'https://docs\.google\.com/document/d/([a-zA-Z0-9_-]+)/edit', prd_content)
+                                if url_match:
+                                    prd_doc_url = url_match.group(0)
+                                    print(f"[DEBUG:create_architecture] Extracted URL from content: {prd_doc_url}\n")
+                            break
+                if prd_content:
+                    break
+
+    # Fallback: try previous_step_content
+    if not prd_content:
+        prd_content = step_input.previous_step_content or ""
+        print(f"[DEBUG:create_architecture] Using previous_step_content fallback: {len(prd_content)} chars\n")
+        # Try to extract URL from fallback content
+        if prd_content and "docs.google.com" in prd_content:
+            import re
+            url_match = re.search(r'https://docs\.google\.com/document/d/([a-zA-Z0-9_-]+)/edit', prd_content)
+            if url_match:
+                prd_doc_url = url_match.group(0)
+                print(f"[DEBUG:create_architecture] Extracted URL from fallback: {prd_doc_url}\n")
+
+    # If we have a URL but not much content, READ the document from Google Docs
+    if prd_doc_url and len(prd_content) < 1000:
+        print(f"[DEBUG:create_architecture] PRD content too short ({len(prd_content)} chars), reading from Google Docs URL...\n")
+        try:
+            from tools.google_docs_tools import GoogleDocsTools
+            docs_tool = GoogleDocsTools()
+            # Extract document ID from URL
+            import re
+            doc_id_match = re.search(r'/document/d/([a-zA-Z0-9_-]+)/', prd_doc_url)
+            if doc_id_match:
+                doc_id = doc_id_match.group(1)
+                print(f"[DEBUG:create_architecture] Reading Google Doc ID: {doc_id}\n")
+                prd_content = docs_tool.read_document(doc_id)
+                print(f"[DEBUG:create_architecture] ✓ Read {len(prd_content)} chars from Google Docs\n")
+        except Exception as e:
+            print(f"[DEBUG:create_architecture] Failed to read from Google Docs: {e}\n")
+            # Continue with whatever content we have
+
+    # Handle both string and dict inputs
+    if isinstance(step_input.input, dict):
+        original_input = str(step_input.input)
+        project_name = step_input.input.get("PROJECT_NAME", "Unnamed Project")
+        project_type = step_input.input.get("PROJECT_TYPE", "new")
+    elif isinstance(step_input.input, str):
+        original_input = step_input.input
+        project_name = extract_param(original_input, "PROJECT_NAME") or "Unnamed Project"
+        project_type_raw = extract_param(original_input, "PROJECT_TYPE")
+        project_type = project_type_raw.lower() if project_type_raw else "new"
+    else:
+        original_input = str(step_input.input)
+        project_name = "Unnamed Project"
+        project_type = "new"
+
+    print(f"\n[DEBUG:create_architecture] STEP STARTED")
+    print(f"[DEBUG:create_architecture] Project: {project_name}")
+    print(f"[DEBUG:create_architecture] Type: {project_type}")
+    print(f"[DEBUG:create_architecture] PRD content length: {len(prd_content)}\n")
+
+    log_info("[STEP:create_architecture] Creating Architecture Document")
+
+    # Extract clean PRD/FS content (without metadata)
+    clean_prd = prd_content.split("<metadata>")[0].strip() if "<metadata>" in prd_content else prd_content.strip()
+
+    # If we still don't have a URL, try to extract from metadata
+    if not prd_doc_url and "<metadata>" in prd_content:
+        metadata_section = prd_content.split("<metadata>")[1].split("</metadata>")[0] if "</metadata>" in prd_content else ""
+        if "DOC_URL:" in metadata_section:
+            prd_doc_url = metadata_section.split("DOC_URL:")[1].strip().split("\n")[0].strip()
+            if prd_doc_url and prd_doc_url != "Not created":
+                print(f"[DEBUG:create_architecture] Found PRD/FS Doc URL in metadata: {prd_doc_url}\n")
+
+    # Build prompt based on project type
+    if project_type == "existing":
+        # For EXISTING projects: Ask Lead Engineer to search knowledge base for GitHub link and read repo
+        prompt = f"""You are creating an Architecture Document for an EXISTING product feature.
+
+**Project Name**: {project_name}
+**Type**: Existing Product Feature
+**Feature Spec Google Docs URL**: {prd_doc_url or 'Not available'}
+
+**Feature Spec Content**:
+{clean_prd[:4000]}
+
+**YOUR TASK**: Design how this new feature integrates with the existing codebase.
+
+**STEPS**:
+
+1. **Search Knowledge Base**: Search for the GitHub repository link for "{project_name}"
+   - Find GitHub URL, repository information, or codebase location
+
+2. **Analyze Existing Codebase**: Use your GitHub tools to:
+   - Read the repository structure
+   - Understand the current technology stack
+   - Review existing code patterns and architecture
+   - Identify affected components
+
+3. **Design Feature Integration**: Based on Feature Spec AND existing codebase:
+   - How this feature fits into current architecture
+   - What components need modification
+   - What new components are needed
+   - Database changes if needed (prefer Supabase if already used)
+   - API changes/additions required
+
+**CREATE ARCHITECTURE DOCUMENT** with these sections:
+
+1. **Current Architecture Summary**
+   - Existing tech stack and patterns
+   - Current project structure
+
+2. **Feature Integration Plan**
+   - Where this feature fits
+   - Components to modify vs create new
+   - How it follows existing patterns
+
+3. **Technical Changes Required**
+   - Code modifications needed
+   - New files/components to create
+   - Database schema changes (if any)
+   - API endpoints (if any)
+
+4. **Implementation Approach**
+   - Step-by-step integration plan
+   - Backward compatibility considerations
+   - Testing strategy
+
+5. **Deployment Considerations**
+   - Must remain deployable to Vercel
+   - Environment variables changes (if any)
+
+**CRITICAL RULES**:
+- Follow EXISTING architecture patterns - don't introduce new patterns without strong justification
+- Use the SAME tech stack as the existing project
+- Keep changes minimal and focused on the feature requirements
+- Base ALL decisions on Feature Spec requirements
+
+**FORMATTING**:
+- Use PLAIN TEXT formatting (no markdown) as this will be saved to Google Docs
+
+**SAVE TO GOOGLE DOCS**:
+After creating the architecture document, save it using:
+create_document(
+    title="Architecture: {project_name} - [Feature Name]",
+    content="[Your architecture document]"
+)
+
+Return the Google Docs URL in your response.
+"""
+    else:
+        # For NEW projects: Create architecture based on PRD only
+        prompt = f"""You are creating an Architecture Document for a NEW project.
+
+**Project Name**: {project_name}
+**Type**: New Project (starting from scratch)
+**PRD Google Docs URL**: {prd_doc_url or 'Not available'}
+
+**PRD (Product Requirements Document) Content**:
+{clean_prd[:4000]}
+
+**YOUR TASK**: Based ONLY on the PRD requirements, design the best architecture for this project.
+
+**DEPLOYMENT REQUIREMENTS**:
+- Must be deployable to Vercel
+- If a database is needed, use Supabase
+- Choose the simplest technology stack that meets the requirements (Next.js, React, static HTML/CSS, etc.)
+
+**CREATE ARCHITECTURE DOCUMENT** with these sections:
+
+1. **System Overview**
+   - What this system does and how it works
+   - Architecture pattern chosen and why (based on PRD requirements)
+
+2. **Technology Stack Recommendation**
+   - Choose technologies based on PRD requirements (simple HTML/CSS, React, Next.js, etc.)
+   - Only include database (Supabase) if PRD requires data persistence
+   - Justify each choice based on requirements
+
+3. **Component Structure**
+   - Main components/modules needed
+   - How they work together
+   - File/folder structure
+
+4. **Data Architecture** (only if needed based on PRD)
+   - Database schema if Supabase is needed
+   - Data models and relationships
+   - API structure if needed
+
+5. **User Flow & Functionality**
+   - How users interact with the system
+   - Key features and how they're implemented
+
+6. **Deployment Strategy**
+   - Vercel deployment configuration
+   - Environment variables needed
+   - Build and deployment process
+
+7. **Open Technical Questions**
+   - Any clarifications needed for implementation
+
+**CRITICAL RULES**:
+- Base ALL decisions on the PRD requirements - don't add unnecessary complexity
+- If the PRD describes a simple website → use simple HTML/CSS or static Next.js
+- If the PRD needs interactivity → use React or Next.js
+- If the PRD needs data storage → add Supabase
+- DON'T suggest technologies not mentioned unless required by PRD
+- Keep it as simple as possible while meeting requirements
+
+**FORMATTING**:
+- Use PLAIN TEXT formatting (no markdown) as this will be saved to Google Docs
+
+**SAVE TO GOOGLE DOCS**:
+After creating the architecture document, save it using:
+create_document(
+    title="Architecture: {project_name}",
+    content="[Your architecture document]"
+)
+
+Return the Google Docs URL in your response.
+"""
+
+    print(f"[DEBUG:create_architecture] Calling Lead Engineer agent...")
+    log_info("[AGENT:lead_engineer] Creating Architecture Document")
+    lead_engineer = get_lead_engineer_agent()
+    result = _run_async(lead_engineer.arun(prompt))
+    output = result.content or ""
+    print(f"[DEBUG:create_architecture] Lead Engineer returned {len(output)} characters\n")
+
+    print(f"[DEBUG:create_architecture] STEP COMPLETE\n")
+    log_info("[STEP:create_architecture] Complete")
     return StepOutput(content=output, success=True)
 
 
@@ -763,9 +827,10 @@ product_requirements_workflow = Workflow(
     name="Product Requirements Workflow",
     stream=False,
     description="""Conditional workflow for product requirements:
-    - NEW project: PRD Creator agent creates PRD and saves to Google Docs
-    - EXISTING product: Feature Spec Creator agent creates Feature Spec and saves to Google Docs
-    The agents handle both content creation and Google Docs storage.""",
+    - NEW project: Product Lead creates PRD and saves to Google Docs
+    - EXISTING product: Product Lead creates Feature Spec and saves to Google Docs
+    - THEN: Lead Engineer creates Architecture Document and saves to Google Docs
+    The workflow creates 2 documents total: PRD/FS + Architecture.""",
     steps=[
         # Conditional: New Project Path
         Condition(
@@ -784,6 +849,12 @@ product_requirements_workflow = Workflow(
             steps=[
                 Step(name="create_feature_spec", executor=create_feature_spec),
             ],
+        ),
+        # Architecture Document (runs after PRD/FS creation)
+        Step(
+            name="create_architecture",
+            description="Create Architecture Document using Lead Engineer",
+            executor=create_architecture_document,
         ),
     ]
 )

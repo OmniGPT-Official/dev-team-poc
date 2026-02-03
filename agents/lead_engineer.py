@@ -14,6 +14,7 @@ from agno.tools.mcp import MCPTools
 from agno.tools.workflow import WorkflowTools
 from instructions.lead_engineer_instructions import LEAD_ENGINEER_INSTRUCTIONS
 from tools.github_tools import GitHubTools
+from tools.google_docs_tools import GoogleDocsTools
 from workflows.software_development_workflow import software_development_workflow
 
 
@@ -33,7 +34,8 @@ lead_engineer_agent = Agent(
     name="Lead Engineer Agent",
     role="Designs technical architecture, creates technical specifications, provides code review guidance, and offers technical leadership on implementation approaches.",
     model=Claude(id="claude-sonnet-4-20250514"),
-    add_history_to_context=False,  # Disabled to prevent tool retry loops from history confusion
+    add_history_to_context=True,
+    num_history_messages=20,  # Keep last 20 messages in context
     markdown=True,
     instructions=LEAD_ENGINEER_INSTRUCTIONS,
     tools=[
@@ -43,6 +45,7 @@ lead_engineer_agent = Agent(
             enable_save_file=True,
             enable_list_files=True,
         ),
+        GoogleDocsTools(),
         github_tools,
         supabase_mcp,
         WorkflowTools(
@@ -50,5 +53,7 @@ lead_engineer_agent = Agent(
             enable_run_workflow=True,
             add_instructions=True,
         ),
-    ]
+    ],
+    tool_call_limit=100,  # Higher limit for complex implementation tasks
+    debug_mode=False,
 )

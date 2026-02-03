@@ -30,7 +30,8 @@ security_engineer_agent = Agent(
     name="Security Engineer Agent",
     role="Reviews code for security vulnerabilities, ensures secure coding practices, and provides security guidance on implementations.",
     model=Claude(id="claude-sonnet-4-20250514"),
-    add_history_to_context=False,  # Disabled to prevent tool retry loops from history confusion
+    add_history_to_context=True,
+    num_history_messages=10,  # Keep last 10 messages in context
     markdown=True,
     instructions=SECURITY_ENGINEER_INSTRUCTIONS,
     tools=[
@@ -41,5 +42,7 @@ security_engineer_agent = Agent(
             enable_list_files=True,
         ),
         github_mcp,
-    ]
+    ],
+    tool_call_limit=50,  # Prevent infinite loops
+    debug_mode=False,
 )
