@@ -36,11 +36,15 @@ from agno.utils.log import log_info, log_debug
 
 def _run_async(coro):
     """Run async coroutine from sync context."""
-    loop = asyncio.new_event_loop()
     try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)  # DO NOT close the loop
 
 
 def extract_param(text: str, param: str) -> Optional[str]:
@@ -212,14 +216,22 @@ def create_prd(step_input: StepInput) -> StepOutput:
     """
     Create a PRD for a NEW project.
     """
-    context = step_input.input if isinstance(step_input.input, str) else ""
+    # Handle both string and dict inputs
+    if isinstance(step_input.input, dict):
+        context = str(step_input.input)
+        project_name = step_input.input.get("PROJECT_NAME", "Unnamed Project")
+        description = step_input.input.get("DESCRIPTION", context)
+    elif isinstance(step_input.input, str):
+        context = step_input.input
+        project_name = extract_param(context, "PROJECT_NAME") or "Unnamed Project"
+        description = extract_param(context, "DESCRIPTION") or context
+    else:
+        context = str(step_input.input)
+        project_name = extract_param(context, "PROJECT_NAME") or "Unnamed Project"
+        description = extract_param(context, "DESCRIPTION") or context
 
     log_info("[STEP:create_prd] Creating PRD for new project")
     log_debug(f"[STEP:create_prd] INPUT:\n{context[:500]}")
-
-    # Extract key info
-    project_name = extract_param(context, "PROJECT_NAME") or "Unnamed Project"
-    description = extract_param(context, "DESCRIPTION") or context
 
     prompt = f"""Create a PRD for this NEW project:
 
@@ -246,15 +258,25 @@ def create_feature_spec(step_input: StepInput) -> StepOutput:
     """
     Create a Feature Spec for an EXISTING product.
     """
-    context = step_input.input if isinstance(step_input.input, str) else ""
+    # Handle both string and dict inputs
+    if isinstance(step_input.input, dict):
+        context = str(step_input.input)
+        project_name = step_input.input.get("PROJECT_NAME", "Existing Product")
+        feature_name = step_input.input.get("FEATURE_NAME", "New Feature")
+        description = step_input.input.get("DESCRIPTION", context)
+    elif isinstance(step_input.input, str):
+        context = step_input.input
+        project_name = extract_param(context, "PROJECT_NAME") or "Existing Product"
+        feature_name = extract_param(context, "FEATURE_NAME") or "New Feature"
+        description = extract_param(context, "DESCRIPTION") or context
+    else:
+        context = str(step_input.input)
+        project_name = extract_param(context, "PROJECT_NAME") or "Existing Product"
+        feature_name = extract_param(context, "FEATURE_NAME") or "New Feature"
+        description = extract_param(context, "DESCRIPTION") or context
 
     log_info("[STEP:create_feature_spec] Creating Feature Spec for existing product")
     log_debug(f"[STEP:create_feature_spec] INPUT:\n{context[:500]}")
-
-    # Extract key info
-    project_name = extract_param(context, "PROJECT_NAME") or "Existing Product"
-    feature_name = extract_param(context, "FEATURE_NAME") or "New Feature"
-    description = extract_param(context, "DESCRIPTION") or context
 
     # Note: Existing project context is automatically provided by Agno's Knowledge system
     # when the team has knowledge base attached
@@ -286,29 +308,45 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
     Create Google Doc (knowledge base storage is automatic via Agno).
     """
     content = step_input.previous_step_content or ""
-    original_input = step_input.input if isinstance(step_input.input, str) else ""
+
+    # Handle both string and dict inputs
+    if isinstance(step_input.input, dict):
+        original_input = str(step_input.input)
+        input_dict = step_input.input
+    elif isinstance(step_input.input, str):
+        original_input = step_input.input
+        input_dict = None
+    else:
+        original_input = str(step_input.input)
+        input_dict = None
 
     log_info("[STEP:store_and_create_doc] Creating document")
 
     # DEBUG: show what we received
-    print(f"\n[DEBUG:store_and_create_doc] previous_step_content length: {len(content)}")
+    print(f"\n[DEBUG:store_and_create_doc] Input type: {type(step_input.input)}")
+    print(f"[DEBUG:store_and_create_doc] previous_step_content length: {len(content)}")
     print(f"[DEBUG:store_and_create_doc] original_input length: {len(original_input)}")
     print(f"[DEBUG:store_and_create_doc] original_input preview: {original_input[:300]}\n")
 
-    # Determine project type — check BOTH previous step content AND original input
-    # This handles the case where conditions failed and no PRD/FS was created
-    combined = (content + "\n" + original_input).lower()
-    if "project_type: new" in combined or "project_type:new" in combined:
-        project_type = "new"
-    elif "project_type: existing" in combined or "project_type:existing" in combined:
-        project_type = "existing"
+    # Determine project type — check dict first, then string formats
+    project_type = None
+    if input_dict and "PROJECT_TYPE" in input_dict:
+        project_type = input_dict["PROJECT_TYPE"].lower()
+        print(f"[DEBUG:store_and_create_doc] Found PROJECT_TYPE in dict: {project_type}\n")
     else:
-        # Fallback: keyword check on original input
-        new_keywords = ["new project", "from scratch", "build a new", "create a new", "start a new"]
-        if any(kw in original_input.lower() for kw in new_keywords):
+        # Check BOTH previous step content AND original input
+        combined = (content + "\n" + original_input).lower()
+        if any(marker in combined for marker in ["project_type: new", "project_type:new", "'project_type': 'new'", '"project_type": "new"']):
             project_type = "new"
-        else:
+        elif any(marker in combined for marker in ["project_type: existing", "project_type:existing", "'project_type': 'existing'", '"project_type": "existing"']):
             project_type = "existing"
+        else:
+            # Fallback: keyword check on original input
+            new_keywords = ["new project", "from scratch", "build a new", "create a new", "start a new"]
+            if any(kw in original_input.lower() for kw in new_keywords):
+                project_type = "new"
+            else:
+                project_type = "existing"
 
     print(f"[DEBUG:store_and_create_doc] Determined project_type: {project_type}\n")
 
@@ -317,7 +355,11 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
         print("[DEBUG:store_and_create_doc] No previous step content — creating document from original input\n")
         content = original_input
 
-    project_name = extract_param(content, "PROJECT_NAME") or extract_param(original_input, "PROJECT_NAME") or "Unnamed"
+    # Extract project name from dict or string
+    if input_dict and "PROJECT_NAME" in input_dict:
+        project_name = input_dict["PROJECT_NAME"]
+    else:
+        project_name = extract_param(content, "PROJECT_NAME") or extract_param(original_input, "PROJECT_NAME") or "Unnamed"
 
     # Note: Content is automatically stored in Agno's Knowledge base
     # when the team has knowledge=get_knowledge_base() attached
@@ -333,7 +375,11 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
             project_name=project_name,
         )
     else:
-        feature_name = extract_param(content, "FEATURE_NAME") or extract_param(original_input, "FEATURE_NAME") or "New Feature"
+        # Extract feature name from dict or string
+        if input_dict and "FEATURE_NAME" in input_dict:
+            feature_name = input_dict["FEATURE_NAME"]
+        else:
+            feature_name = extract_param(content, "FEATURE_NAME") or extract_param(original_input, "FEATURE_NAME") or "New Feature"
         doc_result_str = docs_tool.create_feature_spec_document(
             title=f"Feature: {feature_name}",
             content=content,
@@ -383,12 +429,24 @@ To enable Google Docs, run: `python tests/google_docs/oauth_server.py` and autho
 
 def is_new_project(step_input: StepInput) -> bool:
     """Check if this is a new project."""
-    content = step_input.input if isinstance(step_input.input, str) else ""
+    # Handle both string and dict inputs
+    if isinstance(step_input.input, dict):
+        content = str(step_input.input)
+        # Also check dict keys directly
+        project_type = step_input.input.get("PROJECT_TYPE", "").lower()
+        if project_type == "new":
+            log_info("[CONDITION] ✓ Detected: NEW project (dict key)")
+            return True
+    elif isinstance(step_input.input, str):
+        content = step_input.input
+    else:
+        content = str(step_input.input)
+
     content_lower = content.lower()
 
     # DEBUG LOGGING
     print(f"\n[DEBUG:is_new_project] Input type: {type(step_input.input)}")
-    print(f"[DEBUG:is_new_project] Input content (first 300 chars): {content[:300]}")
+    print(f"[DEBUG:is_new_project] Input content (first 500 chars): {content[:500]}")
     print(f"[DEBUG:is_new_project] Checking for 'new' project markers...\n")
 
     # Check explicit marker (multiple formats)
@@ -398,7 +456,9 @@ def is_new_project(step_input: StepInput) -> bool:
         "project type: new",
         "project type:new",
         "type: new",
-        "type:new"
+        "type:new",
+        "'project_type': 'new'",
+        '"project_type": "new"'
     ]):
         log_info("[CONDITION] ✓ Detected: NEW project (explicit marker)")
         return True
@@ -416,12 +476,24 @@ def is_new_project(step_input: StepInput) -> bool:
 
 def is_existing_project(step_input: StepInput) -> bool:
     """Check if this is an existing project."""
-    content = step_input.input if isinstance(step_input.input, str) else ""
+    # Handle both string and dict inputs
+    if isinstance(step_input.input, dict):
+        content = str(step_input.input)
+        # Also check dict keys directly
+        project_type = step_input.input.get("PROJECT_TYPE", "").lower()
+        if project_type == "existing":
+            log_info("[CONDITION] ✓ Detected: EXISTING project (dict key)")
+            return True
+    elif isinstance(step_input.input, str):
+        content = step_input.input
+    else:
+        content = str(step_input.input)
+
     content_lower = content.lower()
 
     # DEBUG LOGGING
     print(f"\n[DEBUG:is_existing_project] Input type: {type(step_input.input)}")
-    print(f"[DEBUG:is_existing_project] Input content (first 300 chars): {content[:300]}")
+    print(f"[DEBUG:is_existing_project] Input content (first 500 chars): {content[:500]}")
     print(f"[DEBUG:is_existing_project] Checking for 'existing' project markers...\n")
 
     # Check explicit marker (multiple formats)
@@ -431,7 +503,9 @@ def is_existing_project(step_input: StepInput) -> bool:
         "project type: existing",
         "project type:existing",
         "type: existing",
-        "type:existing"
+        "type:existing",
+        "'project_type': 'existing'",
+        '"project_type": "existing"'
     ]):
         log_info("[CONDITION] ✓ Detected: EXISTING project (explicit marker)")
         return True
