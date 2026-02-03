@@ -18,6 +18,7 @@ from agents.software_engineer import software_engineer_agent
 from agents.security_engineer import security_engineer_agent
 from utils.knowledge_base import get_knowledge_base
 from workflows.product_requirements_workflow import product_requirements_workflow
+from workflows.software_development_workflow import software_development_workflow
 
 
 product_team = Team(
@@ -32,6 +33,11 @@ product_team = Team(
     tools=[
         WorkflowTools(
             workflow=product_requirements_workflow,
+            enable_run_workflow=True,
+            add_instructions=True,
+        ),
+        WorkflowTools(
+            workflow=software_development_workflow,
             enable_run_workflow=True,
             add_instructions=True,
         ),
@@ -50,12 +56,26 @@ product_team = Team(
 - Use it to find existing project information, GitHub repos, previous PRDs, etc.
 
 **Available Workflows:**
-- **Product Requirements Workflow** (use `run_workflow` tool)
-  * Creates PRD/Feature Spec AND Architecture documents
-  * For NEW projects: Creates PRD + Architecture (from scratch)
-  * For EXISTING projects: Creates Feature Spec + Architecture (searches knowledge base for GitHub repo)
-  * Returns 2 Google Docs URLs
-  * Call this workflow after Product Lead gathers requirements
+
+1. **Product Requirements Workflow** (use `run_workflow` tool)
+   * Creates PRD/Feature Spec AND Architecture documents
+   * For NEW projects: Creates PRD + Architecture (from scratch)
+   * For EXISTING projects: Creates Feature Spec + Architecture (searches knowledge base for GitHub repo)
+   * Returns 2 Google Docs URLs (PRD/FS + Architecture)
+   * Call this workflow after Product Lead gathers requirements
+
+2. **Software Development Workflow** (use `run_workflow` tool)
+   * Takes PRD URL and Architecture URL as input
+   * Reads both documents from Google Docs
+   * Creates GitHub repository
+   * Implementation cycle with reviews (max 3 iterations):
+     - Software Engineer writes/revises code
+     - Lead Engineer reviews code quality
+     - Security Engineer reviews security
+     - Loop until both approve OR max iterations
+   * Deploys to Vercel
+   * Returns deployment link + GitHub repo
+   * All code and reviews stored in GitHub under .dev-team/
 
 ## TEAM ROLES & WORKFLOWS
 
@@ -69,17 +89,11 @@ product_team = Team(
 - Asks for implementation permission
 - Delegates to Lead Engineer when user approves
 
-**Lead Engineer** (Architecture & Implementation)
-- Workflow: Software Development Workflow
-- Receives Google Docs URL(s) from Product Lead
-- For EXISTING projects: Searches knowledge base for GitHub repo link
-- Reads PRD/Architecture from URLs
-- Runs Software Development Workflow to:
-  * Review architecture
-  * Create/update GitHub repository
-  * Write code (delegates to Software Engineer)
-  * Deploy to Vercel
-- Returns deployment link
+**Lead Engineer** (Architecture & Code Review)
+- Creates Architecture documents in Product Requirements Workflow
+- Reviews code quality in Software Development Workflow
+- Provides technical feedback to Software Engineer
+- Ensures code follows architecture and best practices
 
 **Software Engineer** (Code Implementation)
 - Implements code based on architecture
@@ -92,27 +106,51 @@ product_team = Team(
 
 ## HOW THE TEAM WORKS
 
+**Phase 1: Requirements & Architecture**
 1. **ALWAYS START** → Search knowledge base for any existing project info
 2. **Product Lead** → User conversation → Gathers requirements (project type, features, etc.)
-3. **Team** → Calls `run_workflow` with Product Requirements Workflow:
+3. **Team** → Calls `run_workflow("Product Requirements Workflow")`:
    - Input: PROJECT_TYPE (new/existing), PROJECT_NAME, DESCRIPTION, etc.
    - Workflow creates PRD/FS + Architecture documents
-   - Returns 2 Google Docs URLs
+   - Returns 2 Google Docs URLs (PRD + Architecture)
 4. **Product Lead** → Shares URLs with user → Asks: "Would you like me to proceed with implementation?"
+
+**Phase 2: Implementation & Deployment**
 5. **User** → Says YES
-6. **Product Lead** → Delegates to **Lead Engineer** with Google Docs URLs
-7. **Lead Engineer** → Reads PRD/Architecture → Runs Software Development Workflow → Returns deployment
+6. **Team** → Calls `run_workflow("Software Development")`:
+   - Input: PRD_URL + ARCHITECTURE_URL (from Phase 1)
+   - Workflow orchestrates:
+     * Reads both documents from Google Docs
+     * Creates GitHub repository
+     * Implementation cycle (max 3 iterations):
+       - Software Engineer: writes/revises code
+       - Lead Engineer: reviews code quality
+       - Security Engineer: reviews security
+       - Loop until both approve OR max iterations
+     * Deploys to Vercel
+   - Returns deployment link + GitHub repo URL
+7. **Team** → Shares deployment link with user
 
 ## CRITICAL RULES
 
 1. **ALWAYS SEARCH KNOWLEDGE BASE FIRST** - Before ANY work, search for existing project information
-2. **USE run_workflow TOOL** - Call the Product Requirements Workflow using `run_workflow` tool after gathering requirements
-3. **USER TALKS TO PRODUCT LEAD** - For requirements and business questions
-4. **NO TECHNICAL JARGON WITH USER** - Keep it business-focused
-5. **EXISTING PROJECTS** - Search knowledge base for GitHub repository link (workflow will do this too)
-6. **MUST HAVE GOOGLE DOCS URLS** - Lead Engineer needs valid URLs before implementation
-7. **STOP IF NO URLS** - Lead Engineer stops and asks for URLs if not provided
-8. **WORKFLOW PARAMETERS** - Pass PROJECT_TYPE, PROJECT_NAME, DESCRIPTION, and optionally FEATURE_NAME to workflow
+2. **TWO-PHASE APPROACH** - Always run workflows in sequence:
+   - Phase 1: Product Requirements Workflow (creates PRD + Architecture)
+   - Phase 2: Software Development Workflow (implements + deploys)
+3. **USER TALKS TO PRODUCT LEAD** - For requirements and business questions (NO technical jargon)
+4. **WORKFLOW 1 PARAMETERS** - Product Requirements Workflow:
+   - PROJECT_TYPE (new/existing)
+   - PROJECT_NAME
+   - DESCRIPTION
+   - FEATURE_NAME (optional, for existing projects)
+5. **WORKFLOW 2 PARAMETERS** - Software Development Workflow:
+   - PRD_URL (from Workflow 1)
+   - ARCHITECTURE_URL (from Workflow 1)
+   - GITHUB_REPO (optional)
+   - GITHUB_OWNER (optional)
+   - PROJECT_NAME (optional)
+6. **WAIT FOR USER APPROVAL** - After Phase 1 (documents created), ask user for permission before Phase 2 (implementation)
+7. **ALL FILES IN GITHUB** - Code and reviews stored in GitHub repository under .dev-team/ (no local storage)
 """,
     ],
     markdown=True,
