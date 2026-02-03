@@ -456,6 +456,9 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
     """
     Create Google Doc (knowledge base storage is automatic via Agno).
     """
+    # DEBUG: Show all available attributes on step_input
+    print(f"\n[DEBUG:store_and_create_doc] StepInput attributes: {dir(step_input)}\n")
+
     # Get PRD/Feature Spec content from workflow run results
     # Since create_prd/create_feature_spec are inside Condition steps,
     # we need to access the workflow run to get their actual output
@@ -463,17 +466,33 @@ def store_and_create_doc(step_input: StepInput) -> StepOutput:
 
     # Try to get content from workflow run step results
     if hasattr(step_input, 'workflow_run') and step_input.workflow_run:
-        print(f"\n[DEBUG:store_and_create_doc] Accessing workflow_run.step_results")
-        for step_result in step_input.workflow_run.step_results:
-            # Look for Condition steps that contain create_prd or create_feature_spec
-            if hasattr(step_result, 'steps') and step_result.steps:
-                for inner_step in step_result.steps:
-                    if inner_step.step_name in ['create_prd', 'create_feature_spec']:
-                        content = inner_step.content or ""
-                        print(f"[DEBUG:store_and_create_doc] Found {inner_step.step_name} output: {len(content)} chars\n")
-                        break
-            if content:
-                break
+        print(f"[DEBUG:store_and_create_doc] workflow_run exists, type: {type(step_input.workflow_run)}")
+        print(f"[DEBUG:store_and_create_doc] workflow_run attributes: {dir(step_input.workflow_run)}\n")
+
+        if hasattr(step_input.workflow_run, 'step_results'):
+            print(f"[DEBUG:store_and_create_doc] step_results exists, length: {len(step_input.workflow_run.step_results)}\n")
+            for i, step_result in enumerate(step_input.workflow_run.step_results):
+                print(f"[DEBUG:store_and_create_doc] step_result[{i}]: {type(step_result)}")
+                print(f"[DEBUG:store_and_create_doc] step_result[{i}] attributes: {dir(step_result)}")
+                if hasattr(step_result, 'step_name'):
+                    print(f"[DEBUG:store_and_create_doc] step_result[{i}] step_name: {step_result.step_name}")
+                if hasattr(step_result, 'content'):
+                    print(f"[DEBUG:store_and_create_doc] step_result[{i}] content length: {len(step_result.content or '')}")
+
+                # Look for Condition steps that contain create_prd or create_feature_spec
+                if hasattr(step_result, 'steps') and step_result.steps:
+                    print(f"[DEBUG:store_and_create_doc] step_result[{i}] has inner steps: {len(step_result.steps)}")
+                    for j, inner_step in enumerate(step_result.steps):
+                        print(f"[DEBUG:store_and_create_doc]   inner_step[{j}] name: {getattr(inner_step, 'step_name', 'N/A')}")
+                        if hasattr(inner_step, 'step_name') and inner_step.step_name in ['create_prd', 'create_feature_spec']:
+                            content = inner_step.content or ""
+                            print(f"[DEBUG:store_and_create_doc]   ✓ Found {inner_step.step_name} output: {len(content)} chars\n")
+                            break
+                print()
+                if content:
+                    break
+    else:
+        print(f"[DEBUG:store_and_create_doc] workflow_run NOT available\n")
 
     # Fallback to previous_step_content if workflow_run not available
     if not content:
