@@ -2,20 +2,20 @@
 Software Development Workflow - Implementation with Review Cycle
 
 This workflow handles implementation with code review and security review iterations.
-The PRD and Architecture should already exist (created by Product Requirements Workflow).
+Takes Architecture Document URL as input.
 
 Flow:
-1. Read PRD+Architecture URLs -> Extract PRD and Architecture content from Google Docs
-2. Create GitHub Repo -> Initialize repository
+1. Read Architecture from Google Docs URL
+2. Create GitHub Repo
 3. Implementation Cycle (Loop max 3 iterations):
-   - Development: Software Engineer writes/revises code
+   - Development: Software Engineer writes/revises code based on architecture
    - Code Review: Lead Engineer reviews code
    - Security Review: Security Engineer reviews for vulnerabilities
    - Loop continues until both reviews approve OR max iterations reached
-4. Deploy to Vercel -> Deploy and get preview link
-5. Summary -> Return deployment link
+4. Deploy to Vercel
+5. Summary with deployment link
 
-Input: document_url (PRD URL) and architecture_url (Architecture Doc URL)
+Input: ARCHITECTURE_URL (Architecture Document from Google Docs)
 Output: Vercel deployment link + GitHub repo
 """
 
@@ -49,7 +49,6 @@ class ImplementationState:
         self.github_repo = ""
         self.github_owner = ""
         self.project_name = ""
-        self.prd_content = ""
         self.architecture_content = ""
 
     def reset_reviews(self):
@@ -81,36 +80,33 @@ def _run_async(coro):
 
 def parse_input_urls(input_str: str) -> dict:
     """
-    Parse input string to extract PRD URL and Architecture URL.
+    Parse input string to extract Architecture URL.
 
     Expected format:
-    - PRD_URL: <url>
     - ARCHITECTURE_URL: <url>
     OR
-    - DOCUMENT_URL: <prd_url> (for backward compatibility)
-    - ARCHITECTURE_URL: <arch_url>
+    - Just the Google Docs URL directly
     """
     print(f"\n[DEBUG:parse_input] Parsing input (length {len(input_str)})")
 
     result = {
-        "prd_url": None,
         "architecture_url": None,
         "github_repo": None,
         "github_owner": None,
         "project_name": None,
     }
 
-    # Extract PRD URL
-    prd_match = re.search(r'(?:PRD_URL|DOCUMENT_URL):\s*(https://[^\s]+)', input_str, re.I)
-    if prd_match:
-        result["prd_url"] = prd_match.group(1)
-        print(f"[DEBUG:parse_input] ✓ Found PRD URL: {result['prd_url']}")
-
-    # Extract Architecture URL
+    # Extract Architecture URL (explicit format)
     arch_match = re.search(r'ARCHITECTURE_URL:\s*(https://[^\s]+)', input_str, re.I)
     if arch_match:
         result["architecture_url"] = arch_match.group(1)
         print(f"[DEBUG:parse_input] ✓ Found Architecture URL: {result['architecture_url']}")
+    else:
+        # Try to find any Google Docs URL in the input
+        docs_match = re.search(r'https://docs\.google\.com/document/d/[a-zA-Z0-9_-]+/[^\s]*', input_str)
+        if docs_match:
+            result["architecture_url"] = docs_match.group(0)
+            print(f"[DEBUG:parse_input] ✓ Found Google Docs URL: {result['architecture_url']}")
 
     # Extract GitHub info (optional)
     repo_match = re.search(r'GITHUB_REPO:\s*([^\s]+)', input_str, re.I)
@@ -143,73 +139,59 @@ def _get_github_file_paths(product_name: str):
 # WORKFLOW STEP FUNCTIONS
 # ============================================================================
 
-def read_documents(step_input: StepInput) -> StepOutput:
+def read_architecture(step_input: StepInput) -> StepOutput:
     """
-    Step 1: Read PRD and Architecture from Google Docs URLs
+    Step 1: Read Architecture from Google Docs URL
 
-    Input: String with PRD_URL and ARCHITECTURE_URL
-    Output: Combined PRD + Architecture content
+    Input: String with ARCHITECTURE_URL (or just the URL)
+    Output: Architecture content
     """
     global _state
 
     input_str = step_input.input if isinstance(step_input.input, str) else ""
 
     print("\n" + "="*80)
-    print("[DEBUG:read_documents] === STEP 1: READ DOCUMENTS ===")
+    print("[DEBUG:read_architecture] === STEP 1: READ ARCHITECTURE ===")
     print("="*80 + "\n")
 
     parsed = parse_input_urls(input_str)
 
-    if not parsed["prd_url"]:
-        error_msg = "ERROR: No PRD_URL provided"
-        log_error(f"[STEP:read_documents] {error_msg}")
-        return StepOutput(content=error_msg, success=False)
-
     if not parsed["architecture_url"]:
-        error_msg = "ERROR: No ARCHITECTURE_URL provided"
-        log_error(f"[STEP:read_documents] {error_msg}")
+        error_msg = "ERROR: No ARCHITECTURE_URL provided. Please provide a Google Docs URL for the architecture document."
+        log_error(f"[STEP:read_architecture] {error_msg}")
         return StepOutput(content=error_msg, success=False)
 
-    log_info(f"[STEP:read_documents] Reading PRD from: {parsed['prd_url']}")
-    log_info(f"[STEP:read_documents] Reading Architecture from: {parsed['architecture_url']}")
+    log_info(f"[STEP:read_architecture] Reading Architecture from: {parsed['architecture_url']}")
 
     from tools.google_docs_tools import GoogleDocsTools
     google_docs = GoogleDocsTools()
 
     try:
-        # Read PRD
-        prd_doc_id = re.search(r'/document/d/([a-zA-Z0-9-_]+)', parsed["prd_url"]).group(1)
-        _state.prd_content = google_docs.read_document(prd_doc_id)
-        print(f"[DEBUG:read_documents] ✓ PRD read: {len(_state.prd_content)} chars")
-
         # Read Architecture
         arch_doc_id = re.search(r'/document/d/([a-zA-Z0-9-_]+)', parsed["architecture_url"]).group(1)
         _state.architecture_content = google_docs.read_document(arch_doc_id)
-        print(f"[DEBUG:read_documents] ✓ Architecture read: {len(_state.architecture_content)} chars")
+        print(f"[DEBUG:read_architecture] ✓ Architecture read: {len(_state.architecture_content)} chars")
 
         # Store project info
         _state.github_repo = parsed["github_repo"]
         _state.github_owner = parsed["github_owner"]
         _state.project_name = parsed["project_name"] or "project"
 
-        combined_content = f"""=== PRD ===
-{_state.prd_content}
-
-=== ARCHITECTURE ===
+        output_content = f"""=== ARCHITECTURE ===
 {_state.architecture_content}
 
 === PROJECT INFO ===
-GitHub Repo: {_state.github_repo}
-GitHub Owner: {_state.github_owner}
+GitHub Repo: {_state.github_repo or 'Not specified'}
+GitHub Owner: {_state.github_owner or 'Not specified'}
 Project Name: {_state.project_name}
 """
 
-        log_info("[STEP:read_documents] Documents read successfully")
-        return StepOutput(content=combined_content, success=True)
+        log_info("[STEP:read_architecture] Architecture read successfully")
+        return StepOutput(content=output_content, success=True)
 
     except Exception as e:
-        error_msg = f"ERROR: Failed to read documents: {str(e)}"
-        log_error(f"[STEP:read_documents] {error_msg}")
+        error_msg = f"ERROR: Failed to read architecture document: {str(e)}"
+        log_error(f"[STEP:read_architecture] {error_msg}")
         return StepOutput(content=error_msg, success=False)
 
 
@@ -293,22 +275,20 @@ def development(step_input: StepInput) -> StepOutput:
 
     if iteration == 1:
         # First iteration - implement from scratch
-        prompt = f"""You are the Software Engineer. Implement the code based on the architecture.
+        prompt = f"""You are the Software Engineer. Implement the code based on the architecture document.
 
 **Project:** {_state.project_name}
 **GitHub:** {_state.github_owner}/{_state.github_repo}
 
-**PRD (Requirements):**
-{_state.prd_content[:2000]}
-
-**Architecture (Technical Design):**
+**Architecture Document (Full Technical Specification):**
 {_state.architecture_content}
 
 **Your Task:**
-1. Write clean, production-ready code following the architecture
-2. Include proper error handling and validation
-3. Add docstrings and comments
-4. Follow security best practices
+1. Read and understand the full architecture document above
+2. Write clean, production-ready code following the architecture
+3. Include proper error handling and validation
+4. Add docstrings and comments
+5. Follow security best practices
 
 **Save Code to GitHub:**
 Call create_or_update_file ONCE:
@@ -536,7 +516,7 @@ def create_summary(step_input: StepInput) -> StepOutput:
 
 ### ✅ What Was Done
 
-1. ✓ Read PRD and Architecture from Google Docs
+1. ✓ Read Architecture from Google Docs
 2. ✓ Created GitHub repository with initial structure
 3. ✓ Implementation cycle ({_state.iteration} iterations):
    - Development by Software Engineer
@@ -571,13 +551,13 @@ software_development_workflow = Workflow(
     stream=False,
     description="""Implementation workflow with code review and security review cycle.
 
-    Input: PRD_URL and ARCHITECTURE_URL (from Product Requirements Workflow)
+    Input: ARCHITECTURE_URL (Architecture Document from Google Docs)
 
     Sequential Steps:
-    1. Read PRD + Architecture from Google Docs
+    1. Read Architecture from Google Docs
     2. Create GitHub Repository
     3. Implementation Cycle (Loop max 3 iterations):
-       - Development: Software Engineer writes/revises code
+       - Development: Software Engineer writes/revises code based on architecture
        - Code Review: Lead Engineer reviews
        - Security Review: Security Engineer reviews
        - Loop until both approve OR max iterations
@@ -587,7 +567,7 @@ software_development_workflow = Workflow(
     All code and reviews are stored in GitHub repository under .dev-team/ directory.
     """,
     steps=[
-        Step(name="read_documents", executor=read_documents),
+        Step(name="read_architecture", executor=read_architecture),
         Step(name="create_repo", executor=create_github_repo),
         Loop(
             name="implementation_cycle",

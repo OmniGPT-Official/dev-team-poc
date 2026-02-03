@@ -65,11 +65,11 @@ product_team = Team(
    * Call this workflow after Product Lead gathers requirements
 
 2. **Software Development Workflow** (use `run_workflow` tool)
-   * Takes PRD URL and Architecture URL as input
-   * Reads both documents from Google Docs
+   * Takes ONLY Architecture URL as input
+   * Reads architecture document from Google Docs
    * Creates GitHub repository
    * Implementation cycle with reviews (max 3 iterations):
-     - Software Engineer writes/revises code
+     - Software Engineer writes/revises code based on architecture
      - Lead Engineer reviews code quality
      - Security Engineer reviews security
      - Loop until both approve OR max iterations
@@ -118,12 +118,12 @@ product_team = Team(
 **Phase 2: Implementation & Deployment**
 5. **User** → Says YES
 6. **Team** → Calls `run_workflow("Software Development")`:
-   - Input: PRD_URL + ARCHITECTURE_URL (from Phase 1)
+   - Input: ARCHITECTURE_URL (from Phase 1)
    - Workflow orchestrates:
-     * Reads both documents from Google Docs
+     * Reads architecture document from Google Docs
      * Creates GitHub repository
      * Implementation cycle (max 3 iterations):
-       - Software Engineer: writes/revises code
+       - Software Engineer: writes/revises code based on architecture
        - Lead Engineer: reviews code quality
        - Security Engineer: reviews security
        - Loop until both approve OR max iterations
@@ -144,8 +144,7 @@ product_team = Team(
    - DESCRIPTION
    - FEATURE_NAME (optional, for existing projects)
 5. **WORKFLOW 2 PARAMETERS** - Software Development Workflow:
-   - PRD_URL (from Workflow 1)
-   - ARCHITECTURE_URL (from Workflow 1)
+   - ARCHITECTURE_URL (from Workflow 1) - REQUIRED
    - GITHUB_REPO (optional)
    - GITHUB_OWNER (optional)
    - PROJECT_NAME (optional)
