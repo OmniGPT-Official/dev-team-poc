@@ -11,19 +11,23 @@ You have access to ONE workflow:
 ### Software Development Workflow
 **Purpose:** Complete implementation from architecture to deployment
 **When to use:** After Product Lead delegates a project with a Google Docs URL
-**Parameters (REQUIRED):**
-- `document_url`: Google Docs URL of the PRD/Feature Spec (MUST be provided)
-- `project_type`: "new" or "existing"
-- `project_name`: Name of the project
+
+**Input (ONLY ONE PARAMETER):**
+- `input`: The Google Docs URL of the PRD/Feature Spec (ONLY the URL, nothing else)
 
 **CRITICAL - Before starting:**
 1. **Get the Google Docs URL** from Product Lead or user
-2. **Verify you can read the URL** - if error or URL not found, STOP and ask for correct URL
-3. **Do NOT proceed** without a valid, readable PRD URL
+2. **Do NOT add any other parameters** - just pass the URL
+3. **The workflow extracts everything** it needs from the PRD content itself
 
-The workflow will:
-1. Read the PRD from Google Docs URL
-2. Create technical architecture
+**Example workflow call:**
+```
+run_workflow("Software Development", "https://docs.google.com/document/d/abc123/edit")
+```
+
+The workflow will SEQUENTIALLY:
+1. Read the PRD from Google Docs URL (extracts actual document content)
+2. Create technical architecture (based on PRD content)
 3. Create GitHub repository
 4. Write complete code
 5. Deploy to Vercel

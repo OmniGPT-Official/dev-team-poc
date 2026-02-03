@@ -20,13 +20,12 @@ import os
 import sys
 import re
 import asyncio
-from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agno.workflow import Step, Workflow
 from agno.workflow.types import StepInput, StepOutput
-from agno.utils.log import log_info, log_debug
+from agno.utils.log import log_info
 
 
 # ============================================================================
@@ -34,54 +33,53 @@ from agno.utils.log import log_info, log_debug
 # ============================================================================
 
 def _run_async(coro):
-    """Run async coroutine from sync context."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
-def parse_input_params(input_str: str) -> dict:
     """
-    Parse input string for parameters.
+    Run async coroutine from sync context.
+    Uses the existing event loop if available, creates one if not.
+    Does NOT close the loop to allow Agno to use it for cleanup.
+    """
+    try:
+        # Try to get the current event loop
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            # Loop exists but closed - create a new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        # No event loop exists - create a new one
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # Run the coroutine and return result
+    # DO NOT close the loop - Agno needs it for cleanup
+    return loop.run_until_complete(coro)
+
+
+def parse_document_url(input_str: str) -> str:
+    """
+    Parse input string to extract ONLY the document URL.
 
     Required:
     - DOCUMENT_URL: <url> (Google Docs URL of the PRD/Feature Spec)
-
-    Optional:
-    - PROJECT_TYPE: new|existing
-    - PROJECT_NAME: <name>
-    - FEATURE_NAME: <name>
+    OR
+    - Just the raw URL anywhere in the input
     """
-    params = {
-        "document_url": None,
-        "project_type": "new",
-        "project_name": "Unnamed Project",
-        "feature_name": None,
-    }
+    print(f"\n[DEBUG:parse_document_url] Parsing input (length {len(input_str)})")
+    print(f"[DEBUG:parse_document_url] Input preview: {input_str[:300]}\n")
 
     # Extract document URL
     doc_url_match = re.search(r'DOCUMENT_URL:\s*(https://[^\s]+)', input_str, re.I)
     if not doc_url_match:
         # Try to find Google Docs URL anywhere in the string
         doc_url_match = re.search(r'https://docs\.google\.com/document/d/[^\s)]+', input_str)
+
     if doc_url_match:
-        params["document_url"] = doc_url_match.group(1) if doc_url_match.lastindex else doc_url_match.group(0)
-
-    type_match = re.search(r'PROJECT_TYPE:\s*(new|existing)', input_str, re.I)
-    if type_match:
-        params["project_type"] = type_match.group(1).lower()
-
-    name_match = re.search(r'PROJECT_NAME:\s*([^\n]+)', input_str, re.I)
-    if name_match:
-        params["project_name"] = name_match.group(1).strip()
-
-    feature_match = re.search(r'FEATURE_NAME:\s*([^\n]+)', input_str, re.I)
-    if feature_match:
-        params["feature_name"] = feature_match.group(1).strip()
-
-    return params
+        url = doc_url_match.group(1) if doc_url_match.lastindex else doc_url_match.group(0)
+        print(f"[DEBUG:parse_document_url] ✓ Found document_url: {url}\n")
+        return url
+    else:
+        print(f"[DEBUG:parse_document_url] ❌ No document_url found in input!\n")
+        return None
 
 
 # ============================================================================
@@ -94,17 +92,28 @@ def read_prd(step_input: StepInput) -> StepOutput:
 
     Fetches the PRD/Feature Spec content from the provided document URL.
     This is the ONLY input to the workflow - we do NOT create a new PRD.
+
+    Input: Just the document URL (nothing else needed)
+    Output: Full PRD content from Google Docs
     """
     input_str = step_input.input if isinstance(step_input.input, str) else ""
-    params = parse_input_params(input_str)
 
-    document_url = params["document_url"]
+    # EXTENSIVE LOGGING
+    print("\n" + "="*80)
+    print("[DEBUG:read_prd] === STEP 1: READ PRD ===")
+    print(f"[DEBUG:read_prd] step_input.input TYPE: {type(step_input.input)}")
+    print(f"[DEBUG:read_prd] step_input.input VALUE:\n{repr(input_str)[:500]}")
+    print("="*80 + "\n")
+
+    document_url = parse_document_url(input_str)
 
     if not document_url:
         error_msg = "ERROR: No document_url provided. The software development workflow requires a PRD/Feature Spec URL."
+        print(f"\n❌ [ERROR:read_prd] {error_msg}\n")
         log_info(f"[STEP:read_prd] {error_msg}")
         return StepOutput(content=error_msg, success=False)
 
+    print(f"\n✓ [DEBUG:read_prd] Found document_url: {document_url}\n")
     log_info(f"[STEP:read_prd] Reading PRD from: {document_url}")
 
     from tools.google_docs_tools import GoogleDocsTools
@@ -114,71 +123,103 @@ def read_prd(step_input: StepInput) -> StepOutput:
         google_docs = GoogleDocsTools()
         # Extract document ID from URL
         doc_id_match = re.search(r'/document/d/([a-zA-Z0-9-_]+)', document_url)
-        if doc_id_match:
-            doc_id = doc_id_match.group(1)
-            # Read the document (this would require implementing a read method)
-            # For now, we'll pass the URL to the architecture step
-            prd_content = f"PRD Document URL: {document_url}\nDocument ID: {doc_id}"
-        else:
-            prd_content = f"PRD Document URL: {document_url}"
+        if not doc_id_match:
+            error_msg = f"ERROR: Invalid Google Docs URL: {document_url}"
+            log_info(f"[STEP:read_prd] {error_msg}")
+            return StepOutput(content=error_msg, success=False)
 
-        log_info("[STEP:read_prd] PRD retrieved successfully")
-        return StepOutput(content=prd_content, success=True)
+        doc_id = doc_id_match.group(1)
+
+        # Read the actual document content using Google Docs API
+        try:
+            print(f"\n[DEBUG:read_prd] Calling google_docs.read_document({doc_id})\n")
+            prd_content = google_docs.read_document(doc_id)
+            print(f"\n✓ [DEBUG:read_prd] Document read successfully!")
+            print(f"[DEBUG:read_prd] Content length: {len(prd_content)} chars")
+            print(f"[DEBUG:read_prd] Content preview: {prd_content[:200]}...\n")
+
+            log_info("[STEP:read_prd] PRD content retrieved successfully")
+
+            # Include URL and content
+            full_content = f"""PRD Document URL: {document_url}
+Document ID: {doc_id}
+
+=== PRD CONTENT ===
+{prd_content}
+===================
+"""
+            print(f"\n✓ [DEBUG:read_prd] Returning StepOutput with {len(full_content)} chars\n")
+            return StepOutput(content=full_content, success=True)
+
+        except Exception as read_error:
+            log_info(f"[STEP:read_prd] Could not read document content: {read_error}")
+            # If reading fails, at least pass the URL
+            prd_content = f"PRD Document URL: {document_url}\nDocument ID: {doc_id}\n\nWARNING: Could not read document content. Error: {str(read_error)}"
+            return StepOutput(content=prd_content, success=True)
 
     except Exception as e:
-        log_info(f"[STEP:read_prd] Could not read document, proceeding with URL: {e}")
-        # Even if we can't read it, we can still pass the URL
-        prd_content = f"PRD Document URL: {document_url}"
-        return StepOutput(content=prd_content, success=True)
+        error_msg = f"ERROR: Failed to process document URL: {str(e)}"
+        log_info(f"[STEP:read_prd] {error_msg}")
+        return StepOutput(content=error_msg, success=False)
 
 
 def create_architecture(step_input: StepInput) -> StepOutput:
     """
     Step 2: Create Architecture Document
 
-    Lead Engineer reads the PRD and creates architecture with tech stack selection.
+    Lead Engineer reads the PRD (from previous step) and creates architecture with tech stack selection.
     - New project: Choose between Next.js+Supabase+Vercel OR Python+FastAPI
     - Existing project: Use existing stack
+
+    Input: Original document URL (from workflow input)
+    Previous Step Output: Full PRD content
+    Output: Architecture document
     """
-    prd_info = step_input.previous_step_content or ""
+    prd_content = step_input.previous_step_content or ""
     input_str = step_input.input if isinstance(step_input.input, str) else ""
-    params = parse_input_params(input_str)
+
+    # EXTENSIVE LOGGING
+    print("\n" + "="*80)
+    print("[DEBUG:create_architecture] === STEP 2: CREATE ARCHITECTURE ===")
+    print(f"[DEBUG:create_architecture] PRD content length: {len(prd_content)} chars")
+    print(f"[DEBUG:create_architecture] PRD content PREVIEW:\n{prd_content[:500]}")
+    print("="*80 + "\n")
+
+    # Extract document URL from original input (for reference)
+    document_url = parse_document_url(input_str)
 
     log_info("[STEP:architecture] Creating architecture document")
 
     from agents.lead_engineer import lead_engineer_agent
 
-    project_type = params["project_type"]
-    project_name = params["project_name"]
-    document_url = params["document_url"]
-
     prompt = f"""You are creating the technical architecture for this project.
 
-**IMPORTANT:** The PRD has already been created. Your job is to design the architecture, NOT create the PRD.
+**CRITICAL INSTRUCTION:** DO NOT use any workflow tools. DO NOT run the Software Development Workflow. You are INSIDE the workflow already. Just design the architecture directly.
 
-**Project Type:** {project_type}
-**Project Name:** {project_name}
-**PRD Document:** {document_url}
+**IMPORTANT:** The PRD has already been read from Google Docs. Your job is to design the architecture, NOT create or fetch the PRD.
 
-{prd_info}
+=== PRD CONTENT (ALREADY FETCHED FROM GOOGLE DOCS) ===
+{prd_content}
+============================================================
 
 ## Your Task
 
-1. **Read the PRD** from the information above
-2. **Select Tech Stack:**
+1. **Read the PRD content above** (it's already provided - do NOT try to fetch it again)
+2. **Determine project type** from the PRD (new project or existing product feature)
+3. **Select Tech Stack:**
    - For NEW web projects: **Next.js + Supabase + Vercel**
    - For NEW API/backend projects: **Python + FastAPI + PostgreSQL + Vercel**
-   - For EXISTING projects: Identify and use the current stack
+   - For EXISTING projects: Identify and use the current stack from the PRD
 
-3. **Create Complete Architecture Document:**
-   - Tech Stack Selection (with justification)
+4. **Create Complete Architecture Document:**
+   - Tech Stack Selection (with justification based on PRD requirements)
    - System Architecture (components, data flow)
    - Database Schema (tables, columns, relationships)
    - API Design (endpoints, methods, request/response)
    - Security Considerations
    - Deployment Strategy (Vercel deployment plan)
 
-4. **Output Format:**
+5. **Output Format:**
    Plain text formatting (NOT markdown):
    - Clear headings with spacing
    - Bullet points with "•" or "-"
@@ -186,11 +227,17 @@ def create_architecture(step_input: StepInput) -> StepOutput:
    - No markdown symbols
 
 Be specific and implementation-ready. Focus on actionable technical details.
+
+REMEMBER: DO NOT use workflow tools or try to fetch documents. Just write the architecture based on the PRD content provided above.
 """
+
+    print(f"\n[DEBUG:create_architecture] Calling lead_engineer_agent.arun()\n")
 
     log_info("[AGENT:lead_engineer] Designing architecture")
     result = _run_async(lead_engineer_agent.arun(prompt))
     output = result.content or ""
+
+    print(f"\n✓ [DEBUG:create_architecture] Agent returned {len(output)} chars\n")
 
     log_info("[STEP:architecture] Architecture created")
     return StepOutput(content=output, success=True)
@@ -199,31 +246,32 @@ Be specific and implementation-ready. Focus on actionable technical details.
 def create_github_repo(step_input: StepInput) -> StepOutput:
     """
     Step 3: Create GitHub Repository
+
+    Input: Original document URL
+    Previous Step Output: Architecture document
+    Output: GitHub repository info
     """
     architecture = step_input.previous_step_content or ""
     input_str = step_input.input if isinstance(step_input.input, str) else ""
-    params = parse_input_params(input_str)
 
     log_info("[STEP:create_repo] Creating GitHub repository")
 
     from agents.software_engineer import software_engineer_agent
 
-    project_name = params["project_name"]
-    repo_name = project_name.lower().replace(' ', '-')
-
     prompt = f"""Create a new GitHub repository for this project.
 
-**Repository Name:** {repo_name}
-**Architecture:**
+**Architecture Document:**
 {architecture}
 
 ## Instructions
 
-1. Use GitHubTools to create a new repository
-2. Initialize with README
-3. Add .gitignore based on tech stack from architecture
-4. Set up initial project structure
-5. Add .env.example with required environment variables
+1. **Extract project name** from the architecture document above
+2. **Create repository name** by converting project name to lowercase kebab-case
+3. **Use GitHubTools** to create a new repository
+4. Initialize with README
+5. Add .gitignore based on tech stack from architecture
+6. Set up initial project structure
+7. Add .env.example with required environment variables
 
 Return the repository URL and initial structure.
 """
@@ -320,22 +368,33 @@ Use Vercel MCP tools.
 def create_summary(step_input: StepInput) -> StepOutput:
     """
     Step 6: Create Final Summary
+
+    Input: Original document URL
+    Previous Step Output: Deployment info
+    Output: Final summary with all links
     """
     deployment_info = step_input.previous_step_content or ""
     input_str = step_input.input if isinstance(step_input.input, str) else ""
-    params = parse_input_params(input_str)
 
     log_info("[STEP:summary] Creating summary")
 
-    # Extract URLs
+    # Extract document URL
+    document_url = parse_document_url(input_str)
+
+    # Extract URLs from deployment info
     deploy_url_match = re.search(r'https://[^\s]+vercel\.app[^\s]*', deployment_info)
     deploy_url = deploy_url_match.group(0) if deploy_url_match else "Deployment in progress"
 
     repo_url_match = re.search(r'https://github\.com/[^\s]+', deployment_info)
     repo_url = repo_url_match.group(0) if repo_url_match else "Repository created"
 
-    project_name = params["project_name"]
-    document_url = params["document_url"]
+    # Extract project name from repo URL or use generic name
+    project_name = "Your Project"
+    if repo_url and repo_url != "Repository created":
+        # Extract from github.com/owner/repo-name
+        repo_name_match = re.search(r'github\.com/[^/]+/([^/\s]+)', repo_url)
+        if repo_name_match:
+            project_name = repo_name_match.group(1).replace('-', ' ').title()
 
     summary = f"""
 ## 🎉 Implementation Complete!
@@ -395,13 +454,20 @@ def create_summary(step_input: StepInput) -> StepOutput:
 software_development_workflow = Workflow(
     name="Software Development",
     stream=False,
-    description="""Implementation workflow (does NOT create PRD):
-    1. Read PRD from document_url
-    2. Create Architecture
+    description="""Implementation workflow (does NOT create PRD).
+
+    Input: Google Docs URL of PRD/Feature Spec (ONLY)
+
+    Sequential Steps:
+    1. Read PRD from Google Docs URL
+    2. Create Architecture (based on PRD content)
     3. Create GitHub Repo
-    4. Write Code (Supabase MCP)
+    4. Write Code (using Supabase MCP)
     5. Deploy to Vercel
-    6. Return summary + deployment link""",
+    6. Return summary + deployment link
+
+    Each step receives the original document URL and output from previous step.
+    """,
     steps=[
         Step(name="read_prd", executor=read_prd),
         Step(name="architecture", executor=create_architecture),
@@ -411,45 +477,3 @@ software_development_workflow = Workflow(
         Step(name="summary", executor=create_summary),
     ]
 )
-
-
-# ============================================================================
-# CONVENIENCE FUNCTION
-# ============================================================================
-
-def run_software_development(
-    document_url: str,
-    project_type: str = "new",
-    project_name: str = "Unnamed Project",
-    feature_name: Optional[str] = None,
-) -> dict:
-    """
-    Run implementation workflow (does NOT create PRD).
-
-    Args:
-        document_url: Google Docs URL of PRD/Feature Spec (REQUIRED)
-        project_type: "new" or "existing"
-        project_name: Name of the project
-        feature_name: Name of the feature (for existing products)
-
-    Returns:
-        Dict with success status and deployment info
-    """
-    log_info("[WORKFLOW:software_development] Starting IMPLEMENTATION ONLY")
-
-    # Build input
-    input_parts = [f"DOCUMENT_URL: {document_url}"]
-    input_parts.append(f"PROJECT_TYPE: {project_type}")
-    input_parts.append(f"PROJECT_NAME: {project_name}")
-    if feature_name:
-        input_parts.append(f"FEATURE_NAME: {feature_name}")
-
-    full_input = "\n".join(input_parts)
-    log_debug(f"[WORKFLOW:software_development] INPUT:\n{full_input}")
-
-    result = software_development_workflow.run(input=full_input)
-    output = result.content or ""
-
-    log_info("[WORKFLOW:software_development] Complete")
-
-    return {"success": True, "content": output}

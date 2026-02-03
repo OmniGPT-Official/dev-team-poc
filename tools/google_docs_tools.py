@@ -187,3 +187,39 @@ class GoogleDocsTools(Toolkit):
             return json.dumps({"success": False, "error": f"Google API error: {e}"})
         except Exception as e:
             return json.dumps({"success": False, "error": str(e)})
+
+    def read_document(self, document_id: str) -> str:
+        """
+        Read the content from a Google Docs document.
+
+        Args:
+            document_id: The Google Docs document ID
+
+        Returns:
+            The text content of the document
+
+        Raises:
+            Exception if document cannot be read
+        """
+        try:
+            service = _get_docs_service()
+
+            # Get the document
+            doc = service.documents().get(documentId=document_id).execute()
+
+            # Extract text content from the document
+            content = []
+            for element in doc.get("body", {}).get("content", []):
+                if "paragraph" in element:
+                    for text_run in element["paragraph"].get("elements", []):
+                        if "textRun" in text_run:
+                            content.append(text_run["textRun"]["content"])
+
+            return "".join(content)
+
+        except FileNotFoundError as e:
+            raise Exception(f"Google OAuth token not found: {e}")
+        except HttpError as e:
+            raise Exception(f"Google API error: {e}")
+        except Exception as e:
+            raise Exception(f"Failed to read document: {e}")
