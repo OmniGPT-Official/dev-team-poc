@@ -1,0 +1,7 @@
+{
+  "name": "agent-os",
+  "private": true,
+  "dependencies": {
+    "@modelcontextprotocol/server-github": "latest"
+  }
+}

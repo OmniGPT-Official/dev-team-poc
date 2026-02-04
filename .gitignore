@@ -76,3 +76,12 @@ celerybeat.pid
 
 # Claude Code
 .claude/
+
+# Google OAuth2 Credentials (NEVER COMMIT THESE!)
+google_docs_token.json
+client_secret.json
+credentials.json
+tests/google_docs/token.json
+
+# Test output
+output/
