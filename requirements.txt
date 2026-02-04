@@ -2,6 +2,7 @@ agno
 mcp
 anthropic
 google-genai
+openai
 uvicorn[standard]
 fastapi
 sqlalchemy
