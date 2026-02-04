@@ -54,6 +54,45 @@ agent_os = AgentOS(
 # Get FastAPI app
 app = agent_os.get_app()
 
+# ---------------------------------------------------------------------------
+# Google Auth Service Integration
+# ---------------------------------------------------------------------------
+GOOGLE_AUTH_SERVICE_URL = os.getenv("GOOGLE_AUTH_SERVICE_URL")
+
+
+@app.get("/google-auth")
+async def google_auth_redirect():
+    """Redirect to Google Auth Token Generator service."""
+    from fastapi.responses import RedirectResponse, JSONResponse
+
+    if not GOOGLE_AUTH_SERVICE_URL:
+        return JSONResponse(
+            {
+                "error": "GOOGLE_AUTH_SERVICE_URL not configured",
+                "message": "Set GOOGLE_AUTH_SERVICE_URL env var to your deployed google-auth-token service",
+                "repo": "https://github.com/OmniGPT-Official/google-auth-token"
+            },
+            status_code=503
+        )
+    return RedirectResponse(GOOGLE_AUTH_SERVICE_URL)
+
+
+@app.get("/google-auth/info")
+async def google_auth_info():
+    """Get Google Auth service configuration info."""
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse({
+        "service_url": GOOGLE_AUTH_SERVICE_URL,
+        "configured": bool(GOOGLE_AUTH_SERVICE_URL),
+        "repo": "https://github.com/OmniGPT-Official/google-auth-token",
+        "endpoints": {
+            "authorize": f"{GOOGLE_AUTH_SERVICE_URL}/authorize" if GOOGLE_AUTH_SERVICE_URL else None,
+            "token": f"{GOOGLE_AUTH_SERVICE_URL}/token" if GOOGLE_AUTH_SERVICE_URL else None,
+            "health": f"{GOOGLE_AUTH_SERVICE_URL}/health" if GOOGLE_AUTH_SERVICE_URL else None,
+        }
+    })
+
 
 if __name__ == "__main__":
     import uvicorn
