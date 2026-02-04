@@ -104,6 +104,61 @@ image_generator = Agent(
     reasoning=False,
 )
 
+
+# Setup Content Delivery Workflow (combines Step 4 and Step 5)
+# Simple 2-step sequential workflow: captions first, then images with final packaging
+content_delivery_workflow_definition = Workflow(
+    id="content-delivery-workflow",
+    name="Content Delivery Workflow",
+    description="A workflow that writes captions, generates visual assets, and delivers the final content package with all images displayed.",
+    db=db,
+    steps=[
+        Step(
+            name="Write Captions",
+            description="""Write engaging captions for the content based on the requirements and chosen concept.
+
+Create captions that:
+- Match the target audience and tone
+- Are optimized for the target platform
+- Include relevant hashtags if appropriate
+- Are compelling and engaging
+
+Format your response clearly with the captions ready to use.""",
+            agent=content_writer,
+        ),
+        Step(
+            name="Generate Images and Package",
+            description="""Generate visual assets AND package the final content delivery.
+
+You will receive the captions from the previous step. Your job is to:
+
+1. GENERATE IMAGES: Use your image generation tool to create images that complement the captions
+   - You MUST call the generate_image tool - do not skip this
+   - Create high-quality images matching the brand and style requirements
+
+2. PACKAGE FINAL DELIVERY: Format your response to include EVERYTHING:
+   - The captions (from previous step)
+   - The generated images displayed using markdown: ![description](image_url)
+   - Copy/paste any image URLs you receive from the tool into your response
+
+IMPORTANT: Your response IS the final deliverable. Include both the captions AND the images with their URLs visible.""",
+            agent=image_generator,
+        ),
+    ],
+    add_workflow_history_to_steps=True,
+)
+
+# Setup WorkflowTools for content delivery workflow
+content_delivery_workflow = WorkflowTools(
+    workflow=content_delivery_workflow_definition,
+    enable_think=False,
+    enable_run_workflow=True,
+    enable_analyze=False,
+    add_instructions=True,
+    add_few_shot=True,
+)
+
+
 # Setup Requirement Gathering Workflow
 # This workflow is triggered when the team detects user intent to create content
 # It asks clarifying questions first before proceeding with content creation
@@ -151,7 +206,7 @@ content_creation_team = Team(
     model=Gemini(id="gemini-3-flash-preview"),
     db=db,
     members=[content_strategist, content_writer, image_generator],
-    tools=[requirement_gathering_workflow],
+    tools=[requirement_gathering_workflow, content_delivery_workflow],
     # tools=[requirement_gathering_workflow, ReasoningTools(add_instructions=True)], # ReasoningTools commented out
     instructions=[
         "You are the leader of a Content Creation Team.",
@@ -165,8 +220,16 @@ content_creation_team = Team(
         "STEP 1: Trigger Requirement Gathering Workflow - This gathers: branding, target audience, platform, tone, and goals",
         "STEP 2: After requirements are gathered, ask the user: 'What specifically do you want to create? Do you have any references or inspiration to share?'",
         "STEP 3: Suggest 2-3 creative concepts or ideas based on the requirements and user input for them to choose from",
-        "STEP 4: Write captions and generate visual assets (images using OpenAI)",
-        "STEP 5: Package everything and deliver the final content",
+        "STEP 4: Trigger the 'Content Delivery Workflow' - This workflow will:",
+        "        - Write captions using Content Writer",
+        "        - Generate images using Image Generator with OpenAI tools",
+        "        - Package everything with image URLs and captions displayed in the output",
+        "",
+        "## IMPORTANT: Always Use Content Delivery Workflow for Final Content",
+        "When the user has selected a concept and you're ready to create the final content:",
+        "- ALWAYS trigger the 'Content Delivery Workflow' using your workflow tools",
+        "- This ensures images are properly generated and their URLs are displayed",
+        "- Do NOT manually delegate to Content Writer and Image Generator separately for final content",
         "",
         "## Team Member Roles",
         "- Content Strategist: For planning content strategy and creating content briefs",
