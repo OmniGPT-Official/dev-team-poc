@@ -6,6 +6,7 @@ and interact with GitHub and Supabase.
 """
 
 import os
+import sys
 from pathlib import Path
 from agno.agent import Agent
 from agno.db.sqlite import SqliteDb

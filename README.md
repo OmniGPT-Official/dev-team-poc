@@ -8,21 +8,16 @@ AI-powered product development system with end-to-end workflow automation.
 - **Lead Engineer Agent**: Designs technical architecture
 - **Software Engineer Agent**: Implements code
 - **Security Engineer Agent**: Reviews code for security
+- **Content Creation Team**: Content strategist, writer, and image generator
 - **Google Docs Integration**: Automatically creates PRDs and Feature Specs in Google Docs
 - **Knowledge Base**: Stores project context and requirements
-- **2 Workflows**: Product Requirements + Software Development
+- **Multiple Workflows**: Product Requirements, Software Development, Content Creation
 
 ## Quick Start
 
 ### 1. Create .env file
 
 Copy the example file and add your credentials:
-
-```bash
-cp .env.example .env
-```
-
-Then edit `.env` and add your actual credentials:
 
 ```bash
 ANTHROPIC_API_KEY=your-anthropic-api-key-here

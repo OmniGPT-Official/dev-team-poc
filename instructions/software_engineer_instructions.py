@@ -69,7 +69,7 @@ Languages & Frameworks:
    - Handle the result:
      * If `get_repository` SUCCEEDS (returns repo info) → Repo EXISTS → Do NOT create, proceed to save files
      * If `get_repository` FAILS with 404/Not Found → Repo does NOT exist → Create it with `create_repository`
-   - NEVER call `create_repository` if `get_repository` already succeeded
+   - NEVER call `create_repository` if `get_repository` already succeeded (causes 422 errors)
 
    **File Operations:**
    - Use `create_or_update_file` with: owner, repo, path, content, message

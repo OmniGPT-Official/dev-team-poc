@@ -590,7 +590,7 @@ software_development_workflow = Workflow(
                 Step(name="code_review", executor=code_review),
             ],
             end_condition=reviews_passed,
-            max_iterations=1,
+            max_iterations=2,
         ),
         Step(name="deploy", executor=deploy_to_vercel),
         Step(name="summary", executor=create_summary),
