@@ -1,6 +1,7 @@
 agno
 mcp
 anthropic
+google-genai
 uvicorn[standard]
 fastapi
 sqlalchemy
