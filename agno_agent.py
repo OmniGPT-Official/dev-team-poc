@@ -20,10 +20,8 @@ from agents.sales_followup_agents import followup_coordinator_agent
 from content_creation import (
     content_strategist,
     content_writer,
-    image_generator,
     content_creation_team,
     requirement_gathering_workflow_definition,
-    content_delivery_workflow_definition,
 )
 
 # Add workflow tools to product lead agent (after all imports to avoid circular dependency)
@@ -40,7 +38,6 @@ agent_os = AgentOS(
         followup_coordinator_agent,  # Sales Follow-Up Manager
         content_strategist,  # Content Creation Team
         content_writer,  # Content Creation Team
-        image_generator,  # Content Creation Team
     ],
     teams=[
         product_team,  # Product Development Team with Product Lead as leader
@@ -53,7 +50,6 @@ agent_os = AgentOS(
         sales_followup_workflow,  # Sales Follow-Up Manager (full version)
         simple_followup_workflow,  # Sales Follow-Up Manager (simple testing version)
         requirement_gathering_workflow_definition,  # Content Creation Workflow
-        content_delivery_workflow_definition,  # Content Delivery Workflow
     ],
     tracing=True
 )
