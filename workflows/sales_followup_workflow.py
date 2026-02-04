@@ -17,9 +17,8 @@ Key Feature: REVIEW-THEN-SEND
 """
 
 from agno.agent import Agent
-from agno.workflow.step import Step
+from agno.workflow import Step, Steps, Workflow
 from agno.workflow.types import StepInput, StepOutput
-from agno.workflow.workflow import Workflow
 from agents.sales_followup_agents import (
     sheet_analyzer_agent,
     context_researcher_agent,
@@ -170,6 +169,41 @@ async def run_format_output(step_input: StepInput):
     )
 
 
+# === GROUPED STEPS ===
+
+intake_and_analysis_steps = Steps(
+    name="Intake & Analysis",
+    steps=[
+        Step(name="intake", executor=run_intake),
+        Step(name="analyze_sheet", executor=run_analyze_sheet),
+    ],
+)
+
+drafting_steps = Steps(
+    name="Context & Drafting",
+    steps=[
+        Step(name="gather_context", executor=run_gather_context),
+        Step(name="draft_messages", executor=run_draft_messages),
+    ],
+)
+
+sending_steps = Steps(
+    name="Review & Send",
+    steps=[
+        Step(name="review_and_approve", executor=run_review),
+        Step(name="send_and_update", executor=run_send),
+    ],
+)
+
+reporting_steps = Steps(
+    name="Reporting",
+    steps=[
+        Step(name="generate_report", executor=run_report),
+        Step(name="format_output", executor=run_format_output),
+    ],
+)
+
+
 # === MAIN WORKFLOW ===
 
 sales_followup_workflow = Workflow(
@@ -183,18 +217,10 @@ sales_followup_workflow = Workflow(
     6. Update sheet automatically
     7. Provide campaign insights""",
     steps=[
-        # Intake & Analysis
-        Step(name="intake", executor=run_intake),
-        Step(name="analyze_sheet", executor=run_analyze_sheet),
-        # Context & Drafting
-        Step(name="gather_context", executor=run_gather_context),
-        Step(name="draft_messages", executor=run_draft_messages),
-        # Review & Send
-        Step(name="review_and_approve", executor=run_review),
-        Step(name="send_and_update", executor=run_send),
-        # Reporting
-        Step(name="generate_report", executor=run_report),
-        Step(name="format_output", executor=run_format_output),
+        intake_and_analysis_steps,
+        drafting_steps,
+        sending_steps,
+        reporting_steps,
     ],
 )
 
