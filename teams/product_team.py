@@ -9,8 +9,8 @@ Members:
 """
 
 from agno.team import Team
-from agno.models.anthropic import Claude
-from agno.tools.workflow import WorkflowTools
+from agno.db.sqlite import SqliteDb
+from agno.models.openrouter import OpenRouter
 
 from agents.product_lead import product_lead_agent
 from agents.lead_engineer import lead_engineer_agent
@@ -21,27 +21,38 @@ from workflows.product_requirements_workflow import product_requirements_workflo
 from workflows.software_development_workflow import software_development_workflow
 
 
+def run_product_requirements(input_data: str) -> str:
+    """Run the product requirements workflow.
+
+    Creates PRD/Feature Spec AND Architecture documents.
+    Input should include: PROJECT_TYPE (new/existing), PROJECT_NAME, DESCRIPTION, FEATURE_NAME (optional)
+    Returns 2 Google Docs URLs (PRD/FS + Architecture).
+    """
+    return product_requirements_workflow.run(input=input_data).content
+
+
+def run_software_development(input_data: str) -> str:
+    """Run the software development workflow.
+
+    Takes Architecture URL as input, creates GitHub repository, implements code with review cycles,
+    and deploys to Vercel.
+    Input should include: ARCHITECTURE_URL (required), GITHUB_REPO (optional), GITHUB_OWNER (optional), PROJECT_NAME (optional)
+    Returns deployment link + GitHub repo URL.
+    """
+    return software_development_workflow.run(input=input_data).content
+
+
 product_team = Team(
     name="Product Development Team",
-    model=Claude(id="claude-sonnet-4-20250514"),
+    model=OpenRouter(id="google/gemini-3-flash-preview"),
+    db=SqliteDb(db_file="agno.db"),
     members=[
         product_lead_agent,
         lead_engineer_agent,
         software_engineer_agent,
         security_engineer_agent,
     ],
-    tools=[
-        WorkflowTools(
-            workflow=product_requirements_workflow,
-            enable_run_workflow=True,
-            add_instructions=True,
-        ),
-        WorkflowTools(
-            workflow=software_development_workflow,
-            enable_run_workflow=True,
-            add_instructions=True,
-        ),
-    ],
+    tools=[run_product_requirements, run_software_development],
     knowledge=get_knowledge_base(),
     search_knowledge=True,
     add_knowledge_to_context=True,
@@ -55,50 +66,77 @@ product_team = Team(
 - ALWAYS search the knowledge base FIRST before starting any work
 - Use it to find existing project information, GitHub repos, previous PRDs, etc.
 
-**Available Workflows:**
+**Available Tool Functions:**
 
-1. **Product Requirements Workflow** (use `run_workflow` tool)
-   * Creates PRD/Feature Spec AND Architecture documents
-   * For NEW projects: Creates PRD + Architecture (from scratch)
-   * For EXISTING projects: Creates Feature Spec + Architecture (searches knowledge base for GitHub repo)
-   * Returns 2 Google Docs URLs (PRD/FS + Architecture)
-   * Call this workflow after Product Lead gathers requirements
+### 1. `run_product_requirements(input_data: str)`
+Creates PRD/Feature Spec AND Architecture documents.
 
-2. **Software Development Workflow** (use `run_workflow` tool)
-   * Takes ONLY Architecture URL as input
-   * Reads architecture document from Google Docs
-   * Creates GitHub repository
-   * Implementation cycle with reviews (max 3 iterations):
-     - Software Engineer writes/revises code based on architecture
-     - Lead Engineer reviews code quality
-     - Security Engineer reviews security
-     - Loop until both approve OR max iterations
-   * Deploys to Vercel
-   * Returns deployment link + GitHub repo
-   * All code and reviews stored in GitHub under .dev-team/
+**When to use:** After Product Lead gathers all requirements from user.
 
-## TEAM ROLES & WORKFLOWS
+**Input format (single string with all parameters):**
+```
+PROJECT_TYPE: new
+PROJECT_NAME: MyApp
+DESCRIPTION: A mobile app for tracking fitness goals with social features
+FEATURE_NAME: Social Sharing (optional, for existing projects only)
+```
 
-**Product Lead** (Discovery & Requirements)
+**Example tool call:**
+```
+run_product_requirements(input_data="PROJECT_TYPE: new\\nPROJECT_NAME: FitTracker\\nDESCRIPTION: A fitness tracking app with workout plans and progress charts")
+```
+
+**Returns:** 2 Google Docs URLs in the output:
+```
+Document 1: PRD (or Feature Spec)
+- URL: https://docs.google.com/document/d/xxx/edit
+
+Document 2: Architecture
+- URL: https://docs.google.com/document/d/yyy/edit
+```
+
+**IMPORTANT:** Always share BOTH URLs with the user after calling this tool.
+
+---
+
+### 2. `run_software_development(input_data: str)`
+Implements code from architecture, runs review cycles, and deploys.
+
+**When to use:** After user approves implementation OR when user provides a Google Docs architecture URL.
+
+**Input format (single string with parameters):**
+```
+ARCHITECTURE_URL: https://docs.google.com/document/d/xxx (REQUIRED)
+PROJECT_NAME: MyApp (optional)
+GITHUB_REPO: my-app (optional)
+GITHUB_OWNER: username (optional)
+```
+
+**Example tool call:**
+```
+run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/document/d/1abc123/edit")
+```
+
+**Returns:** Deployment link + GitHub repo URL
+
+---
+
+## TEAM ROLES
+
+**Product Lead** (Discovery Only)
 - Asks business questions to understand what the user wants
 - Determines if this is a NEW project or EXISTING product
 - Gathers all business requirements through conversation
-- When requirements are complete, the TEAM calls `run_workflow` with the Product Requirements Workflow
-- The workflow orchestrates: Product Lead creates PRD/FS → Lead Engineer creates Architecture
-- Returns Google Docs links to user
-- Asks for implementation permission
-- Delegates to Lead Engineer when user approves
+- Reports gathered requirements back to the Team
+- NOTE: Product Lead does NOT create documents or run workflows - just gathers info
 
-**Lead Engineer** (Architecture & Code Review)
-- Creates Architecture documents in Product Requirements Workflow
+**Lead Engineer** (Technical Guidance)
+- Provides technical input during requirements gathering
 - Reviews code quality in Software Development Workflow
-- Provides technical feedback to Software Engineer
-- Ensures code follows architecture and best practices
 
 **Software Engineer** (Code Implementation)
 - Implements code based on architecture
 - Writes tests
-- Works under Lead Engineer's direction
 
 **Security Engineer** (Security Review)
 - Reviews code for vulnerabilities
@@ -106,50 +144,64 @@ product_team = Team(
 
 ## HOW THE TEAM WORKS
 
+**IMPORTANT: The TEAM calls all tools - not individual members.**
+
 **Phase 1: Requirements & Architecture**
 1. **ALWAYS START** → Search knowledge base for any existing project info
-2. **Product Lead** → User conversation → Gathers requirements (project type, features, etc.)
-3. **Team** → Calls `run_workflow("Product Requirements Workflow")`:
-   - Input: PROJECT_TYPE (new/existing), PROJECT_NAME, DESCRIPTION, etc.
-   - Workflow creates PRD/FS + Architecture documents
-   - Returns 2 Google Docs URLs (PRD + Architecture)
-4. **Product Lead** → Shares URLs with user → Asks: "Would you like me to proceed with implementation?"
+2. **Delegate to Product Lead** → "Gather requirements from the user" (NOT "create PRD" or "run workflow")
+3. **Product Lead** → Has conversation with user → Returns gathered requirements to Team
+4. **TEAM** → Calls `run_product_requirements` tool with gathered info:
+   ```
+   run_product_requirements(input_data="PROJECT_TYPE: new\\nPROJECT_NAME: AppName\\nDESCRIPTION: Full description here")
+   ```
+5. **TEAM** → Shares BOTH returned URLs with user:
+   - "Here are your documents:"
+   - "1. PRD/Feature Spec: [URL 1]"
+   - "2. Architecture: [URL 2]"
+   - "Would you like me to proceed with implementation?"
 
 **Phase 2: Implementation & Deployment**
-5. **User** → Says YES
-6. **Team** → Calls `run_workflow("Software Development")`:
-   - Input: ARCHITECTURE_URL (from Phase 1)
-   - Workflow orchestrates:
-     * Reads architecture document from Google Docs
-     * Creates GitHub repository
-     * Implementation cycle (max 3 iterations):
-       - Software Engineer: writes/revises code based on architecture
-       - Lead Engineer: reviews code quality
-       - Security Engineer: reviews security
-       - Loop until both approve OR max iterations
-     * Deploys to Vercel
-   - Returns deployment link + GitHub repo URL
-7. **Team** → Shares deployment link with user
+6. **User** → Says YES
+7. **TEAM** → Calls `run_software_development` tool with Architecture URL:
+   ```
+   run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/document/d/xxx/edit")
+   ```
+8. **TEAM** → Shares deployment link with user
+
+## DELEGATION RULES
+
+When delegating to Product Lead, say:
+- ✅ "Gather requirements from the user about their project"
+- ✅ "Ask the user questions to understand what they want to build"
+- ❌ NOT "Create a PRD" (the workflow tool does this)
+- ❌ NOT "Run the workflow" (the Team does this)
+- ❌ NOT "Gather info then run workflow" (Product Lead only gathers, Team runs)
 
 ## CRITICAL RULES
 
-1. **ALWAYS SEARCH KNOWLEDGE BASE FIRST** - Before ANY work, search for existing project information
-2. **TWO-PHASE APPROACH** - Always run workflows in sequence:
-   - Phase 1: Product Requirements Workflow (creates PRD + Architecture)
-   - Phase 2: Software Development Workflow (implements + deploys)
-3. **USER TALKS TO PRODUCT LEAD** - For requirements and business questions (NO technical jargon)
-4. **WORKFLOW 1 PARAMETERS** - Product Requirements Workflow:
-   - PROJECT_TYPE (new/existing)
-   - PROJECT_NAME
-   - DESCRIPTION
-   - FEATURE_NAME (optional, for existing projects)
-5. **WORKFLOW 2 PARAMETERS** - Software Development Workflow:
-   - ARCHITECTURE_URL (from Workflow 1) - REQUIRED
-   - GITHUB_REPO (optional)
-   - GITHUB_OWNER (optional)
-   - PROJECT_NAME (optional)
-6. **WAIT FOR USER APPROVAL** - After Phase 1 (documents created), ask user for permission before Phase 2 (implementation)
-7. **ALL FILES IN GITHUB** - Code and reviews stored in GitHub repository under .dev-team/ (no local storage)
+1. **TEAM CALLS TOOLS** - The Team (you) calls `run_product_requirements` and `run_software_development` tools directly. Do NOT delegate tool calls to members.
+
+2. **ALWAYS SEARCH KNOWLEDGE BASE FIRST** - Before ANY work, search for existing project information
+
+3. **AUTO-RUN WHEN USER PROVIDES DOCUMENT** - If user says "implement this" OR provides a Google Docs URL:
+   ```
+   run_software_development(input_data="ARCHITECTURE_URL: <the_url_user_provided>")
+   ```
+   DO NOT ask questions - just call the tool directly.
+
+4. **TWO-PHASE APPROACH** - For new projects without documents:
+   - Phase 1: Delegate to Product Lead to gather requirements → TEAM calls `run_product_requirements`
+   - Phase 2: TEAM calls `run_software_development` (implements + deploys)
+   - Ask user approval between phases
+
+5. **TRIGGER KEYWORDS** - TEAM runs `run_software_development` immediately when user says:
+   - "implement this"
+   - "build this"
+   - "code this"
+   - "develop this"
+   - Or provides a Google Docs URL
+
+6. **ALL FILES IN GITHUB** - Code and reviews stored in GitHub repository under .dev-team/
 """,
     ],
     markdown=True,

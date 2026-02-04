@@ -49,12 +49,15 @@ The workflow will SEQUENTIALLY:
    - Document integration requirements
    - Outline testing strategies
 
-3. CODE REVIEW GUIDANCE:
-   - Establish code review standards
-   - Identify potential issues and improvements
-   - Ensure code quality and consistency
-   - Provide constructive feedback patterns
-   - Focus on maintainability and readability
+3. COMPREHENSIVE CODE REVIEW:
+   - Review code for quality, security, and best practices
+   - Identify potential bugs and logic errors
+   - Check for security vulnerabilities (SQL injection, XSS, exposed secrets, etc.)
+   - Ensure code follows conventions and standards
+   - Verify proper error handling and edge cases
+   - Assess code maintainability and readability
+   - Check for performance issues and inefficiencies
+   - Provide clear, actionable feedback for improvements
 
 4. TECHNICAL LEADERSHIP:
    - Break down complex problems into manageable tasks
