@@ -15,6 +15,8 @@ from teams.product_team import product_team
 from workflows.product_discovery_workflow import discovery_and_requirements_workflow
 from workflows.architecture_design_workflow import architecture_design_workflow
 from workflows.software_development_workflow import software_development_workflow
+from workflows.sales_followup_workflow import sales_followup_workflow, simple_followup_workflow
+from agents.sales_followup_agents import followup_coordinator_agent
 
 # Add workflow tools to product lead agent (after all imports to avoid circular dependency)
 add_workflow_tools()
@@ -26,7 +28,8 @@ agent_os = AgentOS(
         product_lead_agent,  # Main orchestrator - has Software Development workflow as tool
         research_agent,
         lead_engineer_agent,
-        software_engineer_agent
+        software_engineer_agent,
+        followup_coordinator_agent,  # Sales Follow-Up Manager
     ],
     teams=[
         product_team,  # Product Development Team with Product Lead as leader
@@ -35,6 +38,8 @@ agent_os = AgentOS(
         software_development_workflow,  # Main workflow (orchestrates Product Discovery + Architecture Design + Implementation Cycle)
         architecture_design_workflow,
         discovery_and_requirements_workflow,
+        sales_followup_workflow,  # Sales Follow-Up Manager (full version)
+        simple_followup_workflow,  # Sales Follow-Up Manager (simple testing version)
     ],
     tracing=True
 )
