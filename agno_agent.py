@@ -23,7 +23,6 @@ from content_creation import (
     image_generator,
     content_creation_team,
     requirement_gathering_workflow_definition,
-    content_delivery_workflow_definition,
 )
 
 # Add workflow tools to product lead agent (after all imports to avoid circular dependency)
@@ -53,7 +52,6 @@ agent_os = AgentOS(
         sales_followup_workflow,  # Sales Follow-Up Manager (full version)
         simple_followup_workflow,  # Sales Follow-Up Manager (simple testing version)
         requirement_gathering_workflow_definition,  # Content Creation Workflow
-        content_delivery_workflow_definition,  # Content Delivery Workflow
     ],
     tracing=True
 )
