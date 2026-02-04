@@ -325,6 +325,18 @@ async def get_google_token():
     return JSONResponse(latest_token)
 
 
+@app.get("/google-auth/token-raw")
+async def get_google_token_raw():
+    """Return the latest token as plain text JSON (easy to copy)."""
+    from fastapi.responses import PlainTextResponse
+
+    if not latest_token:
+        return PlainTextResponse("No token generated yet. Visit /google-auth first.", status_code=404)
+
+    token_json = json.dumps(latest_token, separators=(',', ':'))
+    return PlainTextResponse(token_json, media_type="text/plain")
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
