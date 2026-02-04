@@ -19,7 +19,6 @@ from agents.sales_followup_agents import followup_coordinator_agent
 from content_creation import (
     content_strategist,
     content_writer,
-    image_generator,
     content_creation_team,
     requirement_gathering_workflow_definition,
 )
@@ -35,7 +34,6 @@ agent_os = AgentOS(
         followup_coordinator_agent,  # Sales Follow-Up Manager
         content_strategist,  # Content Creation Team
         content_writer,  # Content Creation Team
-        image_generator,  # Content Creation Team
     ],
     teams=[
         product_team,  # Product Development Team
