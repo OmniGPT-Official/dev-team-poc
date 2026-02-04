@@ -187,35 +187,17 @@ async def google_auth_authorize():
 
 @app.get("/google-callback")
 async def google_callback(code: str = None, state: str = None, error: str = None):
-    """Handle Google OAuth callback."""
+    """Handle Google OAuth callback - returns JSON token."""
     global latest_token
 
     if error:
-        return HTMLResponse(f"""<!DOCTYPE html>
-<html><head><title>Error</title></head>
-<body style="font-family:system-ui;background:#1a1a2e;color:#e74c3c;padding:40px;text-align:center;">
-  <h1>Authorization Error</h1>
-  <p>{error}</p>
-  <a href="/google-auth" style="color:#4ecca3;">Try Again</a>
-</body></html>""")
+        return JSONResponse({"error": error, "message": "Authorization failed"}, status_code=400)
 
     if state != oauth_state.get("current"):
-        return HTMLResponse("""<!DOCTYPE html>
-<html><head><title>Error</title></head>
-<body style="font-family:system-ui;background:#1a1a2e;color:#e74c3c;padding:40px;text-align:center;">
-  <h1>Invalid State</h1>
-  <p>CSRF check failed. Please try again.</p>
-  <a href="/google-auth" style="color:#4ecca3;">Try Again</a>
-</body></html>""")
+        return JSONResponse({"error": "invalid_state", "message": "CSRF check failed"}, status_code=400)
 
     if not code:
-        return HTMLResponse("""<!DOCTYPE html>
-<html><head><title>Error</title></head>
-<body style="font-family:system-ui;background:#1a1a2e;color:#e74c3c;padding:40px;text-align:center;">
-  <h1>No Code</h1>
-  <p>No authorization code received.</p>
-  <a href="/google-auth" style="color:#4ecca3;">Try Again</a>
-</body></html>""")
+        return JSONResponse({"error": "no_code", "message": "No authorization code received"}, status_code=400)
 
     print(f"\n-> Callback received, exchanging code...")
 
@@ -229,13 +211,11 @@ async def google_callback(code: str = None, state: str = None, error: str = None
     })
 
     if resp.status_code != 200:
-        return HTMLResponse(f"""<!DOCTYPE html>
-<html><head><title>Error</title></head>
-<body style="font-family:system-ui;background:#1a1a2e;color:#e74c3c;padding:40px;">
-  <h1>Token Exchange Failed</h1>
-  <pre style="background:#0f3460;padding:20px;border-radius:8px;color:#eee;">{resp.text}</pre>
-  <a href="/google-auth" style="color:#4ecca3;">Try Again</a>
-</body></html>""")
+        return JSONResponse({
+            "error": "token_exchange_failed",
+            "message": "Failed to exchange authorization code for tokens",
+            "details": resp.text
+        }, status_code=500)
 
     tokens = resp.json()
 
@@ -250,7 +230,6 @@ async def google_callback(code: str = None, state: str = None, error: str = None
     }
 
     token_json = json.dumps(latest_token, separators=(',', ':'))
-    token_pretty = json.dumps(latest_token, indent=2)
 
     print(f"\n{'='*60}")
     print("TOKEN GENERATED - Copy this for GOOGLE_DOCS_TOKEN:")
@@ -258,63 +237,7 @@ async def google_callback(code: str = None, state: str = None, error: str = None
     print(token_json)
     print(f"{'='*60}\n")
 
-    return f"""<!DOCTYPE html>
-<html><head><title>Token Generated!</title>
-<style>
-  body {{ font-family: system-ui, sans-serif; max-width: 900px; margin: 50px auto; padding: 20px; background: #1a1a2e; color: #eee; }}
-  .card {{ background: #16213e; padding: 32px; border-radius: 12px; }}
-  h1 {{ color: #4ecca3; }}
-  .token-box {{ background: #0f3460; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-  .token-box label {{ color: #4ecca3; font-weight: 600; display: block; margin-bottom: 8px; }}
-  .token-box textarea {{ width: 100%; background: #1a1a2e; color: #4ecca3; border: 2px solid #4ecca3; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; resize: vertical; }}
-  .minified {{ height: 80px; }}
-  .pretty {{ height: 200px; }}
-  button {{ background: #4ecca3; color: #1a1a2e; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 1em; margin: 5px; }}
-  button:hover {{ background: #3db892; }}
-  .success {{ color: #4ecca3; font-size: 1.2em; }}
-  .info {{ background: #0f3460; padding: 16px; border-radius: 8px; margin: 20px 0; }}
-</style>
-<script>
-  function copyMinified() {{
-    document.getElementById('minified').select();
-    document.execCommand('copy');
-    alert('Minified token copied!');
-  }}
-  function copyPretty() {{
-    document.getElementById('pretty').select();
-    document.execCommand('copy');
-    alert('Pretty token copied!');
-  }}
-  console.log('GOOGLE_DOCS_TOKEN (minified):', {json.dumps(token_json)});
-</script>
-</head>
-<body><div class="card">
-  <h1>Token Generated Successfully!</h1>
-  <p class="success">Your Google OAuth token is ready.</p>
-
-  <div class="token-box">
-    <label>Minified (for env var):</label>
-    <textarea id="minified" class="minified" readonly onclick="this.select()">{token_json}</textarea>
-    <button onclick="copyMinified()">Copy Minified</button>
-  </div>
-
-  <div class="token-box">
-    <label>Pretty (for reading):</label>
-    <textarea id="pretty" class="pretty" readonly onclick="this.select()">{token_pretty}</textarea>
-    <button onclick="copyPretty()">Copy Pretty</button>
-  </div>
-
-  <div class="info">
-    <h3>Next steps:</h3>
-    <ol>
-      <li>Copy the <strong>minified</strong> token above</li>
-      <li>Add it as <code>GOOGLE_DOCS_TOKEN</code> environment variable</li>
-      <li>Redeploy your service</li>
-    </ol>
-  </div>
-
-  <a href="/google-auth" style="color:#4ecca3;">← Back to Home</a>
-</div></body></html>"""
+    return JSONResponse(latest_token)
 
 
 @app.get("/google-auth/token")
