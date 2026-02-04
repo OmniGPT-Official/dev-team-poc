@@ -17,8 +17,7 @@ Key Feature: REVIEW-THEN-SEND
 """
 
 from agno.agent import Agent
-from agno.models.anthropic import Claude
-from agno.workflow.step import Step
+from agno.workflow.step import Step, Steps
 from agno.workflow.types import StepInput, StepOutput
 from agno.workflow.workflow import Workflow
 from agents.sales_followup_agents import (
@@ -30,58 +29,120 @@ from agents.sales_followup_agents import (
 )
 
 
-# === WORKFLOW STEPS ===
+# === EXECUTOR FUNCTIONS (with streaming) ===
 
-intake_step = Step(
-    name="intake",
-    description="Understand user's follow-up needs and sheet location",
-    agent=followup_coordinator_agent,
-)
+async def run_intake(step_input: StepInput):
+    """Understand user's follow-up needs with streaming."""
+    async for chunk in followup_coordinator_agent.run(
+        step_input.previous_step_content or "Start the follow-up workflow. Ask user about their Google Sheet location and what they want to accomplish.",
+        stream=True,
+        stream_events=True
+    ):
+        yield chunk
 
-analyze_sheet_step = Step(
-    name="analyze_sheet",
-    description="Analyze Google Sheet to identify contacts needing follow-up",
-    agent=sheet_analyzer_agent,
-)
-
-gather_context_step = Step(
-    name="gather_context",
-    description="Research context for each contact from email history and notes",
-    agent=context_researcher_agent,
-)
-
-draft_messages_step = Step(
-    name="draft_messages",
-    description="Draft personalized follow-up emails for each contact",
-    agent=message_writer_agent,
-)
-
-review_step = Step(
-    name="review_and_approve",
-    description="Present drafts to user for review and approval",
-    agent=followup_coordinator_agent,
-)
-
-send_step = Step(
-    name="send_and_update",
-    description="Send approved emails and update Google Sheet",
-    agent=followup_coordinator_agent,
-)
-
-report_step = Step(
-    name="generate_report",
-    description="Analyze campaign performance and provide insights",
-    agent=campaign_analyst_agent,
-)
+    yield StepOutput(
+        success=True,
+        content="Intake complete - ready to analyze contacts"
+    )
 
 
-# === OUTPUT FORMATTER ===
+async def run_analyze_sheet(step_input: StepInput):
+    """Analyze Google Sheet to identify contacts with streaming."""
+    async for chunk in sheet_analyzer_agent.run(
+        step_input.previous_step_content or "Analyze the Google Sheet to identify contacts needing follow-up (7+ days since last contact).",
+        stream=True,
+        stream_events=True
+    ):
+        yield chunk
 
-def format_output(step_input: StepInput) -> StepOutput:
-    """Format final output."""
+    yield StepOutput(
+        success=True,
+        content="Sheet analysis complete - contacts identified"
+    )
+
+
+async def run_gather_context(step_input: StepInput):
+    """Gather context for each contact with streaming."""
+    async for chunk in context_researcher_agent.run(
+        step_input.previous_step_content or "Research email history and notes for each contact to gather context for personalization.",
+        stream=True,
+        stream_events=True
+    ):
+        yield chunk
+
+    yield StepOutput(
+        success=True,
+        content="Context research complete - ready to draft"
+    )
+
+
+async def run_draft_messages(step_input: StepInput):
+    """Draft personalized follow-up emails with streaming."""
+    async for chunk in message_writer_agent.run(
+        step_input.previous_step_content or "Draft personalized follow-up emails for each contact based on the context gathered.",
+        stream=True,
+        stream_events=True
+    ):
+        yield chunk
+
+    yield StepOutput(
+        success=True,
+        content="Draft emails complete - ready for review"
+    )
+
+
+async def run_review(step_input: StepInput):
+    """Present drafts for user review with streaming."""
+    async for chunk in followup_coordinator_agent.run(
+        step_input.previous_step_content or "Present all draft emails to the user for review and approval. Show each email clearly with contact name, subject line, and message body.",
+        stream=True,
+        stream_events=True
+    ):
+        yield chunk
+
+    yield StepOutput(
+        success=True,
+        content="Review complete - emails approved"
+    )
+
+
+async def run_send(step_input: StepInput):
+    """Send approved emails and update sheet with streaming."""
+    async for chunk in followup_coordinator_agent.run(
+        step_input.previous_step_content or "Send all approved emails via Gmail and update the Google Sheet with new 'last contact date' for each contact.",
+        stream=True,
+        stream_events=True
+    ):
+        yield chunk
+
+    yield StepOutput(
+        success=True,
+        content="Emails sent and sheet updated"
+    )
+
+
+async def run_report(step_input: StepInput):
+    """Generate campaign performance report with streaming."""
+    async for chunk in campaign_analyst_agent.run(
+        step_input.previous_step_content or "Analyze the campaign performance and provide insights about what worked and what didn't.",
+        stream=True,
+        stream_events=True
+    ):
+        yield chunk
+
+    yield StepOutput(
+        success=True,
+        content="Campaign report complete"
+    )
+
+
+async def run_format_output(step_input: StepInput):
+    """Format final output with summary."""
     content = step_input.previous_step_content or ""
 
-    return StepOutput(content=f"""
+    yield StepOutput(
+        success=True,
+        content=f"""
 ## Follow-Up Campaign Complete
 
 {content}
@@ -105,14 +166,49 @@ def format_output(step_input: StepInput) -> StepOutput:
 - Come back next week to follow up with new contacts
 
 *Ready for your next campaign whenever you are!*
-""")
+"""
+    )
 
 
-# === WORKFLOW ===
+# === GROUPED STEPS ===
+
+intake_and_analysis_steps = Steps(
+    name="Intake & Analysis",
+    steps=[
+        Step(name="intake", executor=run_intake),
+        Step(name="analyze_sheet", executor=run_analyze_sheet),
+    ],
+)
+
+drafting_steps = Steps(
+    name="Context & Drafting",
+    steps=[
+        Step(name="gather_context", executor=run_gather_context),
+        Step(name="draft_messages", executor=run_draft_messages),
+    ],
+)
+
+sending_steps = Steps(
+    name="Review & Send",
+    steps=[
+        Step(name="review_and_approve", executor=run_review),
+        Step(name="send_and_update", executor=run_send),
+    ],
+)
+
+reporting_steps = Steps(
+    name="Reporting",
+    steps=[
+        Step(name="generate_report", executor=run_report),
+        Step(name="format_output", executor=run_format_output),
+    ],
+)
+
+
+# === MAIN WORKFLOW ===
 
 sales_followup_workflow = Workflow(
     name="Sales Follow-Up Manager",
-    stream=True,
     description="""Automated follow-up email workflow:
     1. Analyze Google Sheet for contacts needing follow-up
     2. Gather context about each contact
@@ -122,33 +218,40 @@ sales_followup_workflow = Workflow(
     6. Update sheet automatically
     7. Provide campaign insights""",
     steps=[
-        intake_step,
-        analyze_sheet_step,
-        gather_context_step,
-        draft_messages_step,
-        review_step,
-        send_step,
-        report_step,
-        format_output,
+        intake_and_analysis_steps,
+        drafting_steps,
+        sending_steps,
+        reporting_steps,
     ],
 )
 
 
 # === SIMPLE TEST WORKFLOW (For AgentOS UI Testing) ===
-# This simpler version can be used for initial testing without full Google Sheets/Gmail integration
+
+async def run_simple_intake(step_input: StepInput):
+    """Simple intake for testing without Google Sheets."""
+    async for chunk in followup_coordinator_agent.run(
+        "Ask user to paste contact information (name, email, last contact date, notes) for testing the follow-up workflow without Google Sheets integration.",
+        stream=True,
+        stream_events=True
+    ):
+        yield chunk
+
+    yield StepOutput(
+        success=True,
+        content="Contact data received - ready to draft"
+    )
+
 
 simple_followup_workflow = Workflow(
     name="Sales Follow-Up Manager (Simple)",
-    stream=True,
     description="""Simplified workflow for testing:
     1. User pastes contact data manually
     2. Draft follow-up emails
     3. Show drafts for review""",
     steps=[
-        intake_step,
-        # Skip sheet analysis - user provides data directly
-        gather_context_step,
-        draft_messages_step,
-        format_output,
+        Step(name="simple_intake", executor=run_simple_intake),
+        Step(name="draft_messages", executor=run_draft_messages),
+        Step(name="format_output", executor=run_format_output),
     ],
 )
