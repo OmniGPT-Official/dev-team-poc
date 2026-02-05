@@ -9,8 +9,9 @@ import os
 import sys
 from pathlib import Path
 from agno.agent import Agent
-from agno.db.sqlite import SqliteDb
 from agno.models.openrouter import OpenRouter
+
+from db import db
 from agno.tools.mcp import MCPTools
 from agno.tools.workflow import WorkflowTools
 from instructions.lead_engineer_instructions import LEAD_ENGINEER_INSTRUCTIONS
@@ -31,7 +32,7 @@ lead_engineer_agent = Agent(
     name="Lead Engineer Agent",
     role="Designs technical architecture, creates technical specifications, provides code review guidance, and offers technical leadership on implementation approaches.",
     model=OpenRouter(id="google/gemini-3-flash-preview"),
-    db=SqliteDb(db_file="agno.db"),
+    db=db,
     add_history_to_context=True,
     num_history_messages=20,
     markdown=True,
