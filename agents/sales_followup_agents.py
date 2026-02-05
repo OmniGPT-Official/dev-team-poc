@@ -25,36 +25,41 @@ from instructions.sales_followup_instructions import (
 )
 
 
-# Validate Google OAuth credentials
+# Get Google OAuth credentials
 # Support both naming conventions: GOOGLE_OAUTH_* (preferred) and GOOGLE_* (fallback)
 client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID", "")
 client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET", "")
 refresh_token = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "")
 
+# Warn if credentials are missing (but still create the tool)
 if not all([client_id, client_secret, refresh_token]):
     print("=" * 80, file=sys.stderr)
-    print("⚠️  WARNING: Google OAuth credentials not configured!", file=sys.stderr)
+    print("⚠️  WARNING: Google OAuth credentials not fully configured!", file=sys.stderr)
     print("=" * 80, file=sys.stderr)
     print("", file=sys.stderr)
     print("The Sales Follow-Up Workflow needs Gmail and Google Sheets access.", file=sys.stderr)
     print("", file=sys.stderr)
-    print("To set up:", file=sys.stderr)
-    print("1. Visit http://localhost:8000/google-auth (built-in OAuth generator)", file=sys.stderr)
-    print("   OR run: python3 get_google_token.py", file=sys.stderr)
-    print("2. Follow the instructions to get your OAuth credentials", file=sys.stderr)
-    print("3. Add these to your .env file:", file=sys.stderr)
+    print("Missing credentials:", file=sys.stderr)
+    if not client_id:
+        print("  ❌ GOOGLE_OAUTH_CLIENT_ID or GOOGLE_CLIENT_ID", file=sys.stderr)
+    if not client_secret:
+        print("  ❌ GOOGLE_OAUTH_CLIENT_SECRET or GOOGLE_CLIENT_SECRET", file=sys.stderr)
+    if not refresh_token:
+        print("  ❌ GOOGLE_OAUTH_REFRESH_TOKEN", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("To set up OAuth credentials in your cloud environment:", file=sys.stderr)
+    print("1. Set these environment variables in your deployment platform:", file=sys.stderr)
     print("   GOOGLE_OAUTH_CLIENT_ID=your-client-id", file=sys.stderr)
     print("   GOOGLE_OAUTH_CLIENT_SECRET=your-secret", file=sys.stderr)
     print("   GOOGLE_OAUTH_REFRESH_TOKEN=your-refresh-token", file=sys.stderr)
-    print("4. Restart the application", file=sys.stderr)
+    print("2. Restart your application", file=sys.stderr)
     print("", file=sys.stderr)
-    print("See GOOGLE_MCP_SETUP.md for detailed instructions.", file=sys.stderr)
-    print("", file=sys.stderr)
-    print("⚠️  Without credentials, agents will have NO tools and will fail!", file=sys.stderr)
+    print("For now, the 'Test Mode' workflow will work without credentials.", file=sys.stderr)
     print("=" * 80, file=sys.stderr)
 
 # Create Google MCP tool (Gmail + Google Sheets)
 # This MCP server provides: gmail_send_email, gmail_search, sheets_read, sheets_write
+# NOTE: Always create the tool (like other agents do) - MCP will handle errors gracefully
 google_mcp = MCPTools(
     command="npx -y @pegasusheavy/google-mcp",
     env={
@@ -63,7 +68,7 @@ google_mcp = MCPTools(
         "GOOGLE_REFRESH_TOKEN": refresh_token,
     },
     timeout_seconds=60,
-) if all([client_id, client_secret, refresh_token]) else None
+)
 
 
 # Sheet Analyzer - identifies who needs follow-up
@@ -75,8 +80,9 @@ sheet_analyzer_agent = Agent(
     add_history_to_context=True,
     markdown=True,
     instructions=SHEET_ANALYZER_INSTRUCTIONS,
-    tools=[google_mcp] if google_mcp else [],
+    tools=[google_mcp],  # Always include tools (MCP handles errors gracefully)
     show_tool_calls=True,  # Show tool usage for debugging
+    tool_call_limit=50,  # Reasonable limit for sheet operations
 )
 
 
@@ -89,12 +95,13 @@ context_researcher_agent = Agent(
     add_history_to_context=True,
     markdown=True,
     instructions=CONTEXT_RESEARCHER_INSTRUCTIONS,
-    tools=[google_mcp] if google_mcp else [],
+    tools=[google_mcp],  # Always include tools (MCP handles errors gracefully)
     show_tool_calls=True,  # Show tool usage for debugging
+    tool_call_limit=50,  # Reasonable limit for email searches
 )
 
 
-# Message Writer - drafts personalized follow-ups
+# Message Writer - drafts personalized follow-ups (no tools needed - writing only)
 message_writer_agent = Agent(
     name="Message Writer",
     role="Drafts personalized follow-up emails based on context",
@@ -103,10 +110,11 @@ message_writer_agent = Agent(
     add_history_to_context=True,
     markdown=True,
     instructions=MESSAGE_WRITER_INSTRUCTIONS,
+    tool_call_limit=10,  # Low limit - this agent only writes, doesn't use tools
 )
 
 
-# Campaign Analyst - provides insights on campaign performance
+# Campaign Analyst - provides insights on campaign performance (no tools - analysis only)
 campaign_analyst_agent = Agent(
     name="Campaign Analyst",
     role="Analyzes campaign performance and provides actionable insights",
@@ -115,6 +123,7 @@ campaign_analyst_agent = Agent(
     add_history_to_context=True,
     markdown=True,
     instructions=CAMPAIGN_ANALYST_INSTRUCTIONS,
+    tool_call_limit=10,  # Low limit - this agent analyzes, doesn't use external tools
 )
 
 
@@ -129,6 +138,7 @@ followup_coordinator_agent = Agent(
     add_history_to_context=True,
     markdown=True,
     instructions=FOLLOWUP_COORDINATOR_INSTRUCTIONS,
-    tools=[google_mcp] if google_mcp else [],
+    tools=[google_mcp],  # Always include tools (MCP handles errors gracefully)
     show_tool_calls=True,  # Show tool usage for debugging
+    tool_call_limit=100,  # Higher limit - coordinator handles complex workflows
 )
