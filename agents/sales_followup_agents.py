@@ -59,16 +59,21 @@ if not all([client_id, client_secret, refresh_token]):
 
 # Create Google MCP tool (Gmail + Google Sheets)
 # This MCP server provides: gmail_send_email, gmail_search, sheets_read, sheets_write
-# NOTE: Always create the tool (like other agents do) - MCP will handle errors gracefully
-google_mcp = MCPTools(
-    command="npx -y @pegasusheavy/google-mcp",
-    env={
-        "GOOGLE_CLIENT_ID": client_id,
-        "GOOGLE_CLIENT_SECRET": client_secret,
-        "GOOGLE_REFRESH_TOKEN": refresh_token,
-    },
-    timeout_seconds=60,
-)
+# Only create if ALL credentials are present (Google MCP crashes with empty creds)
+if all([client_id, client_secret, refresh_token]):
+    google_mcp = MCPTools(
+        command="npx -y @pegasusheavy/google-mcp",
+        env={
+            "GOOGLE_CLIENT_ID": client_id,
+            "GOOGLE_CLIENT_SECRET": client_secret,
+            "GOOGLE_REFRESH_TOKEN": refresh_token,
+        },
+        timeout_seconds=60,
+    )
+    print("✅ Google MCP tools initialized successfully", file=sys.stderr)
+else:
+    google_mcp = None
+    print("⚠️  Google MCP tools NOT initialized (credentials missing)", file=sys.stderr)
 
 
 # Sheet Analyzer - identifies who needs follow-up
@@ -80,7 +85,7 @@ sheet_analyzer_agent = Agent(
     add_history_to_context=True,
     markdown=True,
     instructions=SHEET_ANALYZER_INSTRUCTIONS,
-    tools=[google_mcp],  # Always include tools (MCP handles errors gracefully)
+    tools=[google_mcp] if google_mcp else [],
     show_tool_calls=True,  # Show tool usage for debugging
     tool_call_limit=50,  # Reasonable limit for sheet operations
 )
@@ -95,7 +100,7 @@ context_researcher_agent = Agent(
     add_history_to_context=True,
     markdown=True,
     instructions=CONTEXT_RESEARCHER_INSTRUCTIONS,
-    tools=[google_mcp],  # Always include tools (MCP handles errors gracefully)
+    tools=[google_mcp] if google_mcp else [],
     show_tool_calls=True,  # Show tool usage for debugging
     tool_call_limit=50,  # Reasonable limit for email searches
 )
@@ -138,7 +143,7 @@ followup_coordinator_agent = Agent(
     add_history_to_context=True,
     markdown=True,
     instructions=FOLLOWUP_COORDINATOR_INSTRUCTIONS,
-    tools=[google_mcp],  # Always include tools (MCP handles errors gracefully)
+    tools=[google_mcp] if google_mcp else [],
     show_tool_calls=True,  # Show tool usage for debugging
     tool_call_limit=100,  # Higher limit - coordinator handles complex workflows
 )
