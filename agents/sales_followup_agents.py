@@ -86,8 +86,7 @@ sheet_analyzer_agent = Agent(
     markdown=True,
     instructions=SHEET_ANALYZER_INSTRUCTIONS,
     tools=[google_mcp] if google_mcp else [],
-    show_tool_calls=True,  # Show tool usage for debugging
-    tool_call_limit=50,  # Reasonable limit for sheet operations
+    tool_call_limit=50,
 )
 
 
@@ -101,8 +100,7 @@ context_researcher_agent = Agent(
     markdown=True,
     instructions=CONTEXT_RESEARCHER_INSTRUCTIONS,
     tools=[google_mcp] if google_mcp else [],
-    show_tool_calls=True,  # Show tool usage for debugging
-    tool_call_limit=50,  # Reasonable limit for email searches
+    tool_call_limit=50,
 )
 
 
@@ -144,6 +142,5 @@ followup_coordinator_agent = Agent(
     markdown=True,
     instructions=FOLLOWUP_COORDINATOR_INSTRUCTIONS,
     tools=[google_mcp] if google_mcp else [],
-    show_tool_calls=True,  # Show tool usage for debugging
-    tool_call_limit=100,  # Higher limit - coordinator handles complex workflows
+    tool_call_limit=100,
 )
