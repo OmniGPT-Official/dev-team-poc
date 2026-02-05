@@ -16,6 +16,7 @@ Key Feature: REVIEW-THEN-SEND
 - Sheet is automatically updated after sending
 """
 
+import asyncio
 from agno.agent import Agent
 from agno.workflow import Step, Steps, Workflow
 from agno.workflow.types import StepInput, StepOutput
@@ -26,6 +27,19 @@ from agents.sales_followup_agents import (
     campaign_analyst_agent,
     followup_coordinator_agent,
 )
+
+
+def _run_async(coro):
+    """Run async coroutine from sync context."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
 
 # === EXECUTOR FUNCTIONS (with streaming) ===
@@ -135,11 +149,11 @@ async def run_report(step_input: StepInput):
     )
 
 
-async def run_format_output(step_input: StepInput):
+def run_format_output(step_input: StepInput) -> StepOutput:
     """Format final output with summary."""
     content = step_input.previous_step_content or ""
 
-    yield StepOutput(
+    return StepOutput(
         success=True,
         content=f"""
 ## Follow-Up Campaign Complete
@@ -229,7 +243,7 @@ sales_followup_workflow = Workflow(
 
 # === SIMPLE TEST WORKFLOW (For Testing Without Google OAuth) ===
 
-async def run_simple_intake(step_input: StepInput):
+def run_simple_intake(step_input: StepInput) -> StepOutput:
     """Simple intake for testing without Google Sheets - provides mock data."""
     mock_data = """
 I'll use this test data for the follow-up workflow:
@@ -261,13 +275,12 @@ I'll use this test data for the follow-up workflow:
 - Last contact: 2025-01-10
 - Days since: 25 days
 - Status: Proposal sent
-- Status: Pending
 - Notes: Received our proposal 3 weeks ago. Mentioned they're in budget planning cycle. Last email mentioned they'd have feedback "by mid-January" but no response yet.
 
 Ready to draft personalized follow-up emails for these contacts!
 """
 
-    async for chunk in followup_coordinator_agent.run(
+    result = _run_async(followup_coordinator_agent.arun(
         f"""You're running in TEST MODE (no Google OAuth configured).
 
 I'll provide you with mock contact data to test the follow-up workflow.
@@ -275,21 +288,18 @@ I'll provide you with mock contact data to test the follow-up workflow.
 {mock_data}
 
 Present this data to the user and confirm we're ready to draft follow-up emails.
-Explain that this is test mode and in production mode, this data would come from Google Sheets automatically.""",
-        stream=True,
-        stream_events=True
-    ):
-        yield chunk
+Explain that this is test mode and in production mode, this data would come from Google Sheets automatically."""
+    ))
 
-    yield StepOutput(
+    return StepOutput(
         success=True,
         content=mock_data
     )
 
 
-async def run_simple_draft(step_input: StepInput):
+def run_simple_draft(step_input: StepInput) -> StepOutput:
     """Draft messages using the mock data."""
-    async for chunk in message_writer_agent.run(
+    result = _run_async(message_writer_agent.arun(
         f"""Based on this contact data, draft personalized follow-up emails:
 
 {step_input.previous_step_content}
@@ -299,15 +309,13 @@ Draft a follow-up email for each contact. Remember:
 - Reference specific context
 - One clear call-to-action
 - Natural, conversational tone
-- Specific subject lines""",
-        stream=True,
-        stream_events=True
-    ):
-        yield chunk
+- Specific subject lines"""
+    ))
 
-    yield StepOutput(
+    output = result.content or "Draft emails complete"
+    return StepOutput(
         success=True,
-        content="Draft emails complete - ready for review"
+        content=output
     )
 
 
