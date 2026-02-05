@@ -1,10 +1,17 @@
 """
 Google Docs Tools
 
-Creates real Google Docs via OAuth2 token stored at tests/google_docs/token.json.
-Token is obtained by running: python tests/google_docs/oauth_server.py
+Creates real Google Docs via OAuth2 token.
+
+Token sources (checked in order):
+1. GOOGLE_DOCS_TOKEN environment variable (JSON string) - for production/Railway
+2. tests/google_docs/token.json file - for local development
+
+To get a token locally:
+  python tests/google_docs/oauth_server.py
 """
 
+import os
 import json
 from pathlib import Path
 
@@ -14,7 +21,7 @@ from google.auth.transport.requests import Request as GoogleRequest
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# Token path (relative to project root)
+# Token path (relative to project root) - fallback for local development
 TOKEN_FILE = Path(__file__).resolve().parent.parent / "tests" / "google_docs" / "token.json"
 
 TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -25,19 +32,34 @@ SCOPES = [
 
 
 def _load_credentials() -> Credentials:
-    """Load OAuth2 credentials from token.json and auto-refresh if expired."""
-    if not TOKEN_FILE.exists():
+    """
+    Load OAuth2 credentials from environment variable or token.json file.
+
+    Priority:
+    1. GOOGLE_DOCS_TOKEN env var (JSON string) - for Railway/production
+    2. tests/google_docs/token.json file - for local development
+    """
+    # Try environment variable first (for Railway/production)
+    token_json = os.environ.get("GOOGLE_DOCS_TOKEN")
+
+    if token_json:
+        try:
+            data = json.loads(token_json)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"GOOGLE_DOCS_TOKEN is not valid JSON: {e}")
+    elif TOKEN_FILE.exists():
+        with open(TOKEN_FILE) as f:
+            data = json.load(f)
+    else:
         raise FileNotFoundError(
-            "Google Docs OAuth2 token not found.\n"
-            f"Expected at: {TOKEN_FILE}\n\n"
-            "To create one:\n"
+            "Google Docs OAuth2 token not found.\n\n"
+            "For production (Railway):\n"
+            "  Set GOOGLE_DOCS_TOKEN environment variable with the JSON content\n\n"
+            "For local development:\n"
             "  1. python tests/google_docs/oauth_server.py\n"
             "  2. Open http://localhost:8000 and authorize\n"
-            "  3. Token will be saved automatically"
+            "  3. Token will be saved to tests/google_docs/token.json"
         )
-
-    with open(TOKEN_FILE) as f:
-        data = json.load(f)
 
     creds = Credentials(
         token=data["token"],
@@ -48,17 +70,20 @@ def _load_credentials() -> Credentials:
         scopes=SCOPES,
     )
 
+    # Auto-refresh if expired
     if creds.expired and creds.refresh_token:
         creds.refresh(GoogleRequest())
-        with open(TOKEN_FILE, "w") as f:
-            json.dump({
-                "token": creds.token,
-                "refresh_token": creds.refresh_token,
-                "token_uri": TOKEN_URI,
-                "client_id": data.get("client_id", ""),
-                "client_secret": data.get("client_secret", ""),
-                "scopes": SCOPES,
-            }, f, indent=2)
+        # Only update file if we're using file-based token (not env var)
+        if not token_json and TOKEN_FILE.exists():
+            with open(TOKEN_FILE, "w") as f:
+                json.dump({
+                    "token": creds.token,
+                    "refresh_token": creds.refresh_token,
+                    "token_uri": TOKEN_URI,
+                    "client_id": data.get("client_id", ""),
+                    "client_secret": data.get("client_secret", ""),
+                    "scopes": SCOPES,
+                }, f, indent=2)
 
     return creds
 
@@ -71,7 +96,10 @@ def _get_docs_service():
 class GoogleDocsTools(Toolkit):
     """
     Tools for creating Google Docs documents via the real Docs API.
-    Requires OAuth2 token at tests/google_docs/token.json.
+
+    Token sources (checked in order):
+    1. GOOGLE_DOCS_TOKEN env var (JSON string) - for Railway/production
+    2. tests/google_docs/token.json file - for local development
     """
 
     def __init__(self, **kwargs):

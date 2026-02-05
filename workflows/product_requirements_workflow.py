@@ -129,27 +129,41 @@ def create_prd(step_input: StepInput) -> StepOutput:
 
     _log("📝", "PRD", f"Creating PRD for: {_state.project_name}")
 
-    prompt = f"""Create a PRD (Product Requirements Document) for this project.
+    prompt = f"""You MUST create a PRD and save it to Google Docs.
 
 **Project:** {_state.project_name}
 **Description:** {description}
 
-Create a clear, concise PRD with these sections:
-1. Overview - What is this product?
-2. Goals - What problem does it solve?
-3. Target Users - Who will use it?
-4. Features - List of features (keep it focused)
-5. Success Metrics - How do we measure success?
+**STEP 1: Write the PRD content with these exact sections:**
 
-**IMPORTANT:** Keep it simple and focused. Don't over-engineer.
+1. OVERVIEW
+What is this product?
 
-**Save to Google Docs:**
-Use create_prd_document tool with:
+2. GOALS
+What problem does it solve?
+
+3. TARGET USERS
+Who will use it?
+
+4. FEATURES
+List of features (keep it focused)
+
+5. SUCCESS METRICS
+How do we measure success?
+
+**STEP 2: YOU MUST call the create_prd_document tool**
+
+Call it NOW with these parameters:
 - title: "PRD: {_state.project_name}"
-- content: [your PRD]
+- content: (the PRD content you wrote above as plain text)
 - project_name: "{_state.project_name}"
 
-Return the Google Docs URL.
+**STEP 3: Return the Google Docs URL**
+
+The tool will return a URL like https://docs.google.com/document/d/XXXXX/edit
+You MUST include this complete URL in your response.
+
+CRITICAL: You MUST call create_prd_document tool. Do NOT skip this step.
 """
 
     result = _run_async(get_product_lead_agent().arun(prompt))
