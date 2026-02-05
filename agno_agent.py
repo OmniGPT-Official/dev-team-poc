@@ -6,7 +6,10 @@ Clean architecture with 4 agents, 1 team, and 2 workflows.
 """
 
 import os
+from os import getenv
+
 from agno.os import AgentOS
+from agno.os.middleware import JWTMiddleware
 from agents.product_lead import product_lead_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
@@ -46,11 +49,25 @@ agent_os = AgentOS(
         simple_followup_workflow,  # Sales Follow-Up Manager (simple testing version)
         requirement_gathering_workflow_definition,  # Content Creation Workflow
     ],
+    authorization=False,  # Phase 1: no RBAC, just JWT user identification
     tracing=True
 )
 
 # Get FastAPI app
 app = agent_os.get_app()
+
+# JWT middleware for multi-user authentication
+# Validates Supabase JWTs (ES256) and auto-injects user_id from the `sub` claim into agent/team runs
+# To temporarily disable authentication, comment out the entire app.add_middleware(...) block below
+# app.add_middleware(
+#     JWTMiddleware,
+#     jwks_file=getenv("JWT_JWKS_FILE", "supabase/jwks.json"),
+#     algorithm="ES256",
+#     user_id_claim="sub",
+#     validate=True,
+#     authorization=False,
+#     excluded_route_paths=["/health", "/docs", "/redoc", "/openapi.json"],
+# )
 
 # ---------------------------------------------------------------------------
 # Google OAuth Token Generator (Built-in)
