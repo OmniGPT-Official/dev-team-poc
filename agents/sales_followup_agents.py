@@ -1,5 +1,10 @@
 """
-Sales Follow-Up Manager Agent Configurations
+Sales Follow-Up Workflow Agents
+
+Architecture: WORKFLOW (not Team)
+- These are standalone agents used in a sequential workflow
+- The "coordinator" is NOT a team manager - it's just called at different workflow steps
+- For Team architecture example, see: teams/product_team.py
 
 Using Gemini for cost-effective testing.
 Switch to Claude for production if needed.
@@ -21,8 +26,9 @@ from instructions.sales_followup_instructions import (
 
 
 # Validate Google OAuth credentials
-client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+# Support both naming conventions: GOOGLE_OAUTH_* (preferred) and GOOGLE_* (fallback)
+client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID", "")
+client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET", "")
 refresh_token = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "")
 
 if not all([client_id, client_secret, refresh_token]):
@@ -30,18 +36,25 @@ if not all([client_id, client_secret, refresh_token]):
     print("⚠️  WARNING: Google OAuth credentials not configured!", file=sys.stderr)
     print("=" * 80, file=sys.stderr)
     print("", file=sys.stderr)
-    print("The Follow-Up Manager needs Gmail and Google Sheets access.", file=sys.stderr)
+    print("The Sales Follow-Up Workflow needs Gmail and Google Sheets access.", file=sys.stderr)
     print("", file=sys.stderr)
     print("To set up:", file=sys.stderr)
-    print("1. Run: python3 get_google_token.py", file=sys.stderr)
+    print("1. Visit http://localhost:8000/google-auth (built-in OAuth generator)", file=sys.stderr)
+    print("   OR run: python3 get_google_token.py", file=sys.stderr)
     print("2. Follow the instructions to get your OAuth credentials", file=sys.stderr)
-    print("3. Add the credentials to your .env file", file=sys.stderr)
+    print("3. Add these to your .env file:", file=sys.stderr)
+    print("   GOOGLE_OAUTH_CLIENT_ID=your-client-id", file=sys.stderr)
+    print("   GOOGLE_OAUTH_CLIENT_SECRET=your-secret", file=sys.stderr)
+    print("   GOOGLE_OAUTH_REFRESH_TOKEN=your-refresh-token", file=sys.stderr)
     print("4. Restart the application", file=sys.stderr)
     print("", file=sys.stderr)
     print("See GOOGLE_MCP_SETUP.md for detailed instructions.", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("⚠️  Without credentials, agents will have NO tools and will fail!", file=sys.stderr)
     print("=" * 80, file=sys.stderr)
 
 # Create Google MCP tool (Gmail + Google Sheets)
+# This MCP server provides: gmail_send_email, gmail_search, sheets_read, sheets_write
 google_mcp = MCPTools(
     command="npx -y @pegasusheavy/google-mcp",
     env={
@@ -50,7 +63,7 @@ google_mcp = MCPTools(
         "GOOGLE_REFRESH_TOKEN": refresh_token,
     },
     timeout_seconds=60,
-)
+) if all([client_id, client_secret, refresh_token]) else None
 
 
 # Sheet Analyzer - identifies who needs follow-up
@@ -62,7 +75,8 @@ sheet_analyzer_agent = Agent(
     add_history_to_context=True,
     markdown=True,
     instructions=SHEET_ANALYZER_INSTRUCTIONS,
-    tools=[google_mcp] if all([client_id, client_secret, refresh_token]) else [],
+    tools=[google_mcp] if google_mcp else [],
+    show_tool_calls=True,  # Show tool usage for debugging
 )
 
 
@@ -75,7 +89,8 @@ context_researcher_agent = Agent(
     add_history_to_context=True,
     markdown=True,
     instructions=CONTEXT_RESEARCHER_INSTRUCTIONS,
-    tools=[google_mcp] if all([client_id, client_secret, refresh_token]) else [],
+    tools=[google_mcp] if google_mcp else [],
+    show_tool_calls=True,  # Show tool usage for debugging
 )
 
 
@@ -103,14 +118,17 @@ campaign_analyst_agent = Agent(
 )
 
 
-# Follow-Up Coordinator - orchestrates the entire workflow
+# Follow-Up Coordinator - orchestrates workflow steps
+# NOTE: This is NOT a team manager - it's just called at different workflow steps
+# For actual team architecture, see: teams/product_team.py
 followup_coordinator_agent = Agent(
-    name="Follow-Up Manager",
-    role="Coordinates the entire follow-up workflow from sheet analysis to sending emails",
+    name="Follow-Up Workflow Coordinator",
+    role="Handles user interaction and workflow orchestration at different stages",
     model=Gemini(id="gemini-3-flash-preview"),
     db=SqliteDb(db_file="agno.db"),
     add_history_to_context=True,
     markdown=True,
     instructions=FOLLOWUP_COORDINATOR_INSTRUCTIONS,
-    tools=[google_mcp] if all([client_id, client_secret, refresh_token]) else [],
+    tools=[google_mcp] if google_mcp else [],
+    show_tool_calls=True,  # Show tool usage for debugging
 )
