@@ -18,9 +18,9 @@ from tools.gmail_tools import (
     check_email_deliverability
 )
 
-# Use Gemini for cost-effective POC testing (~75x cheaper than Claude)
+# Use Gemini 3 Flash Preview for cost-effective POC testing
 # Cost: ~$0.19 per million tokens vs ~$9 for Claude Sonnet 4.5
-MODEL = Gemini(id="gemini-2.0-flash-exp")
+MODEL = Gemini(id="gemini-3-flash-preview")
 
 
 # Sheet Analyzer - identifies contacts needing follow-up
