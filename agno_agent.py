@@ -22,6 +22,7 @@ from content_creation import (
     content_creation_team,
     requirement_gathering_workflow_definition,
 )
+from email_followup import email_followup_agent
 
 # Initialize Agent OS with Enhanced Tracing
 # Tracing provides visibility into:
@@ -44,6 +45,7 @@ agent_os = AgentOS(
         followup_coordinator_agent,  # Sales Follow-Up Workflow Coordinator
         content_strategist,  # Content Creation Team
         content_writer,  # Content Creation Team
+        email_followup_agent,  # Email Follow-Up Agent (native Agno tools)
     ],
     teams=[
         product_team,  # Product Development Team
