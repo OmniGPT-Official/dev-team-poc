@@ -15,6 +15,7 @@ from teams.product_team import product_team
 from workflows.product_requirements_workflow import product_requirements_workflow
 from workflows.software_development_workflow import software_development_workflow
 from workflows.sales_followup_workflow import sales_followup_workflow, simple_followup_workflow
+from workflows.email_followup_workflow import email_followup_workflow, simple_email_followup_workflow
 from agents.sales_followup_agents import followup_coordinator_agent
 from content_creation import (
     content_strategist,
@@ -54,6 +55,8 @@ agent_os = AgentOS(
         software_development_workflow,
         sales_followup_workflow,  # Sales Follow-Up Workflow (full with Google MCP)
         simple_followup_workflow,  # Sales Follow-Up Workflow (simple test version)
+        email_followup_workflow,  # Email Follow-Up Workflow (with proper tools)
+        simple_email_followup_workflow,  # Email Follow-Up Workflow (simple test version)
         requirement_gathering_workflow_definition,  # Content Creation Workflow
     ],
     tracing=True,  # Enable built-in OpenTelemetry tracing
