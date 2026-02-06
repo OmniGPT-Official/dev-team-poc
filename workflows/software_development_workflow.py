@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agno.workflow import Step, Workflow, Loop
 from agno.workflow.types import StepInput, StepOutput
 from agno.utils.log import log_info, log_error
-from utils.cloud_logger import CloudLogger
+from utils.cloud_logger import CloudLogger, setup_agno_cloud_logging
 
 
 # ============================================================================
@@ -161,6 +161,8 @@ def read_architecture(step_input: StepInput) -> StepOutput:
     _state.log_doc_url = logger.start_session("Software Development Workflow")
     if _state.log_doc_url:
         print(f"\n📋 LIVE LOGS: {_state.log_doc_url}\n")
+        # Hook into agno's logging to capture all framework debug logs
+        setup_agno_cloud_logging()
 
     input_str = step_input.input if isinstance(step_input.input, str) else ""
     parsed = parse_input_urls(input_str)

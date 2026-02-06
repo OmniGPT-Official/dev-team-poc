@@ -22,7 +22,7 @@ from agno.workflow import Step, Workflow
 from agno.workflow.condition import Condition
 from agno.workflow.types import StepInput, StepOutput
 from agno.utils.log import log_info
-from utils.cloud_logger import CloudLogger
+from utils.cloud_logger import CloudLogger, setup_agno_cloud_logging
 
 
 # ============================================================================
@@ -131,6 +131,8 @@ def create_prd(step_input: StepInput) -> StepOutput:
     _state.log_doc_url = logger.start_session("Product Requirements Workflow")
     if _state.log_doc_url:
         print(f"\n📋 LIVE LOGS: {_state.log_doc_url}\n")
+        # Hook into agno's logging to capture all framework debug logs
+        setup_agno_cloud_logging()
 
     input_str = str(step_input.input)
     _state.project_name = _extract_param(input_str, "PROJECT_NAME") or "New Project"
@@ -199,6 +201,8 @@ def create_feature_spec(step_input: StepInput) -> StepOutput:
     _state.log_doc_url = logger.start_session("Product Requirements Workflow (Feature)")
     if _state.log_doc_url:
         print(f"\n📋 LIVE LOGS: {_state.log_doc_url}\n")
+        # Hook into agno's logging to capture all framework debug logs
+        setup_agno_cloud_logging()
 
     input_str = str(step_input.input)
     _state.project_name = _extract_param(input_str, "PROJECT_NAME") or "Existing Project"

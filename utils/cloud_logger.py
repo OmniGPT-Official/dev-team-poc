@@ -1,28 +1,77 @@
 """
-Cloud Logger - Dumps logs to Google Docs for Railway visibility
+Cloud Logger - Dumps ALL logs (including agno framework) to Google Docs for Railway visibility
 
 Usage:
-    from utils.cloud_logger import CloudLogger
+    from utils.cloud_logger import CloudLogger, setup_agno_cloud_logging
 
     # Initialize at start of workflow
     logger = CloudLogger.get_instance()
     logger.start_session("Software Development Workflow")
 
+    # Hook into agno's logging system to capture framework logs
+    setup_agno_cloud_logging()
+
     # Log throughout your code
     logger.log("INFO", "STEP", "Starting process...")
-    logger.log("ERROR", "STEP", "Something failed", {"error": "details"})
 
     # At end, get the Google Doc URL
     doc_url = logger.end_session()
-    print(f"Logs: {doc_url}")
 """
 
 import os
 import json
+import logging
 import threading
 from datetime import datetime
 from typing import Optional, Any, Dict, List
-from pathlib import Path
+
+
+# ============================================================================
+# CUSTOM LOGGING HANDLER - Forwards Python logs to CloudLogger
+# ============================================================================
+
+class CloudLogHandler(logging.Handler):
+    """
+    Custom logging handler that forwards all Python logging to CloudLogger.
+    This captures agno framework debug logs.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.setLevel(logging.DEBUG)  # Capture all levels
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            # Get the CloudLogger instance
+            cloud_logger = CloudLogger.get_instance()
+
+            # Skip if no session is active
+            if not cloud_logger._doc_id:
+                return
+
+            # Format the log message
+            msg = self.format(record)
+            if not msg:
+                return
+
+            # Determine source from logger name
+            source = "AGNO"
+            if "team" in record.name:
+                source = "TEAM"
+            elif "workflow" in record.name:
+                source = "WORKFLOW"
+            elif "agent" in record.name.lower():
+                source = "AGENT"
+
+            # Map log level
+            level = record.levelname
+
+            # Forward to cloud logger (but don't print again - already printed by agno)
+            cloud_logger._log_internal(level, source, msg)
+
+        except Exception:
+            # Don't raise exceptions from logging
+            pass
 
 
 class CloudLogger:
@@ -41,8 +90,9 @@ class CloudLogger:
         self._doc_id: Optional[str] = None
         self._doc_url: Optional[str] = None
         self._log_lock = threading.Lock()
-        self._flush_interval = 20  # Flush every N logs
+        self._flush_interval = 15  # Flush every N logs
         self._enabled = True
+        self._agno_handler_installed = False
 
     @classmethod
     def get_instance(cls) -> "CloudLogger":
@@ -53,12 +103,17 @@ class CloudLogger:
                     cls._instance = cls()
         return cls._instance
 
-    def start_session(self, session_name: str = "Agent-Os Session") -> str:
+    def start_session(
+        self,
+        session_name: str = "Agent-Os Session",
+        use_existing_doc: Optional[str] = None
+    ) -> str:
         """
-        Start a new logging session. Creates a Google Doc for logs.
+        Start a new logging session.
 
         Args:
             session_name: Name for this session (appears in doc title)
+            use_existing_doc: Optional existing Google Doc ID to append to
 
         Returns:
             Google Doc URL for the log document
@@ -70,11 +125,44 @@ class CloudLogger:
             self._doc_id = None
             self._doc_url = None
 
-        # Create the log document
         timestamp = self._session_start.strftime("%Y-%m-%d %H:%M:%S")
-        title = f"Logs: {session_name} - {timestamp}"
 
-        initial_content = f"""{'=' * 60}
+        # Check for hardcoded doc ID from environment
+        hardcoded_doc = use_existing_doc or os.environ.get("CLOUD_LOG_DOC_ID")
+
+        try:
+            from tools.google_docs_tools import _get_docs_service
+            service = _get_docs_service()
+
+            if hardcoded_doc:
+                # Use existing document - append new session
+                self._doc_id = hardcoded_doc
+                self._doc_url = f"https://docs.google.com/document/d/{self._doc_id}/edit"
+
+                session_header = f"""
+
+{'=' * 60}
+NEW SESSION: {session_name}
+{'=' * 60}
+
+Started: {timestamp}
+Environment: {'Railway' if os.environ.get('RAILWAY_ENVIRONMENT') else 'Local'}
+
+"""
+                # Append to end of document
+                doc = service.documents().get(documentId=self._doc_id).execute()
+                end_index = doc["body"]["content"][-1]["endIndex"] - 1
+
+                service.documents().batchUpdate(
+                    documentId=self._doc_id,
+                    body={"requests": [{"insertText": {"location": {"index": end_index}, "text": session_header}}]},
+                ).execute()
+
+            else:
+                # Create new document
+                title = f"Logs: {session_name} - {timestamp}"
+
+                initial_content = f"""{'=' * 60}
 AGENT-OS LOG SESSION
 {'=' * 60}
 
@@ -87,30 +175,24 @@ LOGS
 {'=' * 60}
 
 """
+                doc = service.documents().create(body={"title": title}).execute()
+                self._doc_id = doc["documentId"]
+                self._doc_url = f"https://docs.google.com/document/d/{self._doc_id}/edit"
 
-        try:
-            from tools.google_docs_tools import _get_docs_service
-            service = _get_docs_service()
+                service.documents().batchUpdate(
+                    documentId=self._doc_id,
+                    body={"requests": [{"insertText": {"location": {"index": 1}, "text": initial_content}}]},
+                ).execute()
 
-            doc = service.documents().create(body={"title": title}).execute()
-            self._doc_id = doc["documentId"]
-            self._doc_url = f"https://docs.google.com/document/d/{self._doc_id}/edit"
-
-            # Add initial content
-            service.documents().batchUpdate(
-                documentId=self._doc_id,
-                body={"requests": [{"insertText": {"location": {"index": 1}, "text": initial_content}}]},
-            ).execute()
-
-            self.log("INFO", "SESSION", f"Log document created: {self._doc_url}")
+            self.log("INFO", "SESSION", f"Log document: {self._doc_url}")
             return self._doc_url
 
         except Exception as e:
-            print(f"[CloudLogger] Failed to create log doc: {e}")
+            print(f"[CloudLogger] Failed to create/open log doc: {e}")
             self._enabled = False
             return ""
 
-    def log(
+    def _log_internal(
         self,
         level: str,
         step: str,
@@ -118,16 +200,10 @@ LOGS
         data: Optional[Dict[str, Any]] = None,
         emoji: str = ""
     ) -> None:
-        """
-        Log a message.
+        """Internal log method - doesn't print to stdout (used by CloudLogHandler)."""
+        if not self._enabled:
+            return
 
-        Args:
-            level: Log level (INFO, ERROR, WARN, DEBUG)
-            step: Step or component name
-            message: Log message
-            data: Optional additional data
-            emoji: Optional emoji prefix
-        """
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
         log_entry = {
@@ -142,13 +218,35 @@ LOGS
         with self._log_lock:
             self._logs.append(log_entry)
 
-            # Also print to stdout for local debugging
-            prefix = f"{emoji} " if emoji else ""
-            print(f"[{timestamp}] {prefix}[{step}] {message}")
-
             # Auto-flush every N logs
             if len(self._logs) >= self._flush_interval:
                 self._flush_logs()
+
+    def log(
+        self,
+        level: str,
+        step: str,
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+        emoji: str = ""
+    ) -> None:
+        """
+        Log a message (also prints to stdout).
+
+        Args:
+            level: Log level (INFO, ERROR, WARN, DEBUG)
+            step: Step or component name
+            message: Log message
+            data: Optional additional data
+            emoji: Optional emoji prefix
+        """
+        # Print to stdout
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        prefix = f"{emoji} " if emoji else ""
+        print(f"[{timestamp}] {prefix}[{step}] {message}")
+
+        # Add to buffer
+        self._log_internal(level, step, message, data, emoji)
 
     def info(self, step: str, message: str, data: Optional[Dict] = None) -> None:
         """Log info message."""
@@ -165,15 +263,6 @@ LOGS
     def debug(self, step: str, message: str, data: Optional[Dict] = None) -> None:
         """Log debug message."""
         self.log("DEBUG", step, message, data, "")
-
-    def step_start(self, step_name: str) -> None:
-        """Log start of a workflow step."""
-        self.log("INFO", step_name, f"Starting {step_name}...", emoji="")
-
-    def step_end(self, step_name: str, success: bool = True) -> None:
-        """Log end of a workflow step."""
-        status = "completed" if success else "FAILED"
-        self.log("INFO", step_name, f"{step_name} {status}", emoji="")
 
     def _flush_logs(self) -> None:
         """Flush buffered logs to Google Doc."""
@@ -233,7 +322,7 @@ LOGS
             duration = f"{minutes}m {seconds}s"
 
         # Add session end marker
-        self.log("INFO", "SESSION", f"Session ended. Duration: {duration}")
+        self._log_internal("INFO", "SESSION", f"Session ended. Duration: {duration}")
 
         # Final flush
         with self._log_lock:
@@ -253,6 +342,7 @@ SESSION COMPLETE
 
 Duration: {duration}
 End Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
 """
                     doc = service.documents().get(documentId=self._doc_id).execute()
                     end_index = doc["body"]["content"][-1]["endIndex"] - 1
@@ -271,7 +361,45 @@ End Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         return self._doc_url or ""
 
 
-# Convenience function for quick logging
+# ============================================================================
+# AGNO LOGGING INTEGRATION
+# ============================================================================
+
+def setup_agno_cloud_logging() -> None:
+    """
+    Hook into agno's logging system to capture all framework logs.
+    Call this after starting a CloudLogger session.
+    """
+    cloud_logger = CloudLogger.get_instance()
+
+    if cloud_logger._agno_handler_installed:
+        return  # Already installed
+
+    # Create our custom handler
+    handler = CloudLogHandler()
+    handler.setFormatter(logging.Formatter('%(message)s'))
+
+    # Get all agno loggers and add our handler
+    logger_names = ["agno", "agno-team", "agno-workflow"]
+
+    for name in logger_names:
+        try:
+            agno_logger = logging.getLogger(name)
+            agno_logger.addHandler(handler)
+            # Ensure debug level is enabled to capture debug logs
+            if agno_logger.level > logging.DEBUG:
+                agno_logger.setLevel(logging.DEBUG)
+        except Exception as e:
+            print(f"[CloudLogger] Failed to hook {name} logger: {e}")
+
+    cloud_logger._agno_handler_installed = True
+    print("[CloudLogger] Agno logging integration enabled")
+
+
+# ============================================================================
+# CONVENIENCE FUNCTIONS
+# ============================================================================
+
 def cloud_log(level: str, step: str, message: str, data: Optional[Dict] = None) -> None:
     """Quick log function - uses singleton instance."""
     CloudLogger.get_instance().log(level, step, message, data)
