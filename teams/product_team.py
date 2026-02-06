@@ -44,7 +44,7 @@ def run_software_development(input_data: str) -> str:
 
 product_team = Team(
     name="Product Development Team",
-    model=OpenRouter(id="google/gemini-3-flash-preview"),
+    model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=16384),
     db=SqliteDb(db_file="agno.db"),
     members=[
         product_lead_agent,

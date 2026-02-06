@@ -28,7 +28,7 @@ vercel_deploy_tools = VercelDeployTools()
 software_engineer_agent = Agent(
     name="Software Engineer Agent",
     role="Implements code, fixes bugs, writes tests, and creates code documentation. Handles version control and follows coding best practices.",
-    model=OpenRouter(id="google/gemini-3-flash-preview"),
+    model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=16384),
     db=SqliteDb(db_file="agno.db"),
     add_history_to_context=True,
     num_history_messages=20,

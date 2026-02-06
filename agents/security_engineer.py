@@ -19,7 +19,7 @@ github_tools = GitHubTools()
 security_engineer_agent = Agent(
     name="Security Engineer Agent",
     role="Reviews code for security vulnerabilities, ensures secure coding practices, and provides security guidance on implementations.",
-    model=OpenRouter(id="google/gemini-3-flash-preview"),
+    model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=8192),
     db=SqliteDb(db_file="agno.db"),
     add_history_to_context=True,
     num_history_messages=20,
