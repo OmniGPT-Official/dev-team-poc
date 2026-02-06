@@ -22,6 +22,7 @@ from agno.workflow import Step, Workflow
 from agno.workflow.condition import Condition
 from agno.workflow.types import StepInput, StepOutput
 from agno.utils.log import log_info
+from utils.cloud_logger import CloudLogger
 
 
 # ============================================================================
@@ -35,6 +36,7 @@ class WorkflowState:
         self.architecture_url = ""
         self.project_name = ""
         self.project_type = "new"
+        self.log_doc_url = ""  # Google Doc URL for logs
 
 
 _state = WorkflowState()
@@ -57,10 +59,12 @@ def _run_async(coro):
     return loop.run_until_complete(coro)
 
 
-def _log(emoji: str, step: str, msg: str):
-    """Concise logging."""
+def _log(emoji: str, step: str, msg: str, data: dict = None):
+    """Concise logging - writes to both console and Google Docs."""
     print(f"{emoji} [{step}] {msg}")
     log_info(f"[{step}] {msg}")
+    # Also log to cloud logger for Railway visibility
+    CloudLogger.get_instance().log("INFO", step, msg, data, emoji)
 
 
 def _extract_url(text: str) -> Optional[str]:
@@ -121,6 +125,12 @@ def create_prd(step_input: StepInput) -> StepOutput:
     """Create PRD for new project."""
     global _state
     _state = WorkflowState()
+
+    # Start cloud logging session for Railway visibility
+    logger = CloudLogger.get_instance()
+    _state.log_doc_url = logger.start_session("Product Requirements Workflow")
+    if _state.log_doc_url:
+        print(f"\n📋 LIVE LOGS: {_state.log_doc_url}\n")
 
     input_str = str(step_input.input)
     _state.project_name = _extract_param(input_str, "PROJECT_NAME") or "New Project"
@@ -183,6 +193,12 @@ def create_feature_spec(step_input: StepInput) -> StepOutput:
     """Create Feature Spec for existing project."""
     global _state
     _state = WorkflowState()
+
+    # Start cloud logging session for Railway visibility
+    logger = CloudLogger.get_instance()
+    _state.log_doc_url = logger.start_session("Product Requirements Workflow (Feature)")
+    if _state.log_doc_url:
+        print(f"\n📋 LIVE LOGS: {_state.log_doc_url}\n")
 
     input_str = str(step_input.input)
     _state.project_name = _extract_param(input_str, "PROJECT_NAME") or "Existing Project"
@@ -387,6 +403,9 @@ def create_summary(step_input: StepInput) -> StepOutput:
 
     doc_type = "Feature Spec" if _state.project_type == "existing" else "PRD"
 
+    # End cloud logging session and get final log URL
+    log_url = CloudLogger.get_instance().end_session()
+
     summary = f"""
 ## ✅ Documents Created!
 
@@ -397,6 +416,9 @@ def create_summary(step_input: StepInput) -> StepOutput:
 
 ### 🏗️ Document 2: Architecture
 {_state.architecture_url or 'Not available'}
+
+### 📋 Logs
+{log_url if log_url else 'N/A'}
 
 ---
 **Next step:** Would you like me to implement this? Just say "yes" or "implement this".
