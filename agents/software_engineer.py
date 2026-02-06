@@ -40,5 +40,5 @@ software_engineer_agent = Agent(
         vercel_deploy_tools,
     ],
     tool_call_limit=100,  # Higher limit for code implementation
-    debug_mode=False,
+    debug_mode=True,
 )

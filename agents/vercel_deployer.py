@@ -50,5 +50,5 @@ vercel_deployer_agent = Agent(
     instructions=VERCEL_DEPLOYER_INSTRUCTIONS,
     tools=[vercel_deploy_tools],
     tool_call_limit=5,
-    debug_mode=False,
+    debug_mode=True,
 )

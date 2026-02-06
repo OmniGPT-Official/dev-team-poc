@@ -42,5 +42,5 @@ lead_engineer_agent = Agent(
         supabase_mcp,
     ],
     tool_call_limit=100,  # Higher limit for complex implementation tasks
-    debug_mode=False,
+    debug_mode=True,
 )

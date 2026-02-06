@@ -29,5 +29,5 @@ security_engineer_agent = Agent(
         github_tools,
     ],
     tool_call_limit=50,  # Prevent infinite loops
-    debug_mode=False,
+    debug_mode=True,
 )
