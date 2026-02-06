@@ -84,6 +84,15 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
+# Health Check Endpoint
+# ---------------------------------------------------------------------------
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Railway and monitoring."""
+    return {"status": "healthy", "service": "agent-os"}
+
+
+# ---------------------------------------------------------------------------
 # Google OAuth Token Generator (Built-in)
 # ---------------------------------------------------------------------------
 import json
