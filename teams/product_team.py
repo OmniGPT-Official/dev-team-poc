@@ -208,4 +208,5 @@ When delegating to Product Lead, say:
     show_members_responses=True,
     add_history_to_context=True,
     num_history_messages=20,
+    debug_mode=True,
 )

@@ -47,6 +47,7 @@ sheet_analyzer_agent = Agent(
     instructions=SHEET_ANALYZER_INSTRUCTIONS,
     tools=[google_mcp] if google_mcp else [],
     tool_call_limit=50,
+    debug_mode=True,
 )
 
 context_researcher_agent = Agent(
@@ -59,6 +60,7 @@ context_researcher_agent = Agent(
     instructions=CONTEXT_RESEARCHER_INSTRUCTIONS,
     tools=[google_mcp] if google_mcp else [],
     tool_call_limit=50,
+    debug_mode=True,
 )
 
 message_writer_agent = Agent(
@@ -70,6 +72,7 @@ message_writer_agent = Agent(
     markdown=True,
     instructions=MESSAGE_WRITER_INSTRUCTIONS,
     tool_call_limit=10,
+    debug_mode=True,
 )
 
 campaign_analyst_agent = Agent(
@@ -81,6 +84,7 @@ campaign_analyst_agent = Agent(
     markdown=True,
     instructions=CAMPAIGN_ANALYST_INSTRUCTIONS,
     tool_call_limit=10,
+    debug_mode=True,
 )
 
 followup_coordinator_agent = Agent(
@@ -93,4 +97,5 @@ followup_coordinator_agent = Agent(
     instructions=FOLLOWUP_COORDINATOR_INSTRUCTIONS,
     tools=[google_mcp] if google_mcp else [],
     tool_call_limit=100,
+    debug_mode=True,
 )

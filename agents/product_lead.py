@@ -27,5 +27,5 @@ product_lead_agent = Agent(
         GoogleDocsTools(),
     ],
     tool_call_limit=50,  # Prevent infinite tool call loops
-    debug_mode=False,
+    debug_mode=True,
 )
