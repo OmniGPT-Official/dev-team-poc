@@ -39,9 +39,7 @@ sheet_analyzer_agent = Agent(
     tools=[
         read_google_sheet,
         find_contacts_needing_followup
-    ],
-    show_tool_calls=True,
-    markdown=True
+    ]
 )
 
 
@@ -61,9 +59,7 @@ context_researcher_agent = Agent(
     tools=[
         search_gmail_history,
         read_google_sheet
-    ],
-    show_tool_calls=True,
-    markdown=True
+    ]
 )
 
 
@@ -85,9 +81,7 @@ message_writer_agent = Agent(
     ],
     tools=[
         check_email_deliverability
-    ],
-    show_tool_calls=True,
-    markdown=True
+    ]
 )
 
 
@@ -109,9 +103,7 @@ campaign_analyst_agent = Agent(
     tools=[
         read_google_sheet,
         search_gmail_history
-    ],
-    show_tool_calls=True,
-    markdown=True
+    ]
 )
 
 
@@ -136,7 +128,5 @@ followup_coordinator_agent = Agent(
         update_sheet_row,
         send_email,
         search_gmail_history
-    ],
-    show_tool_calls=True,
-    markdown=True
+    ]
 )
