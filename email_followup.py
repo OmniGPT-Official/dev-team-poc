@@ -12,13 +12,25 @@ from google.oauth2.credentials import Credentials
 # Setup in-memory database
 db = InMemoryDb()
 
-# Build Google OAuth credentials from environment variables
-# Required: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_ACCESS_TOKEN, GOOGLE_REFRESH_TOKEN
-google_creds = None
-if getenv("GOOGLE_ACCESS_TOKEN") and getenv("GOOGLE_REFRESH_TOKEN"):
-    google_creds = Credentials(
-        token=getenv("GOOGLE_ACCESS_TOKEN"),
-        refresh_token=getenv("GOOGLE_REFRESH_TOKEN"),
+# Build Google Sheets OAuth credentials from environment variables
+# Required: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_SHEETS_ACCESS_TOKEN, GOOGLE_SHEETS_REFRESH_TOKEN
+google_sheets_creds = None
+if getenv("GOOGLE_SHEETS_ACCESS_TOKEN") and getenv("GOOGLE_SHEETS_REFRESH_TOKEN"):
+    google_sheets_creds = Credentials(
+        token=getenv("GOOGLE_SHEETS_ACCESS_TOKEN"),
+        refresh_token=getenv("GOOGLE_SHEETS_REFRESH_TOKEN"),
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=getenv("GOOGLE_CLIENT_ID"),
+        client_secret=getenv("GOOGLE_CLIENT_SECRET"),
+    )
+
+# Build Gmail OAuth credentials from environment variables
+# Required: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_GMAIL_ACCESS_TOKEN, GOOGLE_GMAIL_REFRESH_TOKEN
+google_gmail_creds = None
+if getenv("GOOGLE_GMAIL_ACCESS_TOKEN") and getenv("GOOGLE_GMAIL_REFRESH_TOKEN"):
+    google_gmail_creds = Credentials(
+        token=getenv("GOOGLE_GMAIL_ACCESS_TOKEN"),
+        refresh_token=getenv("GOOGLE_GMAIL_REFRESH_TOKEN"),
         token_uri="https://oauth2.googleapis.com/token",
         client_id=getenv("GOOGLE_CLIENT_ID"),
         client_secret=getenv("GOOGLE_CLIENT_SECRET"),
@@ -26,7 +38,7 @@ if getenv("GOOGLE_ACCESS_TOKEN") and getenv("GOOGLE_REFRESH_TOKEN"):
 
 # Setup Google Sheets tool for Email Follow-Up Agent
 google_sheets_tools = GoogleSheetsTools(
-    creds=google_creds,
+    creds=google_sheets_creds,
     enable_read_sheet=True,
     enable_update_sheet=True,
     enable_create_sheet=True,
@@ -34,7 +46,7 @@ google_sheets_tools = GoogleSheetsTools(
 )
 
 # Setup Gmail tool for Email Follow-Up Agent
-gmail_tools = GmailTools(creds=google_creds)
+gmail_tools = GmailTools(creds=google_gmail_creds)
 
 # Setup Email Follow-Up Agent
 email_followup_agent = Agent(
