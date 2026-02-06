@@ -27,7 +27,8 @@ const POLL_INTERVAL_MS = 5_000;   // 5 s
 // Helpers
 // ---------------------------------------------------------------------------
 function log(msg) {
-  console.error(msg);   // stderr only
+  const timestamp = new Date().toISOString().slice(11, 23);
+  console.error(`[${timestamp}] ${msg}`);   // stderr only
 }
 
 async function sleep(ms) {
@@ -43,21 +44,39 @@ async function waitForReady(vercel, deploymentId) {
   while (true) {
     attempt++;
 
-    const dep = await vercel.deployments.getDeployment({ idOrUrl: deploymentId });
-    const state = (dep.state || dep.status || 'UNKNOWN').toUpperCase();
+    log(`[POLL ${attempt}] Checking deployment status...`);
 
-    log(`  [poll ${attempt}] state=${state}`);
+    try {
+      const dep = await vercel.deployments.getDeployment({ idOrUrl: deploymentId });
+      const state = (dep.state || dep.status || 'UNKNOWN').toUpperCase();
 
-    if (state === 'READY') {
-      return dep.url || `https://${dep.name}.vercel.app`;
+      log(`[POLL ${attempt}] State: ${state}`);
+
+      if (state === 'READY') {
+        const finalUrl = dep.url ? `https://${dep.url}` : `https://${dep.name}.vercel.app`;
+        log(`[SUCCESS] Deployment is READY!`);
+        log(`[SUCCESS] URL: ${finalUrl}`);
+        return finalUrl;
+      }
+
+      if (state === 'ERROR' || state === 'CANCELED') {
+        log(`[ERROR] Deployment ended with state: ${state}`);
+        log(`[ERROR] Full response: ${JSON.stringify(dep, null, 2)}`);
+        throw new Error(`Deployment ended with state=${state}`);
+      }
+
+      if (state === 'BUILDING') {
+        log(`[POLL ${attempt}] Build in progress...`);
+      } else if (state === 'QUEUED') {
+        log(`[POLL ${attempt}] Deployment queued, waiting...`);
+      } else if (state === 'INITIALIZING') {
+        log(`[POLL ${attempt}] Initializing deployment...`);
+      }
+
+    } catch (pollError) {
+      log(`[POLL ${attempt}] Error checking status: ${pollError.message}`);
+      // Continue polling even on transient errors
     }
-
-    if (state === 'ERROR' || state === 'CANCELED') {
-      log(`  Full response: ${JSON.stringify(dep, null, 2)}`);
-      throw new Error(`Deployment ended with state=${state}`);
-    }
-
-    // No timeout - wait indefinitely for deployment to complete
 
     await sleep(POLL_INTERVAL_MS);
   }
@@ -67,47 +86,91 @@ async function waitForReady(vercel, deploymentId) {
 // Main
 // ---------------------------------------------------------------------------
 async function main() {
+  log('========================================');
+  log('VERCEL DEPLOYMENT SCRIPT STARTED');
+  log('========================================');
+
+  // Step 1: Check token
+  log('[STEP 1] Checking VERCEL_TOKEN...');
   if (!process.env.VERCEL_TOKEN) {
+    log('[ERROR] VERCEL_TOKEN is NOT SET!');
+    log('[ERROR] Please set VERCEL_TOKEN environment variable');
     throw new Error('VERCEL_TOKEN is not set');
   }
+  const tokenPreview = process.env.VERCEL_TOKEN.slice(0, 8) + '...' + process.env.VERCEL_TOKEN.slice(-4);
+  log(`[STEP 1] VERCEL_TOKEN is set: ${tokenPreview}`);
 
+  // Step 2: Initialize SDK
+  log('[STEP 2] Initializing Vercel SDK...');
   const vercel = new Vercel({ bearerToken: process.env.VERCEL_TOKEN });
+  log('[STEP 2] SDK initialized successfully');
 
-  // Ensure project name is lowercase and valid
+  // Step 3: Prepare project name
+  log('[STEP 3] Preparing deployment parameters...');
   const sanitizedProjectName = PROJECT_NAME.toLowerCase()
     .replace(/[^a-z0-9._-]/g, '-')  // Replace invalid chars with -
     .replace(/---+/g, '--')          // Don't allow --- sequence
     .substring(0, 100);              // Max 100 chars
 
-  log(`[deploy.js] Creating deployment: ${GITHUB_ORG}/${GITHUB_REPO}`);
-  log(`[deploy.js] Project name: ${sanitizedProjectName}`);
+  log(`[STEP 3] GitHub Org:     ${GITHUB_ORG}`);
+  log(`[STEP 3] GitHub Repo:    ${GITHUB_REPO}`);
+  log(`[STEP 3] Project Name:   ${sanitizedProjectName}`);
+  log(`[STEP 3] Branch:         main`);
 
-  const deployment = await vercel.deployments.createDeployment({
-    requestBody: {
-      name: sanitizedProjectName,
-      target: 'production',
-      gitSource: {
-        type:  'github',
-        repo:  GITHUB_REPO,
-        ref:   'main',
-        org:   GITHUB_ORG,
+  // Step 4: Create deployment
+  log('[STEP 4] Creating Vercel deployment...');
+  log('[STEP 4] Sending request to Vercel API...');
+
+  let deployment;
+  try {
+    deployment = await vercel.deployments.createDeployment({
+      requestBody: {
+        name: sanitizedProjectName,
+        target: 'production',
+        gitSource: {
+          type:  'github',
+          repo:  GITHUB_REPO,
+          ref:   'main',
+          org:   GITHUB_ORG,
+        },
+        projectSettings: {
+          framework: null,  // Auto-detect framework
+        },
       },
-      projectSettings: {
-        framework: null,  // Auto-detect framework
-      },
-    },
-    skipAutoDetectionConfirmation: '1',  // Try as top-level parameter
-  });
+      skipAutoDetectionConfirmation: '1',
+    });
+  } catch (createError) {
+    log(`[ERROR] Failed to create deployment!`);
+    log(`[ERROR] Status: ${createError.status || 'unknown'}`);
+    log(`[ERROR] Message: ${createError.message}`);
+    if (createError.body) {
+      log(`[ERROR] Body: ${JSON.stringify(createError.body, null, 2)}`);
+    }
+    throw createError;
+  }
 
-  log(`[deploy.js] Created — id=${deployment.id}  status=${deployment.status || deployment.state}`);
+  log(`[STEP 4] Deployment created successfully!`);
+  log(`[STEP 4] Deployment ID: ${deployment.id}`);
+  log(`[STEP 4] Initial Status: ${deployment.status || deployment.state || 'unknown'}`);
 
+  // Step 5: Wait for deployment
+  log('[STEP 5] Waiting for deployment to complete...');
   const url = await waitForReady(vercel, deployment.id);
+
+  // Step 6: Output URL
+  log('========================================');
+  log('DEPLOYMENT COMPLETE');
+  log(`URL: ${url}`);
+  log('========================================');
 
   // stdout: just the URL — this is what Python reads
   console.log(url);
 }
 
 main().catch(err => {
-  console.error(`[deploy.js] ERROR: ${err.message}`);
+  console.error(`[FATAL ERROR] ${err.message}`);
+  if (err.stack) {
+    console.error(err.stack);
+  }
   process.exit(1);
 });

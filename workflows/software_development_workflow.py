@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agno.workflow import Step, Workflow, Loop
 from agno.workflow.types import StepInput, StepOutput
 from agno.utils.log import log_info, log_error
+from utils.cloud_logger import CloudLogger, setup_agno_cloud_logging
 
 
 # ============================================================================
@@ -45,6 +46,7 @@ class ImplementationState:
         self.github_owner = ""
         self.project_name = ""
         self.architecture_content = ""
+        self.log_doc_url = ""  # Google Doc URL for logs
 
 
 _state = ImplementationState()
@@ -92,10 +94,12 @@ def _run_with_heartbeat(coro, step_name: str, timeout_seconds: int = 0):
     return result_holder[0]
 
 
-def _log(emoji: str, step: str, msg: str):
-    """Concise logging helper."""
+def _log(emoji: str, step: str, msg: str, data: dict = None):
+    """Concise logging helper - writes to both console and Google Docs."""
     print(f"{emoji} [{step}] {msg}")
     log_info(f"[{step}] {msg}")
+    # Also log to cloud logger for Railway visibility
+    CloudLogger.get_instance().log("INFO", step, msg, data, emoji)
 
 
 def parse_input_urls(input_str: str) -> dict:
@@ -151,6 +155,14 @@ def read_architecture(step_input: StepInput) -> StepOutput:
     """Step 1: Read Architecture from Google Docs."""
     global _state
     _state = ImplementationState()  # Fresh state
+
+    # Start cloud logging session for Railway visibility
+    logger = CloudLogger.get_instance()
+    _state.log_doc_url = logger.start_session("Software Development Workflow")
+    if _state.log_doc_url:
+        print(f"\n📋 LIVE LOGS: {_state.log_doc_url}\n")
+        # Hook into agno's logging to capture all framework debug logs
+        setup_agno_cloud_logging()
 
     input_str = step_input.input if isinstance(step_input.input, str) else ""
     parsed = parse_input_urls(input_str)
@@ -537,6 +549,9 @@ def create_summary(step_input: StepInput) -> StepOutput:
 
     repo_url = f"https://github.com/{_state.github_owner}/{_state.github_repo}"
 
+    # End cloud logging session and get final log URL
+    log_url = CloudLogger.get_instance().end_session()
+
     summary = f"""
 ## ✅ Implementation Complete!
 
@@ -546,6 +561,7 @@ def create_summary(step_input: StepInput) -> StepOutput:
 ### Links
 - 🚀 **Live:** {deploy_url}
 - 📂 **GitHub:** {repo_url}
+- 📋 **Logs:** {log_url if log_url else "N/A"}
 
 ### Review
 - Code Review (Quality + Security + Conventions): {_state.code_review_status}
