@@ -54,9 +54,10 @@ _state = ImplementationState()
 # HELPER FUNCTIONS
 # ============================================================================
 
-def _run_with_heartbeat(coro, step_name: str, timeout_seconds: int = 120):
-    """Run coroutine in a background thread with heartbeat logging and timeout.
-    Returns the agent result, or None if timed out / errored."""
+def _run_with_heartbeat(coro, step_name: str, timeout_seconds: int = 0):
+    """Run coroutine in a background thread with heartbeat logging.
+    If timeout_seconds <= 0, no timeout is applied (waits indefinitely).
+    Returns the agent result, or None if errored."""
     result_holder = [None]
     error_holder = [None]
     done_event = threading.Event()
@@ -74,12 +75,13 @@ def _run_with_heartbeat(coro, step_name: str, timeout_seconds: int = 120):
     thread = threading.Thread(target=_execute, daemon=True)
     thread.start()
 
-    # Heartbeat every 10s so you can see progress instead of a frozen screen
+    # Heartbeat every 30s so you can see progress instead of a frozen screen
     elapsed = 0
     while not done_event.wait(timeout=30):
         elapsed += 30
         _log("⏳", step_name, f"Working... ({elapsed}s)")
-        if elapsed >= timeout_seconds:
+        # Only apply timeout if timeout_seconds > 0
+        if timeout_seconds > 0 and elapsed >= timeout_seconds:
             _log("⏰", step_name, f"Timed out after {timeout_seconds}s")
             return None
 
@@ -307,7 +309,7 @@ Output ONLY the JavaScript code, nothing else. Start with // or 'use strict'"""
     if not prompt:
         return ""
 
-    result = _run_with_heartbeat(agent.arun(prompt), f"DEV-{file_type.upper()}", timeout_seconds=180)
+    result = _run_with_heartbeat(agent.arun(prompt), f"DEV-{file_type.upper()}", timeout_seconds=0)
     if result and result.content:
         return _extract_code(result.content)
     return ""
@@ -522,7 +524,7 @@ DO NOT make multiple calls. DO NOT guess the URL. Use the tool's response.
 """
 
     _log("🤖", "DEPLOY", "Asking agent to deploy...")
-    result = _run_with_heartbeat(software_engineer_agent.arun(prompt), "DEPLOY", timeout_seconds=600)
+    result = _run_with_heartbeat(software_engineer_agent.arun(prompt), "DEPLOY", timeout_seconds=0)
 
     if result is None:
         _log("❌", "DEPLOY", "Agent timed out or failed")

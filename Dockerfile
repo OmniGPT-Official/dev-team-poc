@@ -8,12 +8,15 @@ RUN apt-get update && apt-get install -y curl && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app
 COPY . .
+
+# Install Vercel SDK for deployment tool
+RUN cd tests/vercel_mcp && npm install
 
 # Expose port
 EXPOSE 8000

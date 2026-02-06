@@ -22,7 +22,6 @@ const PROJECT_NAME     = process.env.DEPLOY_PROJECT_NAME || 'crumble-bakery-depl
 const GITHUB_ORG       = process.env.DEPLOY_GITHUB_ORG   || 'Muhammad-Anique';
 const GITHUB_REPO      = process.env.DEPLOY_GITHUB_REPO  || '--crumble-bakery--softwar-33438';
 const POLL_INTERVAL_MS = 5_000;   // 5 s
-const TIMEOUT_MS       = 300_000; // 5 min
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -39,7 +38,6 @@ async function sleep(ms) {
 // Poll until READY
 // ---------------------------------------------------------------------------
 async function waitForReady(vercel, deploymentId) {
-  const deadline = Date.now() + TIMEOUT_MS;
   let attempt = 0;
 
   while (true) {
@@ -59,9 +57,7 @@ async function waitForReady(vercel, deploymentId) {
       throw new Error(`Deployment ended with state=${state}`);
     }
 
-    if (Date.now() > deadline) {
-      throw new Error(`Timed out after ${TIMEOUT_MS / 1000}s — last state: ${state}`);
-    }
+    // No timeout - wait indefinitely for deployment to complete
 
     await sleep(POLL_INTERVAL_MS);
   }

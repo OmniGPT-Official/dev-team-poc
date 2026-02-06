@@ -65,12 +65,9 @@ class VercelDeployTools(Toolkit):
                 ["node", "deploy.js"],
                 capture_output=True,
                 text=True,
-                timeout=360,
                 cwd=_DEPLOY_SCRIPT_DIR,
                 env=env,
             )
-        except subprocess.TimeoutExpired:
-            return json.dumps({"error": True, "message": "deploy.js timed out after 360s"})
         except FileNotFoundError:
             return json.dumps({"error": True, "message": "node not found — is Node.js installed?"})
 
