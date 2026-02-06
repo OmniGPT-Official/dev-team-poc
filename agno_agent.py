@@ -23,7 +23,17 @@ from content_creation import (
     requirement_gathering_workflow_definition,
 )
 
-# Initialize Agent OS
+# Initialize Agent OS with Enhanced Tracing
+# Tracing provides visibility into:
+# - Every agent run and interaction
+# - Model calls and token usage
+# - Tool executions and results
+# - Workflow step progression
+# - Error tracking and debugging
+#
+# Traces are stored in the shared SQLite database (agno.db)
+# For production, consider using a dedicated PostgreSQL database
+# Learn more: https://docs.agno.com/agent-os/tracing/overview
 agent_os = AgentOS(
     name="Agent OS",
     agents=[
@@ -31,7 +41,7 @@ agent_os = AgentOS(
         lead_engineer_agent,
         software_engineer_agent,
         security_engineer_agent,
-        followup_coordinator_agent,  # Sales Follow-Up Manager
+        followup_coordinator_agent,  # Sales Follow-Up Workflow Coordinator
         content_strategist,  # Content Creation Team
         content_writer,  # Content Creation Team
     ],
@@ -42,11 +52,11 @@ agent_os = AgentOS(
     workflows=[
         product_requirements_workflow,
         software_development_workflow,
-        sales_followup_workflow,  # Sales Follow-Up Manager (full version)
-        simple_followup_workflow,  # Sales Follow-Up Manager (simple testing version)
+        sales_followup_workflow,  # Sales Follow-Up Workflow (full with Google MCP)
+        simple_followup_workflow,  # Sales Follow-Up Workflow (simple test version)
         requirement_gathering_workflow_definition,  # Content Creation Workflow
     ],
-    tracing=True
+    tracing=True,  # Enable built-in OpenTelemetry tracing
 )
 
 # Get FastAPI app

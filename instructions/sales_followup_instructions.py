@@ -8,10 +8,17 @@ This agent manages email follow-up campaigns by:
 4. Tracking engagement and providing insights
 """
 
-SHEET_ANALYZER_INSTRUCTIONS = """You are a Sheet Analyzer for the Follow-Up Manager.
+SHEET_ANALYZER_INSTRUCTIONS = """You are a Sheet Analyzer for the Sales Follow-Up Workflow.
+
+IMPORTANT: Check if you have Google Sheets tools available before attempting to use them.
+- If you have tools: Use them to read the Google Sheet
+- If you DON'T have tools: Politely inform the user that Google OAuth is not configured
+  and ask them to either:
+  1. Visit http://localhost:8000/google-auth to set up OAuth
+  2. Paste the sheet data manually for testing
 
 Your job:
-1. Read the Google Sheet provided by the user
+1. Read the Google Sheet provided by the user (if tools available)
 2. Identify contacts that need follow-up based on:
    - Last contact date (>= 7 days ago is default)
    - Current status (Pending, Interested, etc.)
@@ -37,11 +44,16 @@ Contact 2:
 Be clear and structured. This feeds into the next agent."""
 
 
-CONTEXT_RESEARCHER_INSTRUCTIONS = """You are a Context Researcher for the Follow-Up Manager.
+CONTEXT_RESEARCHER_INSTRUCTIONS = """You are a Context Researcher for the Sales Follow-Up Workflow.
+
+IMPORTANT: Check if you have Gmail tools available before attempting to use them.
+- If you have tools: Use Gmail search to find previous email threads
+- If you DON'T have tools: Work with whatever context is provided (notes, manual data)
+  and inform the user you're working in limited mode
 
 For each contact provided, you gather context:
 1. Review previous email threads (from Gmail history if available)
-2. Read notes from the Google Sheet
+2. Read notes from the Google Sheet or manual data
 3. Identify:
    - What was discussed previously
    - Any commitments made
@@ -164,7 +176,15 @@ Output format:
 Write like talking to a friend. No jargon. Clear insights. Actionable next steps."""
 
 
-FOLLOWUP_COORDINATOR_INSTRUCTIONS = """You are the Follow-Up Manager Coordinator.
+FOLLOWUP_COORDINATOR_INSTRUCTIONS = """You are the Sales Follow-Up Workflow Coordinator.
+
+IMPORTANT: You are NOT a team manager or leader. You are a workflow participant called at different steps.
+This is a WORKFLOW architecture (sequential steps), not a TEAM architecture (delegation).
+
+CRITICAL: Check if you have Google tools available before attempting tool calls:
+- If you have tools: Use Gmail and Google Sheets MCP tools
+- If you DON'T have tools: Work in "manual mode" and ask users for data
+  Inform them: "Google OAuth not configured. Please visit http://localhost:8000/google-auth to set up."
 
 You orchestrate the entire follow-up workflow:
 

@@ -207,15 +207,17 @@ reporting_steps = Steps(
 # === MAIN WORKFLOW ===
 
 sales_followup_workflow = Workflow(
-    name="Sales Follow-Up Manager",
-    description="""Automated follow-up email workflow:
+    name="Sales Follow-Up Workflow",
+    description="""Automated follow-up email workflow (requires Google OAuth):
     1. Analyze Google Sheet for contacts needing follow-up
-    2. Gather context about each contact
+    2. Gather context about each contact from Gmail
     3. Draft personalized follow-ups
     4. User reviews and approves drafts
     5. Send approved emails via Gmail
     6. Update sheet automatically
-    7. Provide campaign insights""",
+    7. Provide campaign insights
+
+    Prerequisites: Google OAuth credentials configured (visit /google-auth)""",
     steps=[
         intake_and_analysis_steps,
         drafting_steps,
@@ -225,12 +227,55 @@ sales_followup_workflow = Workflow(
 )
 
 
-# === SIMPLE TEST WORKFLOW (For AgentOS UI Testing) ===
+# === SIMPLE TEST WORKFLOW (For Testing Without Google OAuth) ===
 
 async def run_simple_intake(step_input: StepInput):
-    """Simple intake for testing without Google Sheets."""
+    """Simple intake for testing without Google Sheets - provides mock data."""
+    mock_data = """
+I'll use this test data for the follow-up workflow:
+
+**CONTACTS_NEEDING_FOLLOWUP: 3**
+
+**Contact 1:**
+- Name: Sarah Chen
+- Company: TechFlow AI
+- Email: sarah@techflow.ai
+- Last contact: 2025-01-20
+- Days since: 15 days
+- Status: Interested
+- Notes: Expressed interest in our API integration. Asked for pricing details. Mentioned they're evaluating 3 vendors and decision timeline is end of Q1.
+
+**Contact 2:**
+- Name: Marcus Rodriguez
+- Company: DataSync Solutions
+- Email: marcus@datasync.io
+- Last contact: 2025-01-15
+- Days since: 20 days
+- Status: Demo completed
+- Notes: Loved the demo, especially the real-time sync feature. Said they need to get buy-in from CTO. Asked about enterprise pricing and security compliance (SOC 2, GDPR).
+
+**Contact 3:**
+- Name: Emily Patel
+- Company: CloudScale Inc
+- Email: emily@cloudscale.com
+- Last contact: 2025-01-10
+- Days since: 25 days
+- Status: Proposal sent
+- Status: Pending
+- Notes: Received our proposal 3 weeks ago. Mentioned they're in budget planning cycle. Last email mentioned they'd have feedback "by mid-January" but no response yet.
+
+Ready to draft personalized follow-up emails for these contacts!
+"""
+
     async for chunk in followup_coordinator_agent.run(
-        "Ask user to paste contact information (name, email, last contact date, notes) for testing the follow-up workflow without Google Sheets integration.",
+        f"""You're running in TEST MODE (no Google OAuth configured).
+
+I'll provide you with mock contact data to test the follow-up workflow.
+
+{mock_data}
+
+Present this data to the user and confirm we're ready to draft follow-up emails.
+Explain that this is test mode and in production mode, this data would come from Google Sheets automatically.""",
         stream=True,
         stream_events=True
     ):
@@ -238,19 +283,45 @@ async def run_simple_intake(step_input: StepInput):
 
     yield StepOutput(
         success=True,
-        content="Contact data received - ready to draft"
+        content=mock_data
+    )
+
+
+async def run_simple_draft(step_input: StepInput):
+    """Draft messages using the mock data."""
+    async for chunk in message_writer_agent.run(
+        f"""Based on this contact data, draft personalized follow-up emails:
+
+{step_input.previous_step_content}
+
+Draft a follow-up email for each contact. Remember:
+- Keep under 100 words
+- Reference specific context
+- One clear call-to-action
+- Natural, conversational tone
+- Specific subject lines""",
+        stream=True,
+        stream_events=True
+    ):
+        yield chunk
+
+    yield StepOutput(
+        success=True,
+        content="Draft emails complete - ready for review"
     )
 
 
 simple_followup_workflow = Workflow(
-    name="Sales Follow-Up Manager (Simple)",
-    description="""Simplified workflow for testing:
-    1. User pastes contact data manually
-    2. Draft follow-up emails
-    3. Show drafts for review""",
+    name="Sales Follow-Up Workflow (Test Mode)",
+    description="""Test workflow without Google OAuth:
+    1. Uses mock contact data (no Google Sheets needed)
+    2. Drafts personalized follow-up emails
+    3. Shows drafts for review
+
+    Perfect for testing when Google OAuth is not configured.""",
     steps=[
         Step(name="simple_intake", executor=run_simple_intake),
-        Step(name="draft_messages", executor=run_draft_messages),
+        Step(name="draft_messages", executor=run_simple_draft),
         Step(name="format_output", executor=run_format_output),
     ],
 )
