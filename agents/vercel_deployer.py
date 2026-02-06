@@ -45,7 +45,7 @@ vercel_deploy_tools = VercelDeployTools()
 vercel_deployer_agent = Agent(
     name="Vercel Deployer",
     role="Deploys GitHub repositories to Vercel and returns the live preview URL.",
-    model=OpenRouter(id="google/gemini-2.0-flash-001"),
+    model=OpenRouter(id="google/gemini-2.0-flash-001", max_tokens=4096),
     markdown=True,
     instructions=VERCEL_DEPLOYER_INSTRUCTIONS,
     tools=[vercel_deploy_tools],
