@@ -15,9 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy app
 COPY . .
 
-# Install Vercel SDK for deployment tool
-RUN cd tests/vercel_mcp && npm install
-
 # Default port (Railway overrides via $PORT)
 ENV PORT=8000
 EXPOSE 8000
