@@ -18,8 +18,9 @@ COPY . .
 # Install Vercel SDK for deployment tool
 RUN cd tests/vercel_mcp && npm install
 
-# Expose port (Railway uses dynamic PORT)
-EXPOSE ${PORT:-8000}
+# Default port (Railway overrides via $PORT)
+ENV PORT=8000
+EXPOSE 8000
 
-# Use shell form to expand $PORT environment variable
-CMD python -m uvicorn agno_agent:app --host 0.0.0.0 --port ${PORT:-8000}
+# Use shell to expand $PORT at runtime
+CMD ["/bin/sh", "-c", "python -m uvicorn agno_agent:app --host 0.0.0.0 --port $PORT"]
