@@ -1,6 +1,7 @@
 {
   "name": "vercel-deploy-tool",
   "private": true,
+  "type": "module",
   "dependencies": {
     "@vercel/sdk": "latest"
   }

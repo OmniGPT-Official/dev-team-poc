@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Vercel deploy tool — uses the official @vercel/sdk.
  *
@@ -12,7 +10,7 @@
  * Requires: VERCEL_TOKEN env var
  */
 
-const { Vercel } = require('@vercel/sdk');
+import { Vercel } from '@vercel/sdk';
 
 // ---------------------------------------------------------------------------
 // Config
