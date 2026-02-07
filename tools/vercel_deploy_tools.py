@@ -103,28 +103,6 @@ class VercelDeployTools(Toolkit):
             })
         _cloud_log("INFO", "VERCEL", "deploy.js exists")
 
-        # Check node_modules
-        node_modules_path = os.path.join(_DEPLOY_SCRIPT_DIR, "node_modules")
-        if not os.path.exists(node_modules_path):
-            _cloud_log("WARN", "VERCEL", f"node_modules NOT FOUND at: {node_modules_path}")
-            _cloud_log("WARN", "VERCEL", "Running npm install...")
-            try:
-                install_result = subprocess.run(
-                    ["npm", "install"],
-                    capture_output=True,
-                    text=True,
-                    cwd=_DEPLOY_SCRIPT_DIR,
-                    timeout=120,
-                )
-                if install_result.returncode != 0:
-                    _cloud_log("ERROR", "VERCEL", f"npm install failed: {install_result.stderr}")
-                else:
-                    _cloud_log("INFO", "VERCEL", "npm install completed successfully")
-            except Exception as e:
-                _cloud_log("ERROR", "VERCEL", f"npm install exception: {e}")
-        else:
-            _cloud_log("INFO", "VERCEL", "node_modules exists")
-
         # =====================================================================
         # STEP 4: Execute deploy.js
         # =====================================================================

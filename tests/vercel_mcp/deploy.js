@@ -1,7 +1,7 @@
 /**
- * Vercel deploy tool — uses the official @vercel/sdk.
+ * Vercel deploy tool — uses the Vercel REST API directly (no SDK).
  *
- * 1. Creates a git-sourced deployment via the SDK
+ * 1. Creates a git-sourced deployment via POST /v13/deployments
  * 2. Polls until state is READY (or errors / times out)
  * 3. Writes the live URL to stdout (one line — Python captures this)
  *
@@ -10,12 +10,11 @@
  * Requires: VERCEL_TOKEN env var
  */
 
-import { Vercel } from '@vercel/sdk';
+const API_BASE = 'https://api.vercel.com';
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-// Override any of these via env vars when called from VercelDeployTools
 const PROJECT_NAME     = process.env.DEPLOY_PROJECT_NAME || 'crumble-bakery-deploy-test';
 const GITHUB_ORG       = process.env.DEPLOY_GITHUB_ORG   || 'Muhammad-Anique';
 const GITHUB_REPO      = process.env.DEPLOY_GITHUB_REPO  || '--crumble-bakery--softwar-33438';
@@ -33,20 +32,41 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function vercelAPI(method, path, body) {
+  const opts = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${process.env.VERCEL_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
+
+  const res = await fetch(`${API_BASE}${path}`, opts);
+  const data = await res.json();
+
+  if (!res.ok) {
+    const err = new Error(data.error?.message || `API error ${res.status}`);
+    err.status = res.status;
+    err.body = data;
+    throw err;
+  }
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Poll until READY
 // ---------------------------------------------------------------------------
-async function waitForReady(vercel, deploymentId) {
+async function waitForReady(deploymentId) {
   let attempt = 0;
 
   while (true) {
     attempt++;
-
     log(`[POLL ${attempt}] Checking deployment status...`);
 
     try {
-      const dep = await vercel.deployments.getDeployment({ idOrUrl: deploymentId });
-      const state = (dep.state || dep.status || 'UNKNOWN').toUpperCase();
+      const dep = await vercelAPI('GET', `/v13/deployments/${deploymentId}`);
+      const state = (dep.readyState || dep.state || dep.status || 'UNKNOWN').toUpperCase();
 
       log(`[POLL ${attempt}] State: ${state}`);
 
@@ -72,8 +92,8 @@ async function waitForReady(vercel, deploymentId) {
       }
 
     } catch (pollError) {
+      if (pollError.message.includes('state=')) throw pollError;
       log(`[POLL ${attempt}] Error checking status: ${pollError.message}`);
-      // Continue polling even on transient errors
     }
 
     await sleep(POLL_INTERVAL_MS);
@@ -92,50 +112,40 @@ async function main() {
   log('[STEP 1] Checking VERCEL_TOKEN...');
   if (!process.env.VERCEL_TOKEN) {
     log('[ERROR] VERCEL_TOKEN is NOT SET!');
-    log('[ERROR] Please set VERCEL_TOKEN environment variable');
     throw new Error('VERCEL_TOKEN is not set');
   }
   const tokenPreview = process.env.VERCEL_TOKEN.slice(0, 8) + '...' + process.env.VERCEL_TOKEN.slice(-4);
   log(`[STEP 1] VERCEL_TOKEN is set: ${tokenPreview}`);
 
-  // Step 2: Initialize SDK
-  log('[STEP 2] Initializing Vercel SDK...');
-  const vercel = new Vercel({ bearerToken: process.env.VERCEL_TOKEN });
-  log('[STEP 2] SDK initialized successfully');
-
-  // Step 3: Prepare project name
-  log('[STEP 3] Preparing deployment parameters...');
+  // Step 2: Prepare project name
+  log('[STEP 2] Preparing deployment parameters...');
   const sanitizedProjectName = PROJECT_NAME.toLowerCase()
-    .replace(/[^a-z0-9._-]/g, '-')  // Replace invalid chars with -
-    .replace(/---+/g, '--')          // Don't allow --- sequence
-    .substring(0, 100);              // Max 100 chars
+    .replace(/[^a-z0-9._-]/g, '-')
+    .replace(/---+/g, '--')
+    .substring(0, 100);
 
-  log(`[STEP 3] GitHub Org:     ${GITHUB_ORG}`);
-  log(`[STEP 3] GitHub Repo:    ${GITHUB_REPO}`);
-  log(`[STEP 3] Project Name:   ${sanitizedProjectName}`);
-  log(`[STEP 3] Branch:         main`);
+  log(`[STEP 2] GitHub Org:     ${GITHUB_ORG}`);
+  log(`[STEP 2] GitHub Repo:    ${GITHUB_REPO}`);
+  log(`[STEP 2] Project Name:   ${sanitizedProjectName}`);
+  log(`[STEP 2] Branch:         main`);
 
-  // Step 4: Create deployment
-  log('[STEP 4] Creating Vercel deployment...');
-  log('[STEP 4] Sending request to Vercel API...');
+  // Step 3: Create deployment
+  log('[STEP 3] Creating Vercel deployment...');
 
   let deployment;
   try {
-    deployment = await vercel.deployments.createDeployment({
-      requestBody: {
-        name: sanitizedProjectName,
-        target: 'production',
-        gitSource: {
-          type:  'github',
-          repo:  GITHUB_REPO,
-          ref:   'main',
-          org:   GITHUB_ORG,
-        },
-        projectSettings: {
-          framework: null,  // Auto-detect framework
-        },
+    deployment = await vercelAPI('POST', '/v13/deployments?skipAutoDetectionConfirmation=1', {
+      name: sanitizedProjectName,
+      target: 'production',
+      gitSource: {
+        type: 'github',
+        repo: GITHUB_REPO,
+        ref: 'main',
+        org: GITHUB_ORG,
       },
-      skipAutoDetectionConfirmation: '1',
+      projectSettings: {
+        framework: null,
+      },
     });
   } catch (createError) {
     log(`[ERROR] Failed to create deployment!`);
@@ -147,15 +157,15 @@ async function main() {
     throw createError;
   }
 
-  log(`[STEP 4] Deployment created successfully!`);
-  log(`[STEP 4] Deployment ID: ${deployment.id}`);
-  log(`[STEP 4] Initial Status: ${deployment.status || deployment.state || 'unknown'}`);
+  log(`[STEP 3] Deployment created successfully!`);
+  log(`[STEP 3] Deployment ID: ${deployment.id}`);
+  log(`[STEP 3] Initial Status: ${deployment.status || deployment.readyState || 'unknown'}`);
 
-  // Step 5: Wait for deployment
-  log('[STEP 5] Waiting for deployment to complete...');
-  const url = await waitForReady(vercel, deployment.id);
+  // Step 4: Wait for deployment
+  log('[STEP 4] Waiting for deployment to complete...');
+  const url = await waitForReady(deployment.id);
 
-  // Step 6: Output URL
+  // Step 5: Output URL
   log('========================================');
   log('DEPLOYMENT COMPLETE');
   log(`URL: ${url}`);
