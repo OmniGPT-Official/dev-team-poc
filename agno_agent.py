@@ -84,6 +84,37 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
+# Supabase JWT Middleware - Extract user_id for per-user sessions and pre-hooks
+# ---------------------------------------------------------------------------
+import jwt as pyjwt
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class SupabaseUserMiddleware(BaseHTTPMiddleware):
+    """Extract user_id from Supabase JWT and set on request.state.
+
+    Checks X-Supabase-Token header first (for Agno UI custom headers),
+    then falls back to Authorization: Bearer header (for frontend).
+    """
+
+    async def dispatch(self, request, call_next):
+        token = request.headers.get("X-Supabase-Token", "")
+        if not token:
+            auth = request.headers.get("Authorization", "")
+            if auth.lower().startswith("bearer "):
+                token = auth[7:].strip()
+        if token:
+            try:
+                payload = pyjwt.decode(token, options={"verify_signature": False})
+                request.state.user_id = payload.get("sub")
+            except Exception:
+                pass
+        return await call_next(request)
+
+
+app.add_middleware(SupabaseUserMiddleware)
+
+# ---------------------------------------------------------------------------
 # Health Check Endpoint
 # ---------------------------------------------------------------------------
 @app.get("/health")

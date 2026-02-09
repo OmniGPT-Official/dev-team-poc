@@ -6,25 +6,16 @@ Uses Agno's built-in Knowledge system with:
 - PgVector for vector embeddings and semantic search
 """
 
-import os
 from agno.knowledge.knowledge import Knowledge
 from agno.db.postgres import PostgresDb
 from agno.vectordb.pgvector import PgVector
 
-
-# Get database URL from environment
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
-if not DATABASE_URL:
-    raise ValueError(
-        "DATABASE_URL environment variable is required. "
-        "Please set it in your .env file."
-    )
+from db import SUPABASE_DB_URL
 
 
 # Initialize PostgreSQL database for content tracking
 contents_db = PostgresDb(
-    db_url=DATABASE_URL,
+    db_url=SUPABASE_DB_URL,
     knowledge_table="knowledge_contents"
 )
 
@@ -32,7 +23,7 @@ contents_db = PostgresDb(
 # Initialize PgVector for embeddings
 vector_db = PgVector(
     table_name="knowledge_vectors",
-    db_url=DATABASE_URL
+    db_url=SUPABASE_DB_URL
 )
 
 

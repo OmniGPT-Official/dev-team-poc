@@ -1,52 +1,42 @@
-"""Email Follow-Up Agent - Automates sales follow-up emails using native Agno tools."""
-
-from os import getenv
+"""Email Follow-Up Agent - Automates sales follow-up emails using per-user OAuth credentials."""
 
 from agno.agent import Agent
-from agno.db.in_memory import InMemoryDb
 from agno.models.google import Gemini
 from agno.tools.gmail import GmailTools
 from agno.tools.googlesheets import GoogleSheetsTools
-from google.oauth2.credentials import Credentials
 
-# Setup in-memory database
-db = InMemoryDb()
+from services.oauth_store import get_google_credentials
 
-# Build Google Sheets OAuth credentials from environment variables
-# Required: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_SHEETS_ACCESS_TOKEN, GOOGLE_SHEETS_REFRESH_TOKEN
-google_sheets_creds = None
-if getenv("GOOGLE_SHEETS_ACCESS_TOKEN") and getenv("GOOGLE_SHEETS_REFRESH_TOKEN"):
-    google_sheets_creds = Credentials(
-        token=getenv("GOOGLE_SHEETS_ACCESS_TOKEN"),
-        refresh_token=getenv("GOOGLE_SHEETS_REFRESH_TOKEN"),
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=getenv("GOOGLE_CLIENT_ID"),
-        client_secret=getenv("GOOGLE_CLIENT_SECRET"),
-    )
+from db import db
 
-# Build Gmail OAuth credentials from environment variables
-# Required: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_GMAIL_ACCESS_TOKEN, GOOGLE_GMAIL_REFRESH_TOKEN
-google_gmail_creds = None
-if getenv("GOOGLE_GMAIL_ACCESS_TOKEN") and getenv("GOOGLE_GMAIL_REFRESH_TOKEN"):
-    google_gmail_creds = Credentials(
-        token=getenv("GOOGLE_GMAIL_ACCESS_TOKEN"),
-        refresh_token=getenv("GOOGLE_GMAIL_REFRESH_TOKEN"),
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=getenv("GOOGLE_CLIENT_ID"),
-        client_secret=getenv("GOOGLE_CLIENT_SECRET"),
-    )
 
-# Setup Google Sheets tool for Email Follow-Up Agent
-google_sheets_tools = GoogleSheetsTools(
-    creds=google_sheets_creds,
-    enable_read_sheet=True,
-    enable_update_sheet=True,
-    enable_create_sheet=True,
-    enable_create_duplicate_sheet=False,
-)
+def inject_oauth_tools(agent: Agent, user_id: str) -> None:
+    """Pre-hook: fetch per-user Google credentials and inject tools before each run."""
+    print(f"[pre-hook] inject_oauth_tools called — user_id={user_id!r}")
+    if not user_id:
+        print("[pre-hook] No user_id, skipping tool injection")
+        return
 
-# Setup Gmail tool for Email Follow-Up Agent
-gmail_tools = GmailTools(creds=google_gmail_creds)
+    tools = []
+    sheets_creds = get_google_credentials(user_id, "google_sheets")
+    if sheets_creds:
+        tools.append(
+            GoogleSheetsTools(
+                creds=sheets_creds,
+                enable_read_sheet=True,
+                enable_update_sheet=True,
+                enable_create_sheet=True,
+                enable_create_duplicate_sheet=False,
+            )
+        )
+
+    gmail_creds = get_google_credentials(user_id, "google_gmail")
+    if gmail_creds:
+        tools.append(GmailTools(creds=gmail_creds))
+
+    print(f"[pre-hook] Injecting {len(tools)} tool(s): {[type(t).__name__ for t in tools]}")
+    agent.set_tools(tools)
+
 
 # Setup Email Follow-Up Agent
 email_followup_agent = Agent(
@@ -117,11 +107,10 @@ email_followup_agent = Agent(
         "",
         "## ERROR HANDLING",
         "If Google credentials are missing or invalid:",
-        "- Inform the user they need to set up Google OAuth credentials",
-        "- Explain the required environment variables: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_PROJECT_ID",
-        "- Provide link to Google Cloud Console for setup",
+        "- Inform the user they need to connect their Google account in Settings",
+        "- Explain that Google Sheets and Gmail access are required for this agent",
     ],
-    tools=[google_sheets_tools, gmail_tools],
+    pre_hooks=[inject_oauth_tools],
     db=db,
     update_memory_on_run=False,
     add_history_to_context=True,
@@ -130,4 +119,3 @@ email_followup_agent = Agent(
     markdown=True,
     reasoning=False,
 )
-
