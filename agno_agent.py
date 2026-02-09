@@ -6,10 +6,8 @@ Clean architecture with 4 agents, 1 team, and 2 workflows.
 """
 
 import os
-from os import getenv
 
 from agno.os import AgentOS
-from agno.os.middleware import JWTMiddleware
 from agents.product_lead import product_lead_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
@@ -25,6 +23,7 @@ from content_creation import (
     content_creation_team,
     requirement_gathering_workflow_definition,
 )
+from agents.email_followup_agent import email_followup_agent
 
 # Initialize Agent OS
 agent_os = AgentOS(
@@ -37,6 +36,7 @@ agent_os = AgentOS(
         followup_coordinator_agent,  # Sales Follow-Up Manager
         content_strategist,  # Content Creation Team
         content_writer,  # Content Creation Team
+        email_followup_agent,  # Email Follow-Up (per-user OAuth)
     ],
     teams=[
         product_team,  # Product Development Team
@@ -56,18 +56,32 @@ agent_os = AgentOS(
 # Get FastAPI app
 app = agent_os.get_app()
 
-# JWT middleware for multi-user authentication
-# Validates Supabase JWTs (ES256) and auto-injects user_id from the `sub` claim into agent/team runs
-# To temporarily disable authentication, comment out the entire app.add_middleware(...) block below
-# app.add_middleware(
-#     JWTMiddleware,
-#     jwks_file=getenv("JWT_JWKS_FILE", "supabase/jwks.json"),
-#     algorithm="ES256",
-#     user_id_claim="sub",
-#     validate=True,
-#     authorization=False,
-#     excluded_route_paths=["/health", "/docs", "/redoc", "/openapi.json"],
-# )
+# Custom Supabase JWT middleware: extract user_id from JWT and set on request.state
+# AgentOS routers automatically use request.state.user_id for sessions and pre-hooks
+# Checks X-Supabase-Token header first (for Agno UI), then Authorization: Bearer (for frontend)
+import jwt as pyjwt
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class SupabaseUserMiddleware(BaseHTTPMiddleware):
+    """Extract user_id from Supabase JWT and set on request.state."""
+
+    async def dispatch(self, request, call_next):
+        token = request.headers.get("X-Supabase-Token", "")
+        if not token:
+            auth = request.headers.get("Authorization", "")
+            if auth.lower().startswith("bearer "):
+                token = auth[7:].strip()
+        if token:
+            try:
+                payload = pyjwt.decode(token, options={"verify_signature": False})
+                request.state.user_id = payload.get("sub")
+            except Exception:
+                pass
+        return await call_next(request)
+
+
+app.add_middleware(SupabaseUserMiddleware)
 
 # ---------------------------------------------------------------------------
 # Google OAuth Token Generator (Built-in)
