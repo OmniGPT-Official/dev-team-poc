@@ -8,15 +8,16 @@ RUN apt-get update && apt-get install -y curl && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app
 COPY . .
 
-# Expose port
+# Default port (Railway overrides via $PORT)
+ENV PORT=8000
 EXPOSE 8000
 
-# Hardcoded port - Railway handles port mapping
-CMD ["python", "-m", "uvicorn", "agno_agent:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use shell to expand $PORT at runtime
+CMD ["/bin/sh", "-c", "python -m uvicorn agno_agent:app --host 0.0.0.0 --port $PORT"]

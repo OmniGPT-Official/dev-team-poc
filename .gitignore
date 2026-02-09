@@ -74,6 +74,10 @@ dmypy.json
 celerybeat-schedule
 celerybeat.pid
 
+# Node
+node_modules/
+package-lock.json
+
 # Claude Code
 .claude/
 

@@ -7,9 +7,8 @@ and interact with GitHub and Supabase.
 
 import os
 from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
 from agno.models.openrouter import OpenRouter
-
-from db import db
 from agno.tools.mcp import MCPTools
 from instructions.software_engineer_instructions import SOFTWARE_ENGINEER_INSTRUCTIONS
 from tools.github_tools import GitHubTools
@@ -29,8 +28,8 @@ vercel_deploy_tools = VercelDeployTools()
 software_engineer_agent = Agent(
     name="Software Engineer Agent",
     role="Implements code, fixes bugs, writes tests, and creates code documentation. Handles version control and follows coding best practices.",
-    model=OpenRouter(id="google/gemini-3-flash-preview"),
-    db=db,
+    model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=16384),
+    db=SqliteDb(db_file="agno.db"),
     add_history_to_context=True,
     num_history_messages=20,
     markdown=True,
@@ -41,5 +40,5 @@ software_engineer_agent = Agent(
         vercel_deploy_tools,
     ],
     tool_call_limit=100,  # Higher limit for code implementation
-    debug_mode=False,
+    debug_mode=True,
 )

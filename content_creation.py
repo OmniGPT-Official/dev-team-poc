@@ -44,6 +44,7 @@ content_strategist = Agent(
     add_name_to_context=True,
     markdown=True,
     reasoning=False,
+    debug_mode=True,
 )
 
 content_writer = Agent(
@@ -67,6 +68,7 @@ content_writer = Agent(
     add_name_to_context=True,
     markdown=True,
     reasoning=False,
+    debug_mode=True,
 )
 
 # image_generator = Agent(
@@ -100,8 +102,8 @@ content_writer = Agent(
 #     add_name_to_context=True,
 #     markdown=True,
 #     reasoning=False,
+#     debug_mode=True,
 # )
-
 
 # Setup Requirement Gathering Workflow
 # This workflow is triggered when the team detects user intent to create content
@@ -185,5 +187,6 @@ content_creation_team = Team(
     add_datetime_to_context=True,
     add_name_to_context=True,
     add_member_tools_to_context=True,
-    show_members_responses=True
+    show_members_responses=True,
+    debug_mode=True,
 )

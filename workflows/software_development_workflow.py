@@ -54,9 +54,10 @@ _state = ImplementationState()
 # HELPER FUNCTIONS
 # ============================================================================
 
-def _run_with_heartbeat(coro, step_name: str, timeout_seconds: int = 120):
-    """Run coroutine in a background thread with heartbeat logging and timeout.
-    Returns the agent result, or None if timed out / errored."""
+def _run_with_heartbeat(coro, step_name: str, timeout_seconds: int = 0):
+    """Run coroutine in a background thread with heartbeat logging.
+    If timeout_seconds <= 0, no timeout is applied (waits indefinitely).
+    Returns the agent result, or None if errored."""
     result_holder = [None]
     error_holder = [None]
     done_event = threading.Event()
@@ -74,12 +75,13 @@ def _run_with_heartbeat(coro, step_name: str, timeout_seconds: int = 120):
     thread = threading.Thread(target=_execute, daemon=True)
     thread.start()
 
-    # Heartbeat every 10s so you can see progress instead of a frozen screen
+    # Heartbeat every 30s so you can see progress instead of a frozen screen
     elapsed = 0
     while not done_event.wait(timeout=30):
         elapsed += 30
         _log("⏳", step_name, f"Working... ({elapsed}s)")
-        if elapsed >= timeout_seconds:
+        # Only apply timeout if timeout_seconds > 0
+        if timeout_seconds > 0 and elapsed >= timeout_seconds:
             _log("⏰", step_name, f"Timed out after {timeout_seconds}s")
             return None
 
@@ -90,7 +92,7 @@ def _run_with_heartbeat(coro, step_name: str, timeout_seconds: int = 120):
     return result_holder[0]
 
 
-def _log(emoji: str, step: str, msg: str):
+def _log(emoji: str, step: str, msg: str, data: dict = None):
     """Concise logging helper."""
     print(f"{emoji} [{step}] {msg}")
     log_info(f"[{step}] {msg}")
@@ -307,7 +309,7 @@ Output ONLY the JavaScript code, nothing else. Start with // or 'use strict'"""
     if not prompt:
         return ""
 
-    result = _run_with_heartbeat(agent.arun(prompt), f"DEV-{file_type.upper()}", timeout_seconds=180)
+    result = _run_with_heartbeat(agent.arun(prompt), f"DEV-{file_type.upper()}", timeout_seconds=0)
     if result and result.content:
         return _extract_code(result.content)
     return ""
@@ -486,7 +488,7 @@ def reviews_passed(outputs: List[StepOutput]) -> bool:
 
 
 def deploy_to_vercel(step_input: StepInput) -> StepOutput:
-    """Deploy to Vercel."""
+    """Deploy to Vercel using the dedicated Vercel Deployer agent."""
     global _state
 
     _log("🚀", "DEPLOY", "Deploying to Vercel...")
@@ -497,36 +499,21 @@ def deploy_to_vercel(step_input: StepInput) -> StepOutput:
         _log("❌", "DEPLOY", "VERCEL_TOKEN environment variable not set!")
         return StepOutput(content="ERROR: VERCEL_TOKEN not set. Export VERCEL_TOKEN before running.", success=False)
 
-    from agents.software_engineer import software_engineer_agent
+    from agents.vercel_deployer import vercel_deployer_agent
 
-    prompt = f"""Deploy this project to Vercel NOW.
+    prompt = f"""Deploy this GitHub repository to Vercel:
 
-**CRITICAL: Use the deploy_to_vercel tool with EXACT parameters below:**
-
-deploy_to_vercel(
-    github_owner="{_state.github_owner}",
-    github_repo="{_state.github_repo}",
-    project_name="{_state.project_name}"
-)
-
-**Expected result:**
-- Tool returns JSON: {{"success": true, "url": "https://..."}}
-- If error: {{"error": true, "message": "..."}}
-
-**Your response:**
-1. Call the tool ONCE
-2. If successful → Reply: "✓ Deployed: [URL from JSON]"
-3. If error → Reply: "✗ Deploy failed: [error message]"
-
-DO NOT make multiple calls. DO NOT guess the URL. Use the tool's response.
+github_owner: {_state.github_owner}
+github_repo: {_state.github_repo}
+project_name: {_state.project_name}
 """
 
-    _log("🤖", "DEPLOY", "Asking agent to deploy...")
-    result = _run_with_heartbeat(software_engineer_agent.arun(prompt), "DEPLOY", timeout_seconds=600)
+    _log("🤖", "DEPLOY", "Asking Vercel Deployer agent...")
+    result = _run_with_heartbeat(vercel_deployer_agent.arun(prompt), "DEPLOY", timeout_seconds=0)
 
     if result is None:
-        _log("❌", "DEPLOY", "Agent timed out or failed")
-        return StepOutput(content="ERROR: Deployment agent timed out or failed", success=False)
+        _log("❌", "DEPLOY", "Agent failed")
+        return StepOutput(content="ERROR: Deployment agent failed", success=False)
 
     # Check if deployment was successful by looking for URL or error in response
     response = result.content.lower()

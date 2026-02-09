@@ -57,7 +57,7 @@ def _run_async(coro):
     return loop.run_until_complete(coro)
 
 
-def _log(emoji: str, step: str, msg: str):
+def _log(emoji: str, step: str, msg: str, data: dict = None):
     """Concise logging."""
     print(f"{emoji} [{step}] {msg}")
     log_info(f"[{step}] {msg}")

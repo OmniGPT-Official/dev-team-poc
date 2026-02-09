@@ -6,12 +6,12 @@ Clean architecture with 4 agents, 1 team, and 2 workflows.
 """
 
 import os
-
 from agno.os import AgentOS
 from agents.product_lead import product_lead_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
 from agents.security_engineer import security_engineer_agent
+from agents.vercel_deployer import vercel_deployer_agent
 from teams.product_team import product_team
 from workflows.product_requirements_workflow import product_requirements_workflow
 from workflows.software_development_workflow import software_development_workflow
@@ -23,9 +23,19 @@ from content_creation import (
     content_creation_team,
     requirement_gathering_workflow_definition,
 )
-from agents.email_followup_agent import email_followup_agent
+from email_followup import email_followup_agent
 
-# Initialize Agent OS
+# Initialize Agent OS with Enhanced Tracing
+# Tracing provides visibility into:
+# - Every agent run and interaction
+# - Model calls and token usage
+# - Tool executions and results
+# - Workflow step progression
+# - Error tracking and debugging
+#
+# Traces are stored in the shared SQLite database (agno.db)
+# For production, consider using a dedicated PostgreSQL database
+# Learn more: https://docs.agno.com/agent-os/tracing/overview
 agent_os = AgentOS(
     name="Agent OS",
     agents=[
@@ -33,10 +43,11 @@ agent_os = AgentOS(
         lead_engineer_agent,
         software_engineer_agent,
         security_engineer_agent,
+        vercel_deployer_agent,  # Vercel Deployer
         followup_coordinator_agent,  # Sales Follow-Up Manager
         content_strategist,  # Content Creation Team
         content_writer,  # Content Creation Team
-        email_followup_agent,  # Email Follow-Up (per-user OAuth)
+        email_followup_agent,  # Email Follow-Up Agent (native Agno tools)
     ],
     teams=[
         product_team,  # Product Development Team
@@ -45,26 +56,46 @@ agent_os = AgentOS(
     workflows=[
         product_requirements_workflow,
         software_development_workflow,
-        sales_followup_workflow,  # Sales Follow-Up Manager (full version)
-        simple_followup_workflow,  # Sales Follow-Up Manager (simple testing version)
+        sales_followup_workflow,  # Sales Follow-Up Workflow (full with Google MCP)
+        simple_followup_workflow,  # Sales Follow-Up Workflow (simple test version)
         requirement_gathering_workflow_definition,  # Content Creation Workflow
     ],
-    authorization=False,  # Phase 1: no RBAC, just JWT user identification
-    tracing=True
+    tracing=True,  # Enable built-in OpenTelemetry tracing
 )
 
 # Get FastAPI app
 app = agent_os.get_app()
 
-# Custom Supabase JWT middleware: extract user_id from JWT and set on request.state
-# AgentOS routers automatically use request.state.user_id for sessions and pre-hooks
-# Checks X-Supabase-Token header first (for Agno UI), then Authorization: Bearer (for frontend)
+# ---------------------------------------------------------------------------
+# CORS Configuration - Allow frontend to access the API
+# ---------------------------------------------------------------------------
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://os.agno.com",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ---------------------------------------------------------------------------
+# Supabase JWT Middleware - Extract user_id for per-user sessions and pre-hooks
+# ---------------------------------------------------------------------------
 import jwt as pyjwt
 from starlette.middleware.base import BaseHTTPMiddleware
 
 
 class SupabaseUserMiddleware(BaseHTTPMiddleware):
-    """Extract user_id from Supabase JWT and set on request.state."""
+    """Extract user_id from Supabase JWT and set on request.state.
+
+    Checks X-Supabase-Token header first (for Agno UI custom headers),
+    then falls back to Authorization: Bearer header (for frontend).
+    """
 
     async def dispatch(self, request, call_next):
         token = request.headers.get("X-Supabase-Token", "")
@@ -82,6 +113,15 @@ class SupabaseUserMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(SupabaseUserMiddleware)
+
+# ---------------------------------------------------------------------------
+# Health Check Endpoint
+# ---------------------------------------------------------------------------
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Railway and monitoring."""
+    return {"status": "healthy", "service": "agent-os"}
+
 
 # ---------------------------------------------------------------------------
 # Google OAuth Token Generator (Built-in)

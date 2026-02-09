@@ -9,9 +9,8 @@ Members:
 """
 
 from agno.team import Team
+from agno.db.sqlite import SqliteDb
 from agno.models.openrouter import OpenRouter
-
-from db import db
 
 from agents.product_lead import product_lead_agent
 from agents.lead_engineer import lead_engineer_agent
@@ -45,8 +44,8 @@ def run_software_development(input_data: str) -> str:
 
 product_team = Team(
     name="Product Development Team",
-    model=OpenRouter(id="google/gemini-3-flash-preview"),
-    db=db,
+    model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=16384),
+    db=SqliteDb(db_file="agno.db"),
     members=[
         product_lead_agent,
         lead_engineer_agent,
@@ -209,4 +208,5 @@ When delegating to Product Lead, say:
     show_members_responses=True,
     add_history_to_context=True,
     num_history_messages=20,
+    debug_mode=True,
 )
