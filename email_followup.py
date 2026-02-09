@@ -1,15 +1,13 @@
 """Email Follow-Up Agent - Automates sales follow-up emails using per-user OAuth credentials."""
 
 from agno.agent import Agent
-from agno.db.in_memory import InMemoryDb
 from agno.models.google import Gemini
 from agno.tools.gmail import GmailTools
 from agno.tools.googlesheets import GoogleSheetsTools
 
 from services.oauth_store import get_google_credentials
 
-# Setup in-memory database
-db = InMemoryDb()
+from db import db
 
 
 def inject_oauth_tools(agent: Agent, user_id: str) -> None:

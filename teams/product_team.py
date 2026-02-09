@@ -9,7 +9,7 @@ Members:
 """
 
 from agno.team import Team
-from agno.db.sqlite import SqliteDb
+from db import db
 from agno.models.openrouter import OpenRouter
 
 from agents.product_lead import product_lead_agent
@@ -45,7 +45,7 @@ def run_software_development(input_data: str) -> str:
 product_team = Team(
     name="Product Development Team",
     model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=16384),
-    db=SqliteDb(db_file="agno.db"),
+    db=db,
     members=[
         product_lead_agent,
         lead_engineer_agent,
