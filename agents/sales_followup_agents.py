@@ -6,8 +6,9 @@ Using Gemini for cost-effective testing.
 
 import os
 from agno.agent import Agent
-from agno.db.sqlite import SqliteDb
 from agno.models.google import Gemini
+
+from db import db
 from agno.tools.mcp import MCPTools
 from instructions.sales_followup_instructions import (
     SHEET_ANALYZER_INSTRUCTIONS,
@@ -41,7 +42,7 @@ sheet_analyzer_agent = Agent(
     name="Sheet Analyzer",
     role="Analyzes Google Sheets to identify contacts needing follow-up",
     model=Gemini(id="gemini-3-flash-preview"),
-    db=SqliteDb(db_file="agno.db"),
+    db=db,
     add_history_to_context=True,
     markdown=True,
     instructions=SHEET_ANALYZER_INSTRUCTIONS,
@@ -54,7 +55,7 @@ context_researcher_agent = Agent(
     name="Context Researcher",
     role="Gathers context about each contact from email history and notes",
     model=Gemini(id="gemini-3-flash-preview"),
-    db=SqliteDb(db_file="agno.db"),
+    db=db,
     add_history_to_context=True,
     markdown=True,
     instructions=CONTEXT_RESEARCHER_INSTRUCTIONS,
@@ -67,7 +68,7 @@ message_writer_agent = Agent(
     name="Message Writer",
     role="Drafts personalized follow-up emails based on context",
     model=Gemini(id="gemini-3-flash-preview"),
-    db=SqliteDb(db_file="agno.db"),
+    db=db,
     add_history_to_context=True,
     markdown=True,
     instructions=MESSAGE_WRITER_INSTRUCTIONS,
@@ -79,7 +80,7 @@ campaign_analyst_agent = Agent(
     name="Campaign Analyst",
     role="Analyzes campaign performance and provides actionable insights",
     model=Gemini(id="gemini-3-flash-preview"),
-    db=SqliteDb(db_file="agno.db"),
+    db=db,
     add_history_to_context=True,
     markdown=True,
     instructions=CAMPAIGN_ANALYST_INSTRUCTIONS,
@@ -91,7 +92,7 @@ followup_coordinator_agent = Agent(
     name="Follow-Up Workflow Coordinator",
     role="Handles user interaction and workflow orchestration at different stages",
     model=Gemini(id="gemini-3-flash-preview"),
-    db=SqliteDb(db_file="agno.db"),
+    db=db,
     add_history_to_context=True,
     markdown=True,
     instructions=FOLLOWUP_COORDINATOR_INSTRUCTIONS,

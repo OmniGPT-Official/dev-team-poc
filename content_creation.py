@@ -1,7 +1,6 @@
 """Content Creation Team - A team for creating content with strategist, writer, and image generator."""
 
 from agno.agent import Agent
-from agno.db.in_memory import InMemoryDb
 from agno.models.google import Gemini
 from agno.team import Team
 from agno.tools.openai import OpenAITools
@@ -10,8 +9,7 @@ from agno.tools.workflow import WorkflowTools
 from agno.workflow.step import Step
 from agno.workflow.workflow import Workflow
 
-# Setup in-memory database
-db = InMemoryDb()
+from db import db
 
 # Setup Content Creation Team agents
 content_strategist = Agent(

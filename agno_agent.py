@@ -15,13 +15,22 @@ from agents.vercel_deployer import vercel_deployer_agent
 from teams.product_team import product_team
 from workflows.product_requirements_workflow import product_requirements_workflow
 from workflows.software_development_workflow import software_development_workflow
-from workflows.sales_followup_workflow import sales_followup_workflow, simple_followup_workflow
-from agents.sales_followup_agents import followup_coordinator_agent
 from content_creation import (
     content_strategist,
     content_writer,
     content_creation_team,
     requirement_gathering_workflow_definition,
+)
+from email_followup import email_followup_agent
+from gmail_sheets_agent import gmail_sheets_agent
+from supabase_manager import supabase_manager_agent
+from workflows.email_followup_workflow_working import email_followup_workflow
+from workflows.outbound_calling_workflow import outbound_calling_workflow, simple_calling_workflow
+from agents.calling_agents import (
+    lead_reader_agent,
+    calling_coordinator_agent,
+    results_logger_agent,
+    campaign_coordinator_agent
 )
 
 # Initialize Agent OS with Enhanced Tracing
@@ -43,9 +52,15 @@ agent_os = AgentOS(
         software_engineer_agent,
         security_engineer_agent,
         vercel_deployer_agent,  # Vercel Deployer
-        followup_coordinator_agent,  # Sales Follow-Up Manager
         content_strategist,  # Content Creation Team
         content_writer,  # Content Creation Team
+        email_followup_agent,  # Email Follow-Up Agent (OAuth-enabled)
+        gmail_sheets_agent,  # Gmail & Sheets Agent (OAuth-enabled, Claude)
+        supabase_manager_agent,  # Supabase Manager (MCP-enabled)
+        lead_reader_agent,  # Outbound Calling: Lead Reader
+        calling_coordinator_agent,  # Outbound Calling: Calling Coordinator
+        results_logger_agent,  # Outbound Calling: Results Logger
+        campaign_coordinator_agent,  # Outbound Calling: Campaign Coordinator
     ],
     teams=[
         product_team,  # Product Development Team
@@ -54,9 +69,10 @@ agent_os = AgentOS(
     workflows=[
         product_requirements_workflow,
         software_development_workflow,
-        sales_followup_workflow,  # Sales Follow-Up Workflow (full with Google MCP)
-        simple_followup_workflow,  # Sales Follow-Up Workflow (simple test version)
         requirement_gathering_workflow_definition,  # Content Creation Workflow
+        email_followup_workflow,  # Email Follow-Up Manager (3-step, OAuth-enabled) ✅
+        outbound_calling_workflow,  # Outbound Calling Campaign (full with ElevenLabs)
+        simple_calling_workflow,  # Outbound Calling Campaign (simple test version)
     ],
     tracing=True,  # Enable built-in OpenTelemetry tracing
 )
@@ -80,6 +96,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Supabase JWT Middleware - Extract user_id for per-user sessions and pre-hooks
+# ---------------------------------------------------------------------------
+import jwt as pyjwt
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class SupabaseUserMiddleware(BaseHTTPMiddleware):
+    """Extract user_id from Supabase JWT and set on request.state.
+
+    Checks X-Supabase-Token header first (for Agno UI custom headers),
+    then falls back to Authorization: Bearer header (for frontend).
+    """
+
+    async def dispatch(self, request, call_next):
+        token = request.headers.get("X-Supabase-Token", "")
+        if not token:
+            auth = request.headers.get("Authorization", "")
+            if auth.lower().startswith("bearer "):
+                token = auth[7:].strip()
+        if token:
+            try:
+                payload = pyjwt.decode(token, options={"verify_signature": False})
+                request.state.user_id = payload.get("sub")
+            except Exception:
+                pass
+        return await call_next(request)
+
+
+app.add_middleware(SupabaseUserMiddleware)
 
 # ---------------------------------------------------------------------------
 # Health Check Endpoint
