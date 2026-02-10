@@ -1,7 +1,7 @@
 """Gmail & Google Sheets Agent - Basic agent with Gmail and Google Sheets tools using per-user OAuth credentials."""
 
 from agno.agent import Agent
-from agno.models.anthropic import Claude
+from agno.models.google import Gemini
 from agno.tools.gmail import GmailTools
 from agno.tools.googlesheets import GoogleSheetsTools
 
@@ -41,7 +41,7 @@ def inject_oauth_tools(agent: Agent, user_id: str) -> None:
 # Setup Gmail & Google Sheets Agent
 gmail_sheets_agent = Agent(
     name="Gmail & Sheets Agent",
-    model=Claude(id="claude-sonnet-4-5-20250929"),
+    model=Gemini(id="gemini-3-flash-preview"),
     description="A general-purpose assistant with access to Gmail and Google Sheets. Can read/send emails and read/update/create spreadsheets.",
     instructions=[
         "You are a helpful assistant with access to Gmail and Google Sheets.",
