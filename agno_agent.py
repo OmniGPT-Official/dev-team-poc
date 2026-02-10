@@ -24,6 +24,13 @@ from content_creation import (
     requirement_gathering_workflow_definition,
 )
 from email_followup import email_followup_agent
+from workflows.outbound_calling_workflow import outbound_calling_workflow, simple_calling_workflow
+from agents.calling_agents import (
+    lead_reader_agent,
+    calling_coordinator_agent,
+    results_logger_agent,
+    campaign_coordinator_agent
+)
 
 # Initialize Agent OS with Enhanced Tracing
 # Tracing provides visibility into:
@@ -48,6 +55,10 @@ agent_os = AgentOS(
         content_strategist,  # Content Creation Team
         content_writer,  # Content Creation Team
         email_followup_agent,  # Email Follow-Up Agent (native Agno tools)
+        lead_reader_agent,  # Outbound Calling: Lead Reader
+        calling_coordinator_agent,  # Outbound Calling: Calling Coordinator
+        results_logger_agent,  # Outbound Calling: Results Logger
+        campaign_coordinator_agent,  # Outbound Calling: Campaign Coordinator
     ],
     teams=[
         product_team,  # Product Development Team
@@ -59,6 +70,8 @@ agent_os = AgentOS(
         sales_followup_workflow,  # Sales Follow-Up Workflow (full with Google MCP)
         simple_followup_workflow,  # Sales Follow-Up Workflow (simple test version)
         requirement_gathering_workflow_definition,  # Content Creation Workflow
+        outbound_calling_workflow,  # Outbound Calling Campaign (full with ElevenLabs)
+        simple_calling_workflow,  # Outbound Calling Campaign (simple test version)
     ],
     tracing=True,  # Enable built-in OpenTelemetry tracing
 )
