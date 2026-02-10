@@ -8,12 +8,22 @@ from os import getenv
 
 from agno.db.postgres import PostgresDb
 
-# Get Supabase credentials from environment
-SUPABASE_DB_URL = getenv("SUPABASE_DB_URL")
-if not SUPABASE_DB_URL:
+# Get database URL from environment
+# Try multiple env var names for Railway/Vercel/Heroku compatibility:
+# 1. DATABASE_URL (standard for Railway/Vercel/Heroku)
+# 2. SUPABASE_DB_URL (legacy/explicit Supabase)
+# 3. Construct from SUPABASE_PROJECT + SUPABASE_PASSWORD (fallback)
+db_url = getenv("DATABASE_URL") or getenv("SUPABASE_DB_URL")
+
+if not db_url:
+    # Fallback: construct from individual credentials
     SUPABASE_PROJECT = getenv("SUPABASE_PROJECT")
     SUPABASE_PASSWORD = getenv("SUPABASE_PASSWORD")
-    SUPABASE_DB_URL = f"postgresql://postgres:{SUPABASE_PASSWORD}@db.{SUPABASE_PROJECT}:5432/postgres"
+    if SUPABASE_PROJECT and SUPABASE_PASSWORD:
+        db_url = f"postgresql://postgres:{SUPABASE_PASSWORD}@db.{SUPABASE_PROJECT}.supabase.co:5432/postgres"
+
+# Export for backward compatibility (used by knowledge_base.py)
+SUPABASE_DB_URL = db_url
 
 # Setup Supabase PostgreSQL database
-db = PostgresDb(db_url=SUPABASE_DB_URL)
+db = PostgresDb(db_url=db_url)
