@@ -149,12 +149,15 @@ email_followup_workflow = Workflow(
                - COMMUNICATE after each: "✓ Sent email to [name]"
                - If send fails, note the error and continue with others
 
-            2. **Update Google Sheet**
-               For each successfully sent email:
-               - Use update_sheet tool
-               - Set "Last Contact Date" to today's date (YYYY-MM-DD)
-               - Set "Status" to "followed up"
-               - COMMUNICATE: "✓ Updated sheet for [name]"
+            2. **Update Google Sheet (BATCH MODE)**
+               CRITICAL: Update ALL rows in ONE batch call to avoid rate limits.
+
+               After sending all approved emails:
+               - Collect all rows that need updates (row numbers, dates, statuses)
+               - Build ONE update_sheet call with all updates: data=[[row1...], [row2...]]
+               - Set "Last Contact Date" to today's date (YYYY-MM-DD) for all
+               - Set "Status" to "followed up" for all
+               - COMMUNICATE: "✓ Updated {count} rows in Google Sheet (batch update)"
 
             3. **Final summary**
                Report:
