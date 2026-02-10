@@ -2,40 +2,10 @@
 
 from agno.agent import Agent
 from agno.models.google import Gemini
-from agno.tools.gmail import GmailTools
-from agno.tools.googlesheets import GoogleSheetsTools
 
-from services.oauth_store import get_google_credentials
+from services.tool_injector import inject_user_tools
 
 from db import db
-
-
-def inject_oauth_tools(agent: Agent, user_id: str) -> None:
-    """Pre-hook: fetch per-user Google credentials and inject tools before each run."""
-    print(f"[pre-hook] inject_oauth_tools called — user_id={user_id!r}")
-    if not user_id:
-        print("[pre-hook] No user_id, skipping tool injection")
-        return
-
-    tools = []
-    sheets_creds = get_google_credentials(user_id, "google_sheets")
-    if sheets_creds:
-        tools.append(
-            GoogleSheetsTools(
-                creds=sheets_creds,
-                enable_read_sheet=True,
-                enable_update_sheet=True,
-                enable_create_sheet=True,
-                enable_create_duplicate_sheet=False,
-            )
-        )
-
-    gmail_creds = get_google_credentials(user_id, "google_gmail")
-    if gmail_creds:
-        tools.append(GmailTools(creds=gmail_creds))
-
-    print(f"[pre-hook] Injecting {len(tools)} tool(s): {[type(t).__name__ for t in tools]}")
-    agent.set_tools(tools)
 
 
 # Setup Email Follow-Up Agent
@@ -110,7 +80,7 @@ email_followup_agent = Agent(
         "- Inform the user they need to connect their Google account in Settings",
         "- Explain that Google Sheets and Gmail access are required for this agent",
     ],
-    pre_hooks=[inject_oauth_tools],
+    pre_hooks=[inject_user_tools],
     db=db,
     update_memory_on_run=False,
     add_history_to_context=True,

@@ -23,6 +23,7 @@ from content_creation import (
 )
 from email_followup import email_followup_agent
 from gmail_sheets_agent import gmail_sheets_agent
+from supabase_manager import supabase_manager_agent
 from workflows.email_followup_workflow_working import email_followup_workflow
 from workflows.outbound_calling_workflow import outbound_calling_workflow, simple_calling_workflow
 from agents.calling_agents import (
@@ -55,6 +56,7 @@ agent_os = AgentOS(
         content_writer,  # Content Creation Team
         email_followup_agent,  # Email Follow-Up Agent (OAuth-enabled)
         gmail_sheets_agent,  # Gmail & Sheets Agent (OAuth-enabled, Claude)
+        supabase_manager_agent,  # Supabase Manager (MCP-enabled)
         lead_reader_agent,  # Outbound Calling: Lead Reader
         calling_coordinator_agent,  # Outbound Calling: Calling Coordinator
         results_logger_agent,  # Outbound Calling: Results Logger
