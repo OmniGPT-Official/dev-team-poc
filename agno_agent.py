@@ -15,8 +15,6 @@ from agents.vercel_deployer import vercel_deployer_agent
 from teams.product_team import product_team
 from workflows.product_requirements_workflow import product_requirements_workflow
 from workflows.software_development_workflow import software_development_workflow
-from workflows.sales_followup_workflow import sales_followup_workflow, simple_followup_workflow
-from agents.sales_followup_agents import followup_coordinator_agent
 from content_creation import (
     content_strategist,
     content_writer,
@@ -24,6 +22,7 @@ from content_creation import (
     requirement_gathering_workflow_definition,
 )
 from email_followup import email_followup_agent
+from workflows.email_followup_workflow_working import email_followup_workflow
 from workflows.outbound_calling_workflow import outbound_calling_workflow, simple_calling_workflow
 from agents.calling_agents import (
     lead_reader_agent,
@@ -51,10 +50,9 @@ agent_os = AgentOS(
         software_engineer_agent,
         security_engineer_agent,
         vercel_deployer_agent,  # Vercel Deployer
-        followup_coordinator_agent,  # Sales Follow-Up Manager
         content_strategist,  # Content Creation Team
         content_writer,  # Content Creation Team
-        email_followup_agent,  # Email Follow-Up Agent (native Agno tools)
+        email_followup_agent,  # Email Follow-Up Agent (OAuth-enabled)
         lead_reader_agent,  # Outbound Calling: Lead Reader
         calling_coordinator_agent,  # Outbound Calling: Calling Coordinator
         results_logger_agent,  # Outbound Calling: Results Logger
@@ -67,9 +65,8 @@ agent_os = AgentOS(
     workflows=[
         product_requirements_workflow,
         software_development_workflow,
-        sales_followup_workflow,  # Sales Follow-Up Workflow (full with Google MCP)
-        simple_followup_workflow,  # Sales Follow-Up Workflow (simple test version)
         requirement_gathering_workflow_definition,  # Content Creation Workflow
+        email_followup_workflow,  # Email Follow-Up Manager (3-step, OAuth-enabled) ✅
         outbound_calling_workflow,  # Outbound Calling Campaign (full with ElevenLabs)
         simple_calling_workflow,  # Outbound Calling Campaign (simple test version)
     ],
