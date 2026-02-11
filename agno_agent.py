@@ -25,6 +25,7 @@ from email_followup import email_followup_agent
 from gmail_sheets_agent import gmail_sheets_agent
 from workflows.email_followup_workflow_working import email_followup_workflow
 from workflows.outbound_calling_workflow import outbound_calling_workflow, simple_calling_workflow
+from workflows.outbound_calling_test_workflow import outbound_calling_test_workflow
 from agents.calling_agents import (
     lead_reader_agent,
     calling_coordinator_agent,
@@ -71,6 +72,7 @@ agent_os = AgentOS(
         email_followup_workflow,  # Email Follow-Up Manager (3-step, OAuth-enabled) ✅
         outbound_calling_workflow,  # Outbound Calling Campaign (full with ElevenLabs)
         simple_calling_workflow,  # Outbound Calling Campaign (simple test version)
+        outbound_calling_test_workflow,  # Outbound Calling Test (OAuth, first iteration)
     ],
     tracing=True,  # Enable built-in OpenTelemetry tracing
 )
