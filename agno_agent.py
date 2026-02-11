@@ -2,7 +2,7 @@
 Agent OS Main Application
 
 This is the main entry point for the Agent OS application.
-Clean architecture with 4 agents, 1 team, and 2 workflows.
+Clean architecture with multiple specialized agents, teams, and workflows.
 """
 
 import os
@@ -10,6 +10,7 @@ from agno.os import AgentOS
 from agents.product_lead import product_lead_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
+from agents.software_engineer_2 import software_engineer_2_agent
 from agents.security_engineer import security_engineer_agent
 from agents.vercel_deployer import vercel_deployer_agent
 from teams.product_team import product_team
@@ -50,6 +51,7 @@ agent_os = AgentOS(
         product_lead_agent,
         lead_engineer_agent,
         software_engineer_agent,
+        software_engineer_2_agent,  # Interactive Development Agent
         security_engineer_agent,
         vercel_deployer_agent,  # Vercel Deployer
         content_strategist,  # Content Creation Team
@@ -96,6 +98,100 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Startup Check - Test Database Connection & Token Fetching
+# ---------------------------------------------------------------------------
+import logging
+import sys
+
+logger = logging.getLogger("uvicorn.error")
+
+@app.on_event("startup")
+async def startup_check():
+    """Run startup checks to verify database and credential fetching."""
+    msg = "\n" + "="*80 + "\n🚀 AGENT-OS STARTUP - CREDENTIAL SYSTEM CHECK\n" + "="*80
+    logger.info(msg)
+    print(msg, flush=True)
+
+    # Test Supabase connection
+    try:
+        from services.oauth_store import get_supabase_client
+        client = get_supabase_client()
+        msg = "✅ Supabase client initialized successfully"
+        logger.info(msg)
+        print(msg, flush=True)
+    except Exception as e:
+        msg = f"❌ Supabase client initialization FAILED: {e}"
+        logger.error(msg)
+        print(msg, flush=True)
+        return
+
+    # Test API key fetching with a dummy user_id
+    test_user_id = "test-user-startup-check"
+    msg = f"\n📋 Testing API key retrieval (user_id='{test_user_id}')..."
+    logger.info(msg)
+    print(msg, flush=True)
+
+    try:
+        from services.api_key_store import get_api_key
+
+        # Try fetching GitHub token
+        github_token = get_api_key(test_user_id, "github")
+        if github_token:
+            msg = "   ✅ GitHub token fetch successful (test data exists)"
+        else:
+            msg = "   ℹ️  No GitHub token for test user (this is normal - add real user tokens to DB)"
+        logger.info(msg)
+        print(msg, flush=True)
+
+        # Try fetching Vercel token
+        vercel_token = get_api_key(test_user_id, "vercel")
+        if vercel_token:
+            msg = "   ✅ Vercel token fetch successful (test data exists)"
+        else:
+            msg = "   ℹ️  No Vercel token for test user"
+        logger.info(msg)
+        print(msg, flush=True)
+
+    except Exception as e:
+        msg1 = f"   ❌ API key fetch FAILED: {e}"
+        msg2 = "   ⚠️  Check that 'user_api_keys' table exists in Supabase"
+        logger.error(msg1)
+        logger.warning(msg2)
+        print(msg1, flush=True)
+        print(msg2, flush=True)
+
+    # Test OAuth credentials fetching
+    msg = "\n📋 Testing OAuth credentials retrieval..."
+    logger.info(msg)
+    print(msg, flush=True)
+
+    try:
+        from services.oauth_store import get_google_credentials
+
+        google_docs_creds = get_google_credentials(test_user_id, "google_sheets")
+        if google_docs_creds:
+            msg = "   ✅ Google Docs OAuth fetch successful (test data exists)"
+        else:
+            msg = "   ℹ️  No Google Docs OAuth for test user (this is normal)"
+        logger.info(msg)
+        print(msg, flush=True)
+
+    except Exception as e:
+        msg1 = f"   ❌ OAuth fetch FAILED: {e}"
+        msg2 = "   ⚠️  Check that 'user_oauth_connections' table exists in Supabase"
+        logger.error(msg1)
+        logger.warning(msg2)
+        print(msg1, flush=True)
+        print(msg2, flush=True)
+
+    summary = "\n" + "="*80 + "\n💡 To add real user tokens, run SQL in Supabase:\n" + \
+              "   INSERT INTO user_api_keys (user_id, provider, api_key)\n" + \
+              "   VALUES ('your-user-id', 'github', 'ghp_your_token');\n" + \
+              "="*80 + "\n"
+    logger.info(summary)
+    print(summary, flush=True)
 
 # ---------------------------------------------------------------------------
 # Supabase JWT Middleware - Extract user_id for per-user sessions and pre-hooks

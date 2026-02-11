@@ -34,9 +34,16 @@ def run_product_requirements(input_data: str) -> str:
 def run_software_development(input_data: str) -> str:
     """Run the software development workflow.
 
-    Takes Architecture URL as input, creates GitHub repository, implements code with review cycles,
-    and deploys to Vercel.
-    Input should include: ARCHITECTURE_URL (required), GITHUB_REPO (optional), GITHUB_OWNER (optional), PROJECT_NAME (optional)
+    Takes Architecture URL as input. For existing projects, include the GitHub repo URL.
+    The workflow will detect existing repos and update them instead of creating new ones.
+
+    Input should include:
+    - ARCHITECTURE_URL (required) - Google Docs URL
+    - GITHUB_REPO_URL (optional) - Full GitHub URL for existing projects (e.g. https://github.com/user/repo)
+    - GITHUB_REPO (optional) - repo name
+    - GITHUB_OWNER (optional) - owner name
+    - PROJECT_NAME (optional) - project name
+
     Returns deployment link + GitHub repo URL.
     """
     return software_development_workflow.run(input=input_data).content
@@ -104,17 +111,30 @@ Implements code from architecture, runs review cycles, and deploys.
 
 **When to use:** After user approves implementation OR when user provides a Google Docs architecture URL.
 
+**CRITICAL - EXISTING vs NEW project handling:**
+- **EXISTING project (user provides a GitHub repo URL):**
+  The workflow will UPDATE the existing repo instead of creating a new one.
+  You MUST include the GitHub repo URL in the input!
+- **NEW project (no GitHub repo URL):**
+  The workflow will CREATE a new repo automatically.
+
 **Input format (single string with parameters):**
 ```
 ARCHITECTURE_URL: https://docs.google.com/document/d/xxx (REQUIRED)
+GITHUB_REPO_URL: https://github.com/user/repo (for EXISTING projects - CRITICAL!)
 PROJECT_NAME: MyApp (optional)
-GITHUB_REPO: my-app (optional)
-GITHUB_OWNER: username (optional)
+GITHUB_REPO: my-app (optional, auto-extracted from URL if provided)
+GITHUB_OWNER: username (optional, auto-extracted from URL if provided)
 ```
 
-**Example tool call:**
+**Example - NEW project:**
 ```
 run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/document/d/1abc123/edit")
+```
+
+**Example - EXISTING project (user gave a GitHub repo):**
+```
+run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/document/d/1abc123/edit\nGITHUB_REPO_URL: https://github.com/user/my-existing-repo")
 ```
 
 **Returns:** Deployment link + GitHub repo URL
@@ -126,8 +146,9 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 **Product Lead** (Discovery Only)
 - Asks business questions to understand what the user wants
 - Determines if this is a NEW project or EXISTING product
+- **For EXISTING projects: MUST ask for the GitHub repository URL**
 - Gathers all business requirements through conversation
-- Reports gathered requirements back to the Team
+- Reports gathered requirements back to the Team (including GitHub repo URL if existing project)
 - NOTE: Product Lead does NOT create documents or run workflows - just gathers info
 
 **Lead Engineer** (Technical Guidance)
@@ -150,10 +171,11 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 1. **ALWAYS START** → Search knowledge base for any existing project info
 2. **Delegate to Product Lead** → "Gather requirements from the user" (NOT "create PRD" or "run workflow")
 3. **Product Lead** → Has conversation with user → Returns gathered requirements to Team
+   - **If EXISTING project**: Product Lead MUST collect the GitHub repository URL from the user
+   - **If NEW project**: No GitHub URL needed
 4. **TEAM** → Calls `run_product_requirements` tool with gathered info:
-   ```
-   run_product_requirements(input_data="PROJECT_TYPE: new\\nPROJECT_NAME: AppName\\nDESCRIPTION: Full description here")
-   ```
+   - For new: `run_product_requirements(input_data="PROJECT_TYPE: new\\nPROJECT_NAME: AppName\\nDESCRIPTION: Full description here")`
+   - For existing: `run_product_requirements(input_data="PROJECT_TYPE: existing\\nPROJECT_NAME: AppName\\nGITHUB_REPO_URL: https://github.com/user/repo\\nDESCRIPTION: Changes needed")`
 5. **TEAM** → Shares BOTH returned URLs with user:
    - "Here are your documents:"
    - "1. PRD/Feature Spec: [URL 1]"
@@ -162,11 +184,19 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 
 **Phase 2: Implementation & Deployment**
 6. **User** → Says YES
-7. **TEAM** → Calls `run_software_development` tool with Architecture URL:
-   ```
-   run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/document/d/xxx/edit")
-   ```
+7. **TEAM** → Calls `run_software_development` tool:
+   - **NEW project:**
+     ```
+     run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/document/d/xxx/edit")
+     ```
+   - **EXISTING project (MUST include GITHUB_REPO_URL!):**
+     ```
+     run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/document/d/xxx/edit\\nGITHUB_REPO_URL: https://github.com/user/repo")
+     ```
 8. **TEAM** → Shares deployment link with user
+
+**CRITICAL:** For existing projects, ALWAYS pass the GITHUB_REPO_URL to `run_software_development`.
+Without it, the workflow will create a NEW repo instead of updating the existing one!
 
 ## DELEGATION RULES
 
@@ -184,14 +214,17 @@ When delegating to Product Lead, say:
 2. **ALWAYS SEARCH KNOWLEDGE BASE FIRST** - Before ANY work, search for existing project information
 
 3. **AUTO-RUN WHEN USER PROVIDES DOCUMENT** - If user says "implement this" OR provides a Google Docs URL:
-   ```
-   run_software_development(input_data="ARCHITECTURE_URL: <the_url_user_provided>")
-   ```
+   - If they also provided a GitHub repo URL → include it:
+     `run_software_development(input_data="ARCHITECTURE_URL: <url>\nGITHUB_REPO_URL: <github_url>")`
+   - If no GitHub repo URL → new project:
+     `run_software_development(input_data="ARCHITECTURE_URL: <url>")`
    DO NOT ask questions - just call the tool directly.
 
-4. **TWO-PHASE APPROACH** - For new projects without documents:
+4. **TWO-PHASE APPROACH** - For projects without documents:
    - Phase 1: Delegate to Product Lead to gather requirements → TEAM calls `run_product_requirements`
+     - For existing projects, Product Lead MUST ask for GitHub repo URL
    - Phase 2: TEAM calls `run_software_development` (implements + deploys)
+     - For existing projects, MUST include GITHUB_REPO_URL parameter
    - Ask user approval between phases
 
 5. **TRIGGER KEYWORDS** - TEAM runs `run_software_development` immediately when user says:
@@ -201,7 +234,13 @@ When delegating to Product Lead, say:
    - "develop this"
    - Or provides a Google Docs URL
 
-6. **ALL FILES IN GITHUB** - Code and reviews stored in GitHub repository under .dev-team/
+6. **EXISTING PROJECT DETECTION** - If user mentions:
+   - A GitHub repo URL (github.com/user/repo)
+   - "existing project", "update", "modify", "add feature to"
+   - A repo they want to change
+   Then this is an EXISTING project. ALWAYS ask for or include the GitHub repo URL.
+
+7. **ALL FILES IN GITHUB** - Code and reviews stored in GitHub repository under .dev-team/
 """,
     ],
     markdown=True,

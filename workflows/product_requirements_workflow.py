@@ -35,6 +35,7 @@ class WorkflowState:
         self.architecture_url = ""
         self.project_name = ""
         self.project_type = "new"
+        self.github_repo_url = ""  # GitHub repo URL for existing projects
 
 
 _state = WorkflowState()
@@ -61,6 +62,19 @@ def _log(emoji: str, step: str, msg: str, data: dict = None):
     """Concise logging."""
     print(f"{emoji} [{step}] {msg}")
     log_info(f"[{step}] {msg}")
+
+
+def _get_google_docs_tools():
+    """Create GoogleDocsTools with per-user OAuth creds (falls back to env var / token.json)."""
+    from tools.google_docs_tools import GoogleDocsTools
+    from services.user_context import get_current_user_id
+    user_id = get_current_user_id()
+    if user_id:
+        from services.oauth_store import get_google_credentials
+        creds = get_google_credentials(user_id, "google_sheets")
+        if creds:
+            return GoogleDocsTools(creds=creds)
+    return GoogleDocsTools()
 
 
 def _extract_url(text: str) -> Optional[str]:
@@ -187,8 +201,15 @@ def create_feature_spec(step_input: StepInput) -> StepOutput:
     input_str = str(step_input.input)
     _state.project_name = _extract_param(input_str, "PROJECT_NAME") or "Existing Project"
     _state.project_type = "existing"
+    _state.github_repo_url = _extract_param(input_str, "GITHUB_REPO_URL") or ""
     feature_name = _extract_param(input_str, "FEATURE_NAME") or "New Feature"
     description = _extract_param(input_str, "DESCRIPTION") or input_str
+
+    # Also try to find GitHub URL anywhere in the input
+    if not _state.github_repo_url:
+        gh_match = re.search(r'https://github\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+', input_str)
+        if gh_match:
+            _state.github_repo_url = gh_match.group(0).rstrip('/')
 
     _log("📝", "FEATURE_SPEC", f"Creating Feature Spec: {feature_name} for {_state.project_name}")
 
@@ -246,9 +267,8 @@ def create_architecture(step_input: StepInput) -> StepOutput:
     if _state.prd_url:
         _log("📖", "ARCH", f"Reading full PRD from Google Docs: {_state.prd_url}")
         try:
-            from tools.google_docs_tools import GoogleDocsTools
             doc_id = re.search(r'/document/d/([a-zA-Z0-9-_]+)', _state.prd_url).group(1)
-            full_prd_content = GoogleDocsTools().read_document(doc_id)
+            full_prd_content = _get_google_docs_tools().read_document(doc_id)
             _log("✅", "ARCH", f"PRD loaded: {len(full_prd_content)} characters")
 
             # Log key requirements
@@ -312,6 +332,17 @@ def create_architecture(step_input: StepInput) -> StepOutput:
    Pick images relevant to the project topic.
 """
 
+    # Include GitHub repo info for existing projects
+    github_repo_section = ""
+    if _state.github_repo_url:
+        github_repo_section = f"""
+9. **GitHub Repository** (MANDATORY for existing projects):
+   Repository URL: {_state.github_repo_url}
+   This is an EXISTING project. The Software Engineer will UPDATE this repo, NOT create a new one.
+   Include this exact line in the architecture document:
+   **GitHub Repository:** {_state.github_repo_url}
+"""
+
     if _state.project_type == "existing":
         prompt = f"""Create a SIMPLE architecture document for this feature.
 
@@ -319,6 +350,7 @@ def create_architecture(step_input: StepInput) -> StepOutput:
 
 **Project:** {_state.project_name}
 **PRD/Feature Spec URL:** {_state.prd_url or 'Not available'}
+{"**GitHub Repository:** " + _state.github_repo_url if _state.github_repo_url else ""}
 
 **FULL PRD CONTENT:**
 {full_prd_content}
@@ -329,6 +361,7 @@ def create_architecture(step_input: StepInput) -> StepOutput:
 3. If a tech stack is mentioned → USE IT (don't change it)
 4. If no tech stack mentioned → choose the SIMPLEST appropriate stack
 5. Create architecture that matches the PRD scope (no more, no less)
+{"6. INCLUDE the GitHub Repository URL in the architecture document — this is an EXISTING project!" if _state.github_repo_url else ""}
 
 **Create a SHORT architecture document with:**
 
@@ -338,6 +371,7 @@ def create_architecture(step_input: StepInput) -> StepOutput:
 4. **Database Changes** (only if PRD requires it)
 5. **Implementation Steps** (3-5 steps - direct from PRD requirements)
 {folder_structure_section}
+{github_repo_section}
 
 **CRITICAL RULES:**
 - RESPECT THE PRD SCOPE - don't add features not mentioned
@@ -345,6 +379,7 @@ def create_architecture(step_input: StepInput) -> StepOutput:
 - If PRD says specific tech → USE THAT TECH
 - Simple requirements = Simple architecture
 - 1 page is often enough
+{"- INCLUDE 'GitHub Repository: " + _state.github_repo_url + "' in the document!" if _state.github_repo_url else ""}
 
 **Save to Google Docs:**
 Use create_document tool:
@@ -485,6 +520,7 @@ def run_product_requirements(
     project_type: Optional[str] = None,
     project_name: Optional[str] = None,
     feature_name: Optional[str] = None,
+    github_repo_url: Optional[str] = None,
 ) -> dict:
     """Run the product requirements workflow."""
     _log("🚀", "WORKFLOW", "Starting Product Requirements Workflow")
@@ -496,6 +532,8 @@ def run_product_requirements(
         parts.append(f"PROJECT_NAME: {project_name}")
     if feature_name:
         parts.append(f"FEATURE_NAME: {feature_name}")
+    if github_repo_url:
+        parts.append(f"GITHUB_REPO_URL: {github_repo_url}")
 
     full_input = "\n".join(parts)
     result = product_requirements_workflow.run(input=full_input)

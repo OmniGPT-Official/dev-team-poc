@@ -3,11 +3,13 @@ Vercel Deployer Agent
 
 A dedicated agent for deploying GitHub repositories to Vercel.
 Takes a repo and deploys it, returning the preview/production URL.
+
+Tools are injected per-user at runtime via the pre-hook (tool_injector).
 """
 
 from agno.agent import Agent
 from agno.models.openrouter import OpenRouter
-from tools.vercel_deploy_tools import VercelDeployTools
+from services.tool_injector import inject_user_tools
 
 
 VERCEL_DEPLOYER_INSTRUCTIONS = """You are a Vercel deployment specialist. Your ONLY job is to deploy GitHub repositories to Vercel.
@@ -40,15 +42,14 @@ After deployment:
 - If project_name not provided, derive it from repo name
 """
 
-vercel_deploy_tools = VercelDeployTools()
-
 vercel_deployer_agent = Agent(
     name="Vercel Deployer",
     role="Deploys GitHub repositories to Vercel and returns the live preview URL.",
     model=OpenRouter(id="google/gemini-2.0-flash-001", max_tokens=4096),
     markdown=True,
     instructions=VERCEL_DEPLOYER_INSTRUCTIONS,
-    tools=[vercel_deploy_tools],
+    tools=[],  # Tools injected via pre_hooks
+    pre_hooks=[inject_user_tools],  # Inject per-user Vercel tools
     tool_call_limit=5,
     debug_mode=True,
 )

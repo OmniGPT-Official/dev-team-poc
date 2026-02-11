@@ -11,8 +11,7 @@ from db import db
 from agno.models.openrouter import OpenRouter
 
 from instructions.product_lead_instructions import PRODUCT_LEAD_INSTRUCTIONS
-from tools.google_docs_tools import GoogleDocsTools
-
+from services.tool_injector import inject_user_tools
 
 product_lead_agent = Agent(
     name="Product Lead",
@@ -23,9 +22,8 @@ product_lead_agent = Agent(
     num_history_messages=20,  # Keep last 20 messages in context
     markdown=True,
     instructions=PRODUCT_LEAD_INSTRUCTIONS,
-    tools=[
-        GoogleDocsTools(),
-    ],
+    tools=[],  # Tools injected via pre_hooks
+    pre_hooks=[inject_user_tools],  # Inject per-user Google Docs tools
     tool_call_limit=50,  # Prevent infinite tool call loops
     debug_mode=True,
 )

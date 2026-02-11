@@ -9,6 +9,10 @@ from agno.tools.mcp.params import StreamableHTTPClientParams
 
 from services.api_key_store import get_api_key, get_api_key_with_metadata
 from services.oauth_store import get_google_credentials
+from services.user_context import set_current_user_id
+from tools.github_tools import GitHubTools
+from tools.vercel_deploy_tools import VercelDeployTools
+from tools.google_docs_tools import GoogleDocsTools
 
 
 def inject_user_tools(agent: Agent, user_id: str) -> None:
@@ -17,6 +21,9 @@ def inject_user_tools(agent: Agent, user_id: str) -> None:
     if not user_id:
         print("[pre-hook] No user_id, skipping tool injection")
         return
+
+    # Store user_id so workflow steps can read it
+    set_current_user_id(user_id)
 
     tools = []
 
@@ -37,10 +44,28 @@ def inject_user_tools(agent: Agent, user_id: str) -> None:
     if gmail_creds:
         tools.append(GmailTools(creds=gmail_creds))
 
+    google_docs_creds = get_google_credentials(user_id, "google_sheets")
+    if google_docs_creds:
+        tools.append(GoogleDocsTools(creds=google_docs_creds))
+
     # --- API-key-based tools ---
     elevenlabs_key = get_api_key(user_id, "elevenlabs")
     if elevenlabs_key:
         tools.append(ElevenLabsTools(api_key=elevenlabs_key))
+
+    github_token = get_api_key(user_id, "github")
+    if github_token:
+        print(f"[pre-hook] GitHub token found, creating GitHubTools with per-user token")
+        tools.append(GitHubTools(token=github_token))
+    else:
+        print(f"[pre-hook] No GitHub token in DB for user_id={user_id!r} — agent will use env var fallback")
+
+    vercel_token = get_api_key(user_id, "vercel")
+    if vercel_token:
+        print(f"[pre-hook] Vercel token found, creating VercelDeployTools with per-user token")
+        tools.append(VercelDeployTools(token=vercel_token))
+    else:
+        print(f"[pre-hook] No Vercel token in DB for user_id={user_id!r} — agent will use env var fallback")
 
     # --- Supabase MCP tools ---
     supabase_data = get_api_key_with_metadata(user_id, "supabase")
