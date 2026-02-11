@@ -38,7 +38,8 @@ Python FastAPI backend using the [Agno](https://github.com/agno-agi/agno) framew
 - Branch naming: `feature/<brief-desc>`, `fix/<brief-desc>`, `hotfix/<brief-desc>`
 - PR descriptions: focus on customer impact, not technical details. Write for non-technical readers.
 - **Never alter git history** (amend, rebase, force-push) on branches already pushed to remote. Always create new commits instead.
-- Merge PRs with `--squash --delete-branch` to keep main history clean and remove stale branches.
+- Always add **Muhammad-Anique** and **albgarrido** as reviewers when creating PRs.
+- Merge PRs with squash to keep main history clean and delete the remote branch after merge. Use GitHub CLI: `gh pr merge <number> --squash --delete-branch` (requires `gh` to be installed and authenticated).
 - **Never push directly to main.** All changes must go through a PR.
 
 ### Before creating new files
