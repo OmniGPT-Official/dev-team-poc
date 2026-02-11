@@ -3,7 +3,7 @@
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from services.tool_injector import inject_user_tools
+from services.tool_injector import make_tool_hook
 
 from db import db
 
@@ -33,7 +33,7 @@ supabase_manager_agent = Agent(
         "If Supabase tools are not available, inform the user:",
         "'Please connect your Supabase account in Settings by adding your Personal Access Token and project reference.'",
     ],
-    pre_hooks=[inject_user_tools],
+    pre_hooks=[make_tool_hook("supabase_mcp")],
     db=db,
     update_memory_on_run=False,
     add_history_to_context=True,

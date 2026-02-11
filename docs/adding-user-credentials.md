@@ -86,7 +86,7 @@ INSERT INTO public.user_oauth_connections (
 
 ### How It Gets Used
 
-`services/oauth_store.py` → `get_google_credentials(user_id, provider)` fetches the row and returns a `google.oauth2.credentials.Credentials` object. The `inject_user_tools` pre-hook in `services/tool_injector.py` calls this and wraps the credentials in the appropriate Agno tool class (`GoogleSheetsTools`, `GmailTools`).
+`services/oauth_store.py` → `get_google_credentials(user_id, provider)` fetches the row and returns a `google.oauth2.credentials.Credentials` object. Provider functions in `services/tool_providers.py` call this and wrap the credentials in the appropriate Agno tool class (`GoogleSheetsTools`, `GmailTools`).
 
 ## Adding an API Key
 
@@ -134,7 +134,7 @@ INSERT INTO public.user_api_keys (
 
 ### How It Gets Used
 
-`services/api_key_store.py` → `get_api_key(user_id, provider)` returns the key string. For providers that need metadata, use `get_api_key_with_metadata(user_id, provider)` which returns `{"api_key": ..., "metadata": ...}`. The `inject_user_tools` pre-hook handles both patterns.
+`services/api_key_store.py` → `get_api_key(user_id, provider)` returns the key string. For providers that need metadata, use `get_api_key_with_metadata(user_id, provider)` which returns `{"api_key": ..., "metadata": ...}`. Provider functions in `services/tool_providers.py` handle both patterns.
 
 ## Adding Support for a New Provider
 
@@ -142,14 +142,28 @@ INSERT INTO public.user_api_keys (
 
 1. Create a migration: `ALTER TYPE public.oauth_provider ADD VALUE 'new_provider';`
 2. Add a credentials builder in `services/oauth_store.py` if the provider isn't Google-based.
-3. Add the tool to `inject_user_tools` in `services/tool_injector.py`.
+3. Register a provider function in `services/tool_providers.py`:
+   ```python
+   @register("new_provider")
+   def _new_provider(user_id: str):
+       creds = get_google_credentials(user_id, "new_provider")
+       if not creds:
+           return None
+       return NewProviderTools(creds=creds)
+   ```
+4. Use it in agents: `pre_hooks=[make_tool_hook("new_provider")]`
 
 ### New API key provider
 
 1. No migration needed — `provider` is free-text.
-2. Add a block in `inject_user_tools` in `services/tool_injector.py`:
+2. Register a provider function in `services/tool_providers.py`:
    ```python
-   key = get_api_key(user_id, "new_provider")
-   if key:
-       tools.append(NewProviderTools(api_key=key))
+   @register("new_provider")
+   def _new_provider(user_id: str):
+       from services.api_key_store import get_api_key
+       key = get_api_key(user_id, "new_provider")
+       if not key:
+           return None
+       return NewProviderTools(api_key=key)
    ```
+3. Use it in agents: `pre_hooks=[make_tool_hook("new_provider")]`

@@ -57,16 +57,18 @@ Unique constraint: `(user_id, provider)` — one key per provider per user.
 
 Retrieved by `get_api_key(user_id, provider)` or `get_api_key_with_metadata(user_id, provider)` in `services/api_key_store.py`.
 
-## Tool Injection: Pre-Hook
+## Tool Injection: Registry + Hook Factory
 
-`services/tool_injector.py` defines `inject_user_tools(agent, user_id)`, which runs before each agent invocation. It:
+`services/tool_providers.py` defines a **provider registry** — each provider is a function decorated with `@register("name")` that knows how to fetch credentials and build one Agno tool. Built-in providers: `google_sheets`, `google_gmail`, `elevenlabs`, `supabase_mcp`.
 
-1. Fetches Google Sheets and Gmail OAuth credentials → wraps in `GoogleSheetsTools`, `GmailTools`
-2. Fetches ElevenLabs API key → wraps in `ElevenLabsTools`
-3. Fetches Supabase PAT + project ref from metadata → wraps in `MCPTools`
-4. Calls `agent.set_tools(tools)` with whatever was found
+`services/tool_injector.py` provides `make_tool_hook(*provider_names)` — a factory that returns a pre-hook injecting only the providers an agent declares it needs. Static tools defined at agent init are preserved across runs.
 
-Agents use this by passing `pre_hooks=[inject_user_tools]` at instantiation.
+```python
+# Agent gets only Google Sheets and Gmail — not all 4 providers
+pre_hooks=[make_tool_hook("google_sheets", "google_gmail")]
+```
+
+To add a new provider, register a function in `tool_providers.py`. No other files need to change.
 
 ## Security Model
 

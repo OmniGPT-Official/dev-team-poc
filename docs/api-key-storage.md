@@ -38,29 +38,33 @@ Use `user_oauth_connections` when the provider requires an OAuth flow. Use `user
 
 1. **Choose a provider name**: Use lowercase, no spaces (e.g. `'elevenlabs'`, `'vercel'`, `'supabase'`).
 2. **Frontend**: Add a settings UI field where the user pastes their key. Insert into `user_api_keys` with the chosen provider name.
-3. **Backend** (`services/tool_injector.py`): In the `inject_user_tools` pre-hook, add a block:
+3. **Backend** (`services/tool_providers.py`): Register a provider function:
    ```python
-   key = get_api_key(user_id, "your_provider")
-   if key:
-       tools.append(YourProviderTools(api_key=key))
+   @register("your_provider")
+   def _your_provider(user_id: str):
+       from services.api_key_store import get_api_key
+       key = get_api_key(user_id, "your_provider")
+       if not key:
+           return None
+       return YourProviderTools(api_key=key)
    ```
    For providers that need extra metadata (e.g. Supabase project ref), use `get_api_key_with_metadata()`:
    ```python
-   data = get_api_key_with_metadata(user_id, "supabase")
-   if data:
+   @register("supabase_mcp")
+   def _supabase_mcp(user_id: str):
+       from services.api_key_store import get_api_key_with_metadata
+       data = get_api_key_with_metadata(user_id, "supabase")
+       if not data:
+           return None
        project_ref = (data.get("metadata") or {}).get("project_ref")
-       if project_ref:
-           pat = data["api_key"]
-           tools.append(MCPTools(
-               url=f"https://mcp.supabase.com/mcp?project_ref={project_ref}",
-               transport="streamable-http",
-               server_params=StreamableHTTPClientParams(
-                   url=f"https://mcp.supabase.com/mcp?project_ref={project_ref}",
-                   headers={"Authorization": f"Bearer {pat}"},
-               ),
-           ))
+       if not project_ref:
+           return None
+       pat = data["api_key"]
+       url = f"https://mcp.supabase.com/mcp?project_ref={project_ref}"
+       return MCPTools(url=url, ...)
    ```
-4. **No migration needed** — the `provider` column is free-text.
+4. **Use it in agents**: `pre_hooks=[make_tool_hook("your_provider")]`
+5. **No migration needed** — the `provider` column is free-text.
 
 ## Environment Variables Required
 
