@@ -148,8 +148,8 @@ def _google_docs(user_id: str):
     from tools.google_docs_tools import GoogleDocsTools
     from services.oauth_store import get_google_credentials
 
-    # Google Docs uses the same OAuth credentials as Google Sheets
-    creds = get_google_credentials(user_id, "google_sheets")
+    # Fetch Google Docs OAuth credentials (separate provider from google_sheets)
+    creds = get_google_credentials(user_id, "google_docs")
     if not creds:
         return None
     return GoogleDocsTools(creds=creds)
