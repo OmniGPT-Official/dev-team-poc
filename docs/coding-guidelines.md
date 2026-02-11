@@ -21,8 +21,17 @@ Follow the pattern in [`services/oauth_store.py`](../services/oauth_store.py) an
 - Never hardcode tokens — credentials are always fetched at runtime from the `user_oauth_connections` table via Supabase.
 - Use the naming format `google_<service>` for provider keys (e.g. `google_gmail`, `google_sheets`).
 
+## Database Changes
+
+All DDL changes (new tables, altered columns, new indexes, RLS policies, etc.) must be tracked via Supabase migration files under `supabase/migrations/`. Never apply schema changes directly — always create a migration so that changes are versioned and reproducible across environments.
+
 ## Database (`db.py`)
 
 `db.py` provides the shared `PostgresDb` instance used by all agents, teams, and workflows.
 
-**Do not modify `db.py` unless necessary.** It is a shared dependency — changes affect the entire project. Discuss with the team first if a different database configuration is needed.
+**Do not modify `db.py` unless necessary.** It is a shared dependency — changes affect the entire project. If a modification is needed:
+
+1. Document the reason clearly.
+2. Check all imports (`from db import ...`) for downstream impact.
+3. Ensure backward compatibility.
+4. Discuss with the team before committing.
