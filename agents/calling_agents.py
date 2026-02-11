@@ -9,43 +9,18 @@ Uses OAuth-based Google Sheets access (like email_followup agent).
 
 from agno.agent import Agent
 from agno.models.google import Gemini
-from agno.tools.googlesheets import GoogleSheetsTools
 from tools.elevenlabs_tools import (
     submit_batch_call,
     get_batch_status,
     retry_failed_calls,
     get_call_result
 )
-from services.oauth_store import get_google_credentials
+from services.tool_injector import make_tool_hook
 from db import db
 
 # Use Gemini 3 Flash Preview for cost-effective POC testing
 # Cost: ~$0.19 per million tokens vs ~$9 for Claude Sonnet 4.5
 MODEL = Gemini(id="gemini-3-flash-preview")
-
-
-def inject_oauth_tools(agent: Agent, user_id: str) -> None:
-    """Pre-hook: fetch per-user Google credentials and inject tools before each run."""
-    print(f"[pre-hook] inject_oauth_tools called for {agent.name} — user_id={user_id!r}")
-    if not user_id:
-        print("[pre-hook] No user_id, skipping tool injection")
-        return
-
-    sheets_creds = get_google_credentials(user_id, "google_sheets")
-    if sheets_creds:
-        sheets_tools = GoogleSheetsTools(
-            creds=sheets_creds,
-            enable_read_sheet=True,
-            enable_update_sheet=True,
-            enable_create_sheet=False,
-            enable_create_duplicate_sheet=False,
-        )
-        # Combine with existing tools (ElevenLabs tools remain)
-        existing_tools = [t for t in agent.tools if not isinstance(t, GoogleSheetsTools)]
-        agent.set_tools(existing_tools + [sheets_tools])
-        print(f"[pre-hook] Injected GoogleSheetsTools for {agent.name}")
-    else:
-        print(f"[pre-hook] No Google Sheets credentials found for user {user_id}")
 
 
 # Lead Reader Agent - Reads and filters leads from Google Sheets
@@ -85,7 +60,7 @@ lead_reader_agent = Agent(
         "- Explain that Google Sheets access is required for this workflow"
     ],
     tools=[],  # Tools injected via pre_hook
-    pre_hooks=[inject_oauth_tools],
+    pre_hooks=[make_tool_hook("google_sheets")],
     db=db,
     add_history_to_context=True,
     markdown=True,
@@ -157,7 +132,7 @@ results_logger_agent = Agent(
         "- Tell them to reconnect Google account in Settings"
     ],
     tools=[],  # Tools injected via pre_hook
-    pre_hooks=[inject_oauth_tools],
+    pre_hooks=[make_tool_hook("google_sheets")],
     db=db,
     add_history_to_context=True,
     markdown=True,
@@ -235,7 +210,7 @@ campaign_coordinator_agent = Agent(
         get_batch_status,
         retry_failed_calls
     ],  # Google Sheets tools injected via pre_hook
-    pre_hooks=[inject_oauth_tools],
+    pre_hooks=[make_tool_hook("google_sheets")],
     db=db,
     add_history_to_context=True,
     add_datetime_to_context=True,

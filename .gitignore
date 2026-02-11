@@ -80,6 +80,7 @@ package-lock.json
 
 # Claude Code
 .claude/
+.mcp.json
 
 # Google OAuth2 Credentials (NEVER COMMIT THESE!)
 google_docs_token.json
