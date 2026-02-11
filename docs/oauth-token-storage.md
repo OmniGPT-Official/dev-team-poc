@@ -35,7 +35,7 @@ Google's `Credentials` object supports automatic token refresh when provided wit
 
 1. Insert a row into `user_oauth_connections` with the new provider name (e.g. `'slack'`, `'notion'`).
 2. Add a credentials builder function in `services/oauth_store.py` (similar to `get_google_credentials`) that constructs the provider's expected credential format.
-3. Add the tool to the `inject_user_tools` pre-hook in `services/tool_injector.py`.
+3. Register a provider function in `services/tool_providers.py` using the `@register("name")` decorator. Then reference it in agents via `make_tool_hook("name")`.
 
 ## Environment Variables Required
 

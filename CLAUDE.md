@@ -16,7 +16,8 @@ Python FastAPI backend using the [Agno](https://github.com/agno-agi/agno) framew
 | Canonical agent example | `email_followup.py` |
 | OAuth credential helper | `services/oauth_store.py` |
 | API key credential helper | `services/api_key_store.py` |
-| Tool injection pre-hook | `services/tool_injector.py` |
+| Tool provider registry | `services/tool_providers.py` |
+| Tool injection hook factory | `services/tool_injector.py` |
 
 ## Rules
 
@@ -27,7 +28,7 @@ Python FastAPI backend using the [Agno](https://github.com/agno-agi/agno) framew
 
 ### Agent creation
 
-- When creating agents, workflows, or equipping tools (OAuth, API keys, PATs), **read `docs/coding-guidelines.md` first**, then read the source files it references (e.g. `email_followup.py`, `services/oauth_store.py`, `services/tool_injector.py`) to understand the actual implementation before writing code.
+- When creating agents, workflows, or equipping tools (OAuth, API keys, PATs), **read `docs/coding-guidelines.md` first**, then read the source files it references (e.g. `email_followup.py`, `services/oauth_store.py`, `services/tool_providers.py`, `services/tool_injector.py`) to understand the actual implementation before writing code.
 - Use `Gemini(id="gemini-3-flash-preview")` as the default model for POC agents.
 - Always pass `db=db` (from `db.py`) for agent memory.
 - OAuth and API-key tools must be injected via **pre-hooks**, never hardcoded.

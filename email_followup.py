@@ -3,7 +3,7 @@
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from services.tool_injector import inject_user_tools
+from services.tool_injector import make_tool_hook
 
 from db import db
 
@@ -88,7 +88,7 @@ email_followup_agent = Agent(
         "- Inform the user they need to connect their Google account in Settings",
         "- Explain that Google Sheets and Gmail access are required for this agent",
     ],
-    pre_hooks=[inject_user_tools],
+    pre_hooks=[make_tool_hook("google_sheets", "google_gmail")],
     db=db,
     update_memory_on_run=False,
     add_history_to_context=True,
