@@ -37,9 +37,9 @@ def inject_calling_tools(agent: Agent, user_id: str) -> None:
     if sheets_creds:
         tools.append(GoogleSheetsTools(
             creds=sheets_creds,
-            read_sheet=True,
-            create_sheet=False,
-            update_sheet=True,
+            enable_read_sheet=True,
+            enable_create_sheet=False,
+            enable_update_sheet=True,
         ))
 
     # ElevenLabs tools (no OAuth needed, uses API key from env)
