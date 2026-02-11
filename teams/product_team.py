@@ -21,17 +21,30 @@ from workflows.product_requirements_workflow import product_requirements_workflo
 from workflows.software_development_workflow import software_development_workflow
 
 
-def run_product_requirements(input_data: str) -> str:
+def run_product_requirements(input_data: str, **kwargs) -> str:
     """Run the product requirements workflow.
 
     Creates PRD/Feature Spec AND Architecture documents.
     Input should include: PROJECT_TYPE (new/existing), PROJECT_NAME, DESCRIPTION, FEATURE_NAME (optional)
     Returns 2 Google Docs URLs (PRD/FS + Architecture).
+
+    Args:
+        input_data: Workflow input parameters
+        **kwargs: Additional context from Agno (includes user_id, agent, run_context, etc.)
     """
-    return product_requirements_workflow.run(input=input_data).content
+    # Extract user_id from Agno's injected context or fall back to global context
+    user_id = kwargs.get("user_id", "")
+    if not user_id:
+        from services.user_context import get_current_user_id
+        user_id = get_current_user_id() or ""
+        if user_id:
+            print(f"[workflow] Using user_id from global context: {user_id}")
+
+    print(f"[workflow] run_product_requirements called with user_id={user_id!r}")
+    return product_requirements_workflow.run(input=input_data, user_id=user_id).content
 
 
-def run_software_development(input_data: str) -> str:
+def run_software_development(input_data: str, **kwargs) -> str:
     """Run the software development workflow.
 
     Takes Architecture URL as input. For existing projects, include the GitHub repo URL.
@@ -46,8 +59,21 @@ def run_software_development(input_data: str) -> str:
     Note: GitHub owner is auto-resolved from the user's GitHub token. No need to pass it.
 
     Returns deployment link + GitHub repo URL.
+
+    Args:
+        input_data: Workflow input parameters
+        **kwargs: Additional context from Agno (includes user_id, agent, run_context, etc.)
     """
-    return software_development_workflow.run(input=input_data).content
+    # Extract user_id from Agno's injected context or fall back to global context
+    user_id = kwargs.get("user_id", "")
+    if not user_id:
+        from services.user_context import get_current_user_id
+        user_id = get_current_user_id() or ""
+        if user_id:
+            print(f"[workflow] Using user_id from global context: {user_id}")
+
+    print(f"[workflow] run_software_development called with user_id={user_id!r}")
+    return software_development_workflow.run(input=input_data, user_id=user_id).content
 
 
 product_team = Team(
@@ -248,5 +274,5 @@ When delegating to Product Lead, say:
     show_members_responses=True,
     add_history_to_context=True,
     num_history_messages=20,
-    debug_mode=True,
+    debug_mode=False,
 )

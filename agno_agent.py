@@ -207,21 +207,63 @@ class SupabaseUserMiddleware(BaseHTTPMiddleware):
 
     Checks X-Supabase-Token header first (for Agno UI custom headers),
     then falls back to Authorization: Bearer header (for frontend).
+
+    Also sets the global user context for workflows and tools.
     """
 
     async def dispatch(self, request, call_next):
+        from services.user_context import set_current_user_id
+        from services.oauth_store import get_supabase_client
+
+        # Extract JWT token
         token = request.headers.get("X-Supabase-Token", "")
         if not token:
             auth = request.headers.get("Authorization", "")
             if auth.lower().startswith("bearer "):
                 token = auth[7:].strip()
+
+        # Decode JWT and extract user_id
+        user_id = None
         if token:
             try:
                 payload = pyjwt.decode(token, options={"verify_signature": False})
-                request.state.user_id = payload.get("sub")
-            except Exception:
-                pass
-        return await call_next(request)
+                extracted_sub = payload.get("sub")
+
+                if extracted_sub:
+                    # Check if it's an email (contains @) - need to look up UUID
+                    if "@" in extracted_sub:
+                        print(f"[middleware] JWT contains email: {extracted_sub}, looking up UUID...")
+                        try:
+                            supabase = get_supabase_client()
+                            result = supabase.table("user_oauth_connections").select("user_id").eq("provider_account_id", extracted_sub).limit(1).execute()
+
+                            if result.data and len(result.data) > 0:
+                                user_id = result.data[0]["user_id"]
+                                print(f"[middleware] Found UUID for {extracted_sub}: {user_id}")
+                            else:
+                                print(f"[middleware] No user found for email {extracted_sub}")
+                                user_id = None
+                        except Exception as e:
+                            print(f"[middleware] Failed to lookup user UUID: {e}")
+                            user_id = None
+                    else:
+                        # Already a UUID
+                        user_id = extracted_sub
+                        print(f"[middleware] Extracted UUID from JWT: {user_id}")
+
+                    if user_id:
+                        request.state.user_id = user_id
+                        set_current_user_id(user_id)
+                else:
+                    print(f"[middleware] JWT decoded but no 'sub' field found")
+            except Exception as e:
+                print(f"[middleware] JWT decode failed: {e}")
+        else:
+            print(f"[middleware] No JWT token found in request")
+
+        # No cleanup needed - contextvars automatically isolate each request
+        response = await call_next(request)
+        return response
 
 
 app.add_middleware(SupabaseUserMiddleware)
