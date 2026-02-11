@@ -33,7 +33,11 @@ def make_tool_hook(*provider_names: str):
             print("[pre-hook] No user_id, skipping tool injection")
             return
 
-        # Snapshot static tools on first invocation
+        # Snapshot static tools on first invocation.
+        # TODO(production): This monkey-patches _static_tools onto the Agent instance.
+        # For production, move the snapshot into the closure (nonlocal) or use a more
+        # unique attribute name (e.g. _omnigpt_static_tools) to avoid potential
+        # collisions with future Agno internals.
         if not hasattr(agent, "_static_tools"):
             agent._static_tools = list(agent.tools or [])
 
