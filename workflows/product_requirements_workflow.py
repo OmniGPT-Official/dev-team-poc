@@ -278,6 +278,40 @@ def create_architecture(step_input: StepInput) -> StepOutput:
     else:
         _log("⚠️", "ARCH", "No PRD URL available - using content from previous step")
 
+    folder_structure_section = """
+6. **Folder Structure** (MANDATORY - the Software Engineer will follow this EXACTLY):
+   List every file that needs to be created with its EXACT path. Example:
+   ```
+   /
+     index.html
+     css/
+       styles.css
+     js/
+       script.js
+     images/
+       (use Unsplash URLs for placeholders)
+   ```
+   - index.html is ALWAYS at the root
+   - CSS files go in css/ folder
+   - JS files go in js/ folder
+   - Additional pages go in pages/ folder
+   - The HTML must reference files using correct relative paths:
+     * `<link rel="stylesheet" href="css/styles.css">`
+     * `<script src="js/script.js"></script>`
+     * From pages/about.html: `<link rel="stylesheet" href="../css/styles.css">`
+
+7. **File Cross-References** (MANDATORY):
+   For EACH file, list what it imports/links to:
+   - index.html → links to: css/styles.css, js/script.js
+   - css/styles.css → references: (any background images via url())
+   - js/script.js → targets: (DOM elements by ID/class from HTML)
+   This ensures zero broken references when code is written.
+
+8. **Images**: If the project needs images and none are provided, use Unsplash:
+   `https://images.unsplash.com/photo-XXXXX?w=800&h=600&fit=crop`
+   Pick images relevant to the project topic.
+"""
+
     if _state.project_type == "existing":
         prompt = f"""Create a SIMPLE architecture document for this feature.
 
@@ -303,6 +337,7 @@ def create_architecture(step_input: StepInput) -> StepOutput:
 3. **Components** (bullet list - only what's needed for PRD requirements)
 4. **Database Changes** (only if PRD requires it)
 5. **Implementation Steps** (3-5 steps - direct from PRD requirements)
+{folder_structure_section}
 
 **CRITICAL RULES:**
 - RESPECT THE PRD SCOPE - don't add features not mentioned
@@ -347,6 +382,7 @@ Return the Google Docs URL.
 3. **Main Components** (bullet list - only what PRD requires)
 4. **Data Model** (ONLY if PRD explicitly needs a database)
 5. **Implementation Steps** (3-5 steps - map directly from PRD features)
+{folder_structure_section}
 
 **CRITICAL RULES:**
 - RESPECT THE PRD - don't add features, complexity, or tech not needed

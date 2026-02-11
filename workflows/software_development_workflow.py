@@ -259,26 +259,52 @@ def _extract_code(response: str) -> str:
 
 def _generate_file_content(agent, file_type: str, project_name: str, architecture: str) -> str:
     """Ask agent to generate code for a specific file type."""
+
+    # Shared context so every file knows the exact folder structure
+    folder_context = """
+## EXACT FOLDER STRUCTURE (all files will be created at these paths):
+```
+/
+  index.html          ← you are here (for HTML)
+  css/
+    styles.css        ← you are here (for CSS)
+  js/
+    script.js         ← you are here (for JS)
+  images/             ← use Unsplash URLs if no images provided
+```
+"""
+
     prompts = {
         "html": f"""Generate a complete index.html file for: {project_name}
 
 Based on this architecture:
 {architecture[:3000]}
+{folder_context}
 
 Requirements:
 - Complete HTML5 structure with DOCTYPE, html, head, body
 - Include meta tags (charset, viewport)
-- Link to styles.css and script.js
+- Link stylesheet as: <link rel="stylesheet" href="css/styles.css">
+- Link script as: <script src="js/script.js"></script>
+- CRITICAL: CSS is at css/styles.css NOT styles.css
+- CRITICAL: JS is at js/script.js NOT script.js
 - All sections from the architecture
 - Semantic HTML elements
 - Real content (not Lorem ipsum)
+- For images: use Unsplash URLs relevant to the project, e.g.:
+  <img src="https://images.unsplash.com/photo-XXXXX?w=800&h=600&fit=crop" alt="description">
+  Pick REAL Unsplash photo IDs that match the project topic
 
 Output ONLY the HTML code, nothing else. Start with <!DOCTYPE html>""",
 
         "css": f"""Generate a complete styles.css file for: {project_name}
 
+This file will be saved at: css/styles.css
+It is linked from index.html as: <link rel="stylesheet" href="css/styles.css">
+
 Based on this architecture:
 {architecture[:2000]}
+{folder_context}
 
 Requirements:
 - Modern, professional styling
@@ -287,20 +313,29 @@ Requirements:
 - Nice colors, typography, spacing
 - Hover effects, transitions
 - CSS variables for colors
+- If referencing images in CSS, use Unsplash URLs:
+  background-image: url('https://images.unsplash.com/photo-XXXXX?w=1200&h=800&fit=crop');
+- Do NOT use url() with local paths like ../images/ — use Unsplash directly
 
 Output ONLY the CSS code, nothing else. Start with /* or :root""",
 
         "js": f"""Generate a complete script.js file for: {project_name}
 
+This file will be saved at: js/script.js
+It is linked from index.html as: <script src="js/script.js"></script>
+
 Based on this architecture:
 {architecture[:1500]}
+{folder_context}
 
 Requirements:
 - Mobile navigation toggle
 - Smooth scrolling
 - Form validation if forms exist
 - Any interactive features from architecture
-- Clean, modern JavaScript
+- Clean, modern JavaScript (ES6+)
+- Use document.querySelector / querySelectorAll to target HTML elements
+- Make sure IDs/classes you target actually exist in the HTML
 
 Output ONLY the JavaScript code, nothing else. Start with // or 'use strict'"""
     }
@@ -335,7 +370,7 @@ def development(step_input: StepInput) -> StepOutput:
     arch_content = _state.architecture_content
     files_created = []
 
-    # --- Generate and create index.html ---
+    # --- Generate and create index.html (at root) ---
     _log("📄", "DEV", "Generating index.html...")
     html_code = _generate_file_content(software_engineer_agent, "html", _state.project_name, arch_content)
 
@@ -356,47 +391,47 @@ def development(step_input: StepInput) -> StepOutput:
     else:
         _log("⚠️", "DEV", f"HTML generation failed or too short ({len(html_code) if html_code else 0} chars)")
 
-    # --- Generate and create styles.css ---
-    _log("🎨", "DEV", "Generating styles.css...")
+    # --- Generate and create css/styles.css ---
+    _log("🎨", "DEV", "Generating css/styles.css...")
     css_code = _generate_file_content(software_engineer_agent, "css", _state.project_name, arch_content)
 
     if css_code and len(css_code) > 50:
         res = json.loads(gh.create_or_update_file(
             owner=_state.github_owner,
             repo=_state.github_repo,
-            path="styles.css",
+            path="css/styles.css",
             content=css_code,
-            message="feat: add styles.css",
+            message="feat: add css/styles.css",
             branch="main",
         ))
         if res.get("success"):
-            files_created.append("styles.css")
-            _log("✓", "DEV", f"Created styles.css ({len(css_code)} chars)")
+            files_created.append("css/styles.css")
+            _log("✓", "DEV", f"Created css/styles.css ({len(css_code)} chars)")
         else:
-            _log("⚠️", "DEV", f"Failed to create styles.css: {res.get('message', '')}")
+            _log("⚠️", "DEV", f"Failed to create css/styles.css: {res.get('message', '')}")
     else:
         _log("⚠️", "DEV", f"CSS generation failed or too short ({len(css_code) if css_code else 0} chars)")
 
-    # --- Generate and create script.js ---
-    _log("⚡", "DEV", "Generating script.js...")
+    # --- Generate and create js/script.js ---
+    _log("⚡", "DEV", "Generating js/script.js...")
     js_code = _generate_file_content(software_engineer_agent, "js", _state.project_name, arch_content)
 
     if js_code and len(js_code) > 20:
         res = json.loads(gh.create_or_update_file(
             owner=_state.github_owner,
             repo=_state.github_repo,
-            path="script.js",
+            path="js/script.js",
             content=js_code,
-            message="feat: add script.js",
+            message="feat: add js/script.js",
             branch="main",
         ))
         if res.get("success"):
-            files_created.append("script.js")
-            _log("✓", "DEV", f"Created script.js ({len(js_code)} chars)")
+            files_created.append("js/script.js")
+            _log("✓", "DEV", f"Created js/script.js ({len(js_code)} chars)")
         else:
-            _log("⚠️", "DEV", f"Failed to create script.js: {res.get('message', '')}")
+            _log("⚠️", "DEV", f"Failed to create js/script.js: {res.get('message', '')}")
     else:
-        _log("ℹ️", "DEV", "Skipping script.js (not needed or too short)")
+        _log("ℹ️", "DEV", "Skipping js/script.js (not needed or too short)")
 
     # --- Summary ---
     if files_created:
