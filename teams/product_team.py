@@ -41,6 +41,7 @@ def run_product_requirements(input_data: str, **kwargs) -> str:
             print(f"[workflow] Using user_id from global context: {user_id}")
 
     print(f"[workflow] run_product_requirements called with user_id={user_id!r}")
+    print(f"[workflow] input_data:\n{input_data}")
     return product_requirements_workflow.run(input=input_data, user_id=user_id).content
 
 
@@ -134,9 +135,11 @@ Document 2: Architecture
 ---
 
 ### 2. `run_software_development(input_data: str)`
-Implements code from architecture, runs review cycles, and deploys.
+Implements code from architecture, runs review cycles, creates GitHub repo, pushes code, and deploys.
 
-**When to use:** After user approves implementation OR when user provides a Google Docs architecture URL.
+**When to use:** ONLY when user explicitly requests implementation (says "implement", "build", "yes", etc.)
+
+**CRITICAL - DO NOT call this tool automatically. ALWAYS ask user for confirmation first.**
 
 **CRITICAL - EXISTING vs NEW project handling:**
 - **EXISTING project (user provides a GitHub repo URL):**
@@ -165,6 +168,15 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 ```
 
 **Returns:** Deployment link + GitHub repo URL
+
+**What this workflow does:**
+1. Reads the architecture document
+2. Implements all the code
+3. Runs security and code reviews
+4. Creates GitHub repository (or updates existing one)
+5. Pushes all code to GitHub
+6. Deploys to Vercel
+7. Returns the deployment URL and GitHub repo URL
 
 ---
 
@@ -210,7 +222,7 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
    - "Would you like me to proceed with implementation?"
 
 **Phase 2: Implementation & Deployment**
-6. **User** → Says YES
+6. **User** → Says YES to implementation (e.g., "implement this", "build this", "yes implement", "proceed")
 7. **TEAM** → Calls `run_software_development` tool:
    - **NEW project:**
      ```
@@ -220,10 +232,14 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
      ```
      run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/document/d/xxx/edit\\nGITHUB_REPO_URL: https://github.com/user/repo")
      ```
-8. **TEAM** → Shares deployment link with user
+8. **TEAM** → Shares deployment link and GitHub repo with user
 
-**CRITICAL:** For existing projects, ALWAYS pass the GITHUB_REPO_URL to `run_software_development`.
-Without it, the workflow will create a NEW repo instead of updating the existing one!
+**CRITICAL IMPLEMENTATION RULES:**
+- **ONLY call `run_software_development` if user explicitly asks to implement** (says "implement", "build", "code", "yes", etc.)
+- **DO NOT call `run_software_development` automatically** after creating PRD/Architecture
+- **ALWAYS ask for user confirmation** before starting implementation
+- For existing projects, ALWAYS pass the GITHUB_REPO_URL to `run_software_development`
+- The workflow will automatically create the GitHub repo, push code, and deploy
 
 ## DELEGATION RULES
 
@@ -254,12 +270,16 @@ When delegating to Product Lead, say:
      - For existing projects, MUST include GITHUB_REPO_URL parameter
    - Ask user approval between phases
 
-5. **TRIGGER KEYWORDS** - TEAM runs `run_software_development` immediately when user says:
-   - "implement this"
-   - "build this"
-   - "code this"
+5. **TRIGGER KEYWORDS** - TEAM runs `run_software_development` ONLY when user explicitly says:
+   - "implement this" / "implement"
+   - "build this" / "build it"
+   - "code this" / "code it"
    - "develop this"
-   - Or provides a Google Docs URL
+   - "yes" / "yes implement" (in response to "would you like me to implement?")
+   - "proceed" / "go ahead"
+   - Or provides a Google Docs architecture URL with implementation request
+
+   **DO NOT implement automatically** - always ask for confirmation first
 
 6. **EXISTING PROJECT DETECTION** - If user mentions:
    - A GitHub repo URL (github.com/user/repo)
