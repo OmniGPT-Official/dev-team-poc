@@ -6,6 +6,68 @@ This file contains mandatory coding guidelines for AI assistants working on this
 
 ---
 
+## 🚨 CRITICAL: Git Workflow (MOST IMPORTANT RULE)
+
+### ⚠️ NEVER Commit Directly to Main
+
+**This is the #1 rule. Violating this rule affects the entire team.**
+
+❌ **NEVER do this:**
+```bash
+git commit -m "message"
+git push origin main
+```
+
+✅ **ALWAYS do this:**
+```bash
+# 1. Create feature branch
+git checkout -b fix/descriptive-name
+# or: git checkout -b feature/descriptive-name
+
+# 2. Make your changes and commit
+git add [files]
+git commit -m "descriptive message"
+
+# 3. Push feature branch (NOT main)
+git push origin fix/descriptive-name
+
+# 4. Create PR via GitHub
+# 5. Wait for review and approval
+# 6. Team merges PR
+```
+
+### Branch Naming Convention
+
+| Type | Format | Example |
+|------|--------|---------|
+| Bug fix | `fix/short-description` | `fix/database-url-support` |
+| New feature | `feature/short-description` | `feature/email-followup-workflow` |
+| Hotfix | `hotfix/short-description` | `hotfix/oauth-credentials` |
+| Refactor | `refactor/short-description` | `refactor/agent-tools` |
+
+### Why This Matters
+
+- **Team review**: Every change needs review before going to production
+- **Railway deployment**: Main branch auto-deploys to production
+- **Rollback safety**: PRs provide clear history for reverting
+- **Discussion**: PRs allow team discussion before merge
+
+### If You Accidentally Commit to Main
+
+1. **DO NOT PUSH** - Stop immediately
+2. Create feature branch from current state: `git checkout -b fix/description`
+3. Reset main to remote: `git checkout main && git reset --hard origin/main`
+4. Push feature branch and create PR
+
+### If You Already Pushed to Main (Critical Error)
+
+1. Notify team immediately
+2. Consider reverting: `git revert [commit-hash]`
+3. Create proper PR with fixes
+4. Update this document if you violated a rule not documented here
+
+---
+
 ## 🚨 Critical: Shared Dependencies
 
 ### Database (`db.py`)
@@ -73,7 +135,8 @@ For agents that need Google OAuth tools (Sheets, Gmail, Docs), follow the `email
 
 ```python
 from agno.agent import Agent
-from agno.tools.google import GoogleSheetsTools, GmailTools
+from agno.tools.googlesheets import GoogleSheetsTools
+from agno.tools.gmail import GmailTools
 from utils.credentials import get_google_credentials
 from db import db
 
@@ -199,28 +262,51 @@ my_workflow = Workflow(
 
 ---
 
-## 📝 Commit Guidelines
+## 📝 Commit and PR Workflow
 
-### When Creating Commits
+### Every Change Goes Through a PR
 
-1. **Descriptive messages** - Follow conventional commits format
-   - `Fix: Add DATABASE_URL support for Railway deployment`
-   - `Feature: Add OAuth integration to calling agents`
-   - `Refactor: Consolidate agent tools into pre_hook pattern`
+**Remember: Main branch is protected. Every change needs a PR.**
 
-2. **Minimal changes** - Only change what's necessary for the task
-   - Don't refactor unrelated code
-   - Don't "improve" code that's working
+1. **Create feature branch** (see Git Workflow section above)
+2. **Make commits on feature branch**
+3. **Push feature branch to remote**
+4. **Create PR on GitHub**
+5. **Wait for review and approval**
+6. **Team merges PR**
 
-3. **Test before commit** - Verify in Railway deployment before committing
+### Commit Message Format
 
-### Branch Strategy
+Follow conventional commits format:
 
-- **Main branch** - Production code, deploy-ready
-- **Feature branches** - New features, use descriptive names
-  - `fix/calling-workflow-oauth-integration`
-  - `feature/email-followup-workflow`
-  - `hotfix/database-url-env-var`
+```
+Type: Brief description
+
+Optional longer description
+- Bullet points for details
+- What changed and why
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+```
+
+**Types:**
+- `Fix:` - Bug fixes
+- `Feature:` - New features
+- `Refactor:` - Code restructuring
+- `Docs:` - Documentation only
+- `Test:` - Test additions/fixes
+
+**Examples:**
+- `Fix: Add DATABASE_URL support for Railway deployment`
+- `Feature: Add OAuth integration to calling agents`
+- `Refactor: Consolidate agent tools into pre_hook pattern`
+
+### Commit Best Practices
+
+1. **Minimal changes** - Only change what's necessary
+2. **Single concern** - One logical change per commit
+3. **Test before commit** - Verify locally if possible
+4. **Descriptive messages** - Explain what and why
 
 ---
 

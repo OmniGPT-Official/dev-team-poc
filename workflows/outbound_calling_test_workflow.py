@@ -11,7 +11,7 @@ This workflow uses OAuth-enabled tools to access real Google Sheets data.
 from agno.agent import Agent
 from agno.workflow import Workflow, Step
 from agno.models.google import Gemini
-from agno.tools.google import GoogleSheetsTools
+from agno.tools.googlesheets import GoogleSheetsTools
 from utils.credentials import get_google_credentials
 from tools.elevenlabs_tools import submit_batch_call, get_batch_status
 from db import db
