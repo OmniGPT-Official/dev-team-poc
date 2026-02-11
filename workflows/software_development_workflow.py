@@ -45,6 +45,8 @@ class ImplementationState:
         self.github_owner = ""
         self.project_name = ""
         self.architecture_content = ""
+        self.is_existing_repo = False  # True when working with an existing repo
+        self.user_id = ""  # Per-user credential lookup
 
 
 _state = ImplementationState()
@@ -55,22 +57,32 @@ _state = ImplementationState()
 # ============================================================================
 
 def _run_with_heartbeat(coro, step_name: str, timeout_seconds: int = 0):
-    """Run coroutine in a background thread with heartbeat logging.
+    """Run coroutine in a background thread with heartbeat logging while preserving contextvars.
     If timeout_seconds <= 0, no timeout is applied (waits indefinitely).
     Returns the agent result, or None if errored."""
+    import contextvars
+
     result_holder = [None]
     error_holder = [None]
     done_event = threading.Event()
 
+    # Capture current context (including user_id contextvar) in parent thread
+    ctx = contextvars.copy_context()
+
     def _execute():
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result_holder[0] = loop.run_until_complete(coro)
-        except Exception as e:
-            error_holder[0] = e
-        finally:
-            done_event.set()
+        """Execute coroutine in captured context."""
+        def run_in_context():
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result_holder[0] = loop.run_until_complete(coro)
+            except Exception as e:
+                error_holder[0] = e
+            finally:
+                done_event.set()
+
+        # Run in the captured context from parent thread
+        ctx.run(run_in_context)
 
     thread = threading.Thread(target=_execute, daemon=True)
     thread.start()
@@ -99,8 +111,14 @@ def _log(emoji: str, step: str, msg: str, data: dict = None):
 
 
 def parse_input_urls(input_str: str) -> dict:
-    """Parse input string to extract Architecture URL and optional params."""
-    result = {"architecture_url": "", "github_repo": "", "github_owner": "", "project_name": ""}
+    """Parse input string to extract Architecture URL, GitHub repo, and optional params."""
+    result = {
+        "architecture_url": "",
+        "github_repo": "",
+        "github_owner": "",
+        "project_name": "",
+        "github_repo_url": "",  # Full GitHub URL for existing projects
+    }
 
     # Architecture URL
     arch_match = re.search(r'ARCHITECTURE_URL:\s*(https://[^\s]+)', input_str, re.I)
@@ -111,7 +129,24 @@ def parse_input_urls(input_str: str) -> dict:
         if docs_match:
             result["architecture_url"] = docs_match.group(0)
 
-    # Optional params
+    # GitHub Repo URL (full URL like https://github.com/owner/repo)
+    repo_url_match = re.search(r'GITHUB_REPO_URL:\s*(https://github\.com/[^\s]+)', input_str, re.I)
+    if repo_url_match:
+        result["github_repo_url"] = repo_url_match.group(1).rstrip('/')
+    else:
+        # Also try to find any GitHub URL in the input
+        gh_url_match = re.search(r'https://github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_.-]+)', input_str)
+        if gh_url_match:
+            result["github_repo_url"] = gh_url_match.group(0).rstrip('/')
+
+    # Extract owner/repo from GitHub URL if found
+    if result["github_repo_url"]:
+        gh_parts = re.search(r'github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_.-]+)', result["github_repo_url"])
+        if gh_parts:
+            result["github_owner"] = result["github_owner"] or gh_parts.group(1)
+            result["github_repo"] = result["github_repo"] or gh_parts.group(2)
+
+    # Optional params (explicit values override URL-extracted ones)
     for key, pattern in [("github_repo", r'GITHUB_REPO:\s*([^\s\n]+)'),
                          ("github_owner", r'GITHUB_OWNER:\s*([^\s\n]+)'),
                          ("project_name", r'PROJECT_NAME:\s*([^\n]+)')]:
@@ -143,14 +178,122 @@ def _generate_repo_name(project_name: str = None) -> str:
     return f"project-{suffix}"
 
 
+def _get_user_id() -> str:
+    """Get the current user_id from context (set by pre-hook) or state."""
+    if _state.user_id:
+        return _state.user_id
+    from services.user_context import get_current_user_id
+    uid = get_current_user_id()
+    if uid:
+        _state.user_id = uid
+    return uid or ""
+
+
+def _get_github_tools():
+    """Create GitHubTools with per-user token (falls back to env var)."""
+    from tools.github_tools import GitHubTools
+    user_id = _get_user_id()
+    _log("🔧", "TOOLS", f"_get_github_tools — user_id={user_id!r}")
+    if user_id:
+        from services.api_key_store import get_api_key
+        token = get_api_key(user_id, "github")
+        if token:
+            preview = f"{token[:6]}...{token[-4:]}" if len(token) > 10 else "***"
+            _log("✅", "TOOLS", f"Using per-user GitHub token: {preview}")
+            return GitHubTools(token=token)
+        else:
+            _log("⚠️", "TOOLS", f"No GitHub token in DB for user_id={user_id!r}")
+    else:
+        _log("⚠️", "TOOLS", "No user_id available — using env var fallback")
+    return GitHubTools()
+
+
+def _get_google_docs_tools():
+    """Create GoogleDocsTools with per-user OAuth creds (falls back to env var / token.json)."""
+    from tools.google_docs_tools import GoogleDocsTools
+    from google.auth.transport.requests import Request as GoogleRequest
+    user_id = _get_user_id()
+    if user_id:
+        from services.oauth_store import get_google_credentials, update_google_credentials
+        # Use google_docs provider for Google Docs operations (not google_sheets)
+        creds = get_google_credentials(user_id, "google_docs")
+        if creds:
+            # Refresh token if expired
+            if creds.expired and creds.refresh_token:
+                try:
+                    _log("🔄", "OAUTH", "Refreshing expired Google OAuth token...")
+                    creds.refresh(GoogleRequest())
+                    # Persist refreshed token back to database
+                    update_google_credentials(user_id, "google_docs", creds)
+                    _log("✅", "OAUTH", "Token refreshed and persisted")
+                except Exception as e:
+                    _log("❌", "OAUTH", f"Token refresh failed: {e}")
+                    # Continue anyway - the API call might still work or will fail with a better error
+            return GoogleDocsTools(creds=creds)
+    return GoogleDocsTools()
+
+
+def _get_vercel_token() -> str:
+    """Get per-user Vercel token (falls back to env var)."""
+    user_id = _get_user_id()
+    if user_id:
+        from services.api_key_store import get_api_key
+        token = get_api_key(user_id, "vercel")
+        if token:
+            return token
+    return os.environ.get("VERCEL_TOKEN", "")
+
+
+def _get_github_owner() -> str:
+    """Get the GitHub username from the authenticated user's token via GET /user."""
+    import json
+    gh = _get_github_tools()
+    try:
+        user_info = json.loads(gh.get_authenticated_user())
+        login = user_info.get("login", "")
+        if login:
+            _log("🔑", "AUTH", f"GitHub owner resolved from token: {login}")
+            return login
+    except Exception as e:
+        _log("⚠️", "AUTH", f"Could not resolve GitHub owner from token: {e}")
+    return ""
+
+
 # ============================================================================
 # WORKFLOW STEPS
 # ============================================================================
 
+def _extract_github_url(content: str) -> dict:
+    """Extract GitHub owner/repo from architecture document content."""
+    result = {"owner": "", "repo": "", "url": ""}
+
+    # Look for explicit GitHub URL patterns in the document
+    patterns = [
+        r'(?:GitHub|Repository|Repo)\s*(?:URL|Link|:)\s*(https://github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_.-]+))',
+        r'(?:Existing\s+)?(?:GitHub|Repository|Repo)\s*:\s*(https://github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_.-]+))',
+        r'(https://github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_.-]+))',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            result["url"] = match.group(1).rstrip('/')
+            result["owner"] = match.group(2)
+            result["repo"] = match.group(3)
+            break
+
+    return result
+
+
 def read_architecture(step_input: StepInput) -> StepOutput:
-    """Step 1: Read Architecture from Google Docs."""
+    """Step 1: Read Architecture from Google Docs. Detects existing vs new project."""
     global _state
     _state = ImplementationState()  # Fresh state
+
+    # Extract user_id from workflow session (same pattern as product_requirements_workflow)
+    if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
+        _state.user_id = step_input.workflow_session.user_id
+        _log("🔑", "READ", f"Extracted user_id from workflow: {_state.user_id}")
 
     input_str = step_input.input if isinstance(step_input.input, str) else ""
     parsed = parse_input_urls(input_str)
@@ -161,51 +304,138 @@ def read_architecture(step_input: StepInput) -> StepOutput:
 
     _log("📖", "READ", f"Reading architecture from Google Docs...")
 
-    from tools.google_docs_tools import GoogleDocsTools
     try:
         doc_id = re.search(r'/document/d/([a-zA-Z0-9-_]+)', parsed["architecture_url"]).group(1)
-        _state.architecture_content = GoogleDocsTools().read_document(doc_id)
+        _state.architecture_content = _get_google_docs_tools().read_document(doc_id)
         _log("✅", "READ", f"Architecture loaded ({len(_state.architecture_content)} chars)")
 
-        # Extract/set project info
+        # Extract project name
         _state.project_name = parsed["project_name"] or _extract_project_name(_state.architecture_content) or "project"
-        _state.github_owner = parsed["github_owner"] or os.environ.get("GITHUB_OWNER", "")
-        _state.github_repo = parsed["github_repo"] or _generate_repo_name(_state.project_name)
+
+        # --- EXISTING PROJECT DETECTION ---
+        # Priority 1: GitHub repo URL from input params
+        # Priority 2: GitHub repo URL found in architecture document
+        # Priority 3: Create new repo (default)
+
+        github_owner = parsed["github_owner"]
+        github_repo = parsed["github_repo"]
+
+        # Check if a GitHub repo URL was provided in the input
+        if parsed["github_repo_url"]:
+            gh_parts = re.search(r'github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_.-]+)', parsed["github_repo_url"])
+            if gh_parts:
+                github_owner = github_owner or gh_parts.group(1)
+                github_repo = github_repo or gh_parts.group(2)
+                _state.is_existing_repo = True
+                _log("🔍", "READ", f"Existing repo from input: {github_owner}/{github_repo}")
+
+        # If no repo from input, scan the architecture document for a GitHub URL
+        if not _state.is_existing_repo:
+            doc_github = _extract_github_url(_state.architecture_content)
+            if doc_github["owner"] and doc_github["repo"]:
+                github_owner = github_owner or doc_github["owner"]
+                github_repo = github_repo or doc_github["repo"]
+                _state.is_existing_repo = True
+                _log("🔍", "READ", f"Existing repo from architecture doc: {github_owner}/{github_repo}")
+
+        # Fallback: resolve owner from GitHub token, generate repo name for new projects
+        _state.github_owner = github_owner or _get_github_owner()
+        _state.github_repo = github_repo or _generate_repo_name(_state.project_name)
 
         if not _state.github_owner:
-            _log("❌", "READ", "GITHUB_OWNER not set! Export GITHUB_OWNER env var.")
-            return StepOutput(content="ERROR: GITHUB_OWNER not set", success=False)
+            _log("❌", "READ", "Could not determine GitHub owner. Ensure a valid GitHub token is stored.")
+            return StepOutput(content="ERROR: Could not determine GitHub owner from token", success=False)
 
-        _log("📋", "READ", f"Project: {_state.project_name}")
+        project_type = "EXISTING" if _state.is_existing_repo else "NEW"
+        _log("📋", "READ", f"Project: {_state.project_name} ({project_type})")
         _log("🔗", "READ", f"GitHub: {_state.github_owner}/{_state.github_repo}")
 
-        return StepOutput(content=f"Architecture loaded. Repo: {_state.github_owner}/{_state.github_repo}", success=True)
+        return StepOutput(
+            content=f"Architecture loaded. Project type: {project_type}. Repo: {_state.github_owner}/{_state.github_repo}",
+            success=True,
+        )
     except Exception as e:
         _log("❌", "READ", f"Failed: {e}")
         return StepOutput(content=f"ERROR: {e}", success=False)
 
 
 def create_github_repo(step_input: StepInput) -> StepOutput:
-    """Step 2: Create GitHub Repository with initial structure (direct API — no agent)."""
+    """Step 2: Create or verify GitHub Repository.
+
+    - EXISTING project: Verify repo exists, list current files, skip creation.
+    - NEW project: Create repo with initial structure.
+    """
     global _state
 
     if not _state.github_owner or not _state.github_repo:
         return StepOutput(content="ERROR: GitHub not configured", success=False)
 
-    from tools.github_tools import GitHubTools
     import json
 
-    gh = GitHubTools()
+    gh = _get_github_tools()
     repo_url = f"https://github.com/{_state.github_owner}/{_state.github_repo}"
 
-    # --- 1. Create repo with auto_init so main branch exists immediately ---
-    _log("🏗️", "REPO", f"Creating repository: {_state.github_owner}/{_state.github_repo}")
-    result = json.loads(gh.create_repository(
-        name=_state.github_repo,
-        description=_state.project_name,
-        private=False,
-        auto_init=True,
-    ))
+    # =====================================================================
+    # EXISTING PROJECT — verify repo exists and list current files
+    # =====================================================================
+    if _state.is_existing_repo:
+        _log("🔍", "REPO", f"Existing project — verifying repo: {_state.github_owner}/{_state.github_repo}")
+
+        # Verify the repo is accessible
+        repo_info = json.loads(gh.get_repository(_state.github_owner, _state.github_repo))
+        if repo_info.get("error"):
+            _log("❌", "REPO", f"Cannot access repo: {repo_info.get('message', '')}")
+            return StepOutput(content=f"ERROR: Cannot access repo {repo_url}: {repo_info.get('message', '')}", success=False)
+
+        # List existing files so the dev step knows the current structure
+        files = json.loads(gh.list_repository_files(_state.github_owner, _state.github_repo))
+        file_names = []
+        if isinstance(files, list):
+            file_names = [f.get('name', '') if isinstance(f, dict) else str(f) for f in files]
+
+        _log("✅", "REPO", f"Existing repo verified: {repo_url}")
+        _log("📂", "REPO", f"Current files: {', '.join(file_names[:20]) if file_names else 'empty'}")
+
+        return StepOutput(
+            content=f"Existing repository verified: {repo_url}\nCurrent files: {', '.join(file_names)}",
+            success=True,
+        )
+
+    # =====================================================================
+    # NEW PROJECT — create repo with initial structure
+    # =====================================================================
+    _log("🏗️", "REPO", f"New project — creating repository: {_state.github_owner}/{_state.github_repo}")
+
+    # Determine if we're creating under user or organization
+    # Get the authenticated user to compare with owner
+    try:
+        authenticated_user = json.loads(gh.get_authenticated_user()).get("login", "")
+        _log("👤", "REPO", f"Authenticated user: {authenticated_user}, Target owner: {_state.github_owner}")
+    except Exception as e:
+        _log("⚠️", "REPO", f"Could not get authenticated user: {e}")
+        authenticated_user = ""
+
+    # If owner is different from authenticated user, assume it's an organization
+    is_org = authenticated_user and _state.github_owner and authenticated_user.lower() != _state.github_owner.lower()
+
+    if is_org:
+        _log("🏢", "REPO", f"Creating repo under organization: {_state.github_owner}")
+        result = json.loads(gh.create_repository(
+            name=_state.github_repo,
+            description=_state.project_name,
+            private=False,
+            auto_init=True,
+            org=_state.github_owner,
+        ))
+    else:
+        _log("👤", "REPO", f"Creating repo under user account: {_state.github_owner}")
+        result = json.loads(gh.create_repository(
+            name=_state.github_repo,
+            description=_state.project_name,
+            private=False,
+            auto_init=True,
+        ))
+
     if result.get("error"):
         # 422 = already exists — that's fine, continue
         if result.get("status_code") != 422:
@@ -215,7 +445,7 @@ def create_github_repo(step_input: StepInput) -> StepOutput:
     else:
         _log("✅", "REPO", f"Repository created: {repo_url}")
 
-    # --- 2. Seed initial files directly — no get_file_contents needed ---
+    # Seed initial files
     files = {
         "README.md": f"# {_state.project_name}\n\n{_state.project_name} — generated by Agent-Os.\n",
         ".gitignore": (
@@ -344,14 +574,19 @@ Output ONLY the JavaScript code, nothing else. Start with // or 'use strict'"""
     if not prompt:
         return ""
 
-    result = _run_with_heartbeat(agent.arun(prompt), f"DEV-{file_type.upper()}", timeout_seconds=0)
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(agent.arun(prompt, user_id=user_id), f"DEV-{file_type.upper()}", timeout_seconds=0)
     if result and result.content:
         return _extract_code(result.content)
     return ""
 
 
 def development(step_input: StepInput) -> StepOutput:
-    """Software Engineer implements code - generates each file separately."""
+    """Software Engineer implements code.
+
+    - EXISTING project: Reads current files, then asks agent to make targeted updates.
+    - NEW project: Generates each file from scratch (HTML/CSS/JS).
+    """
     global _state
 
     if not _state.github_owner or not _state.github_repo:
@@ -360,15 +595,95 @@ def development(step_input: StepInput) -> StepOutput:
     _state.iteration += 1
     _state.code_file_path = "src/"
 
-    _log("💻", "DEV", f"Iteration {_state.iteration} - Implementing code...")
-
     from agents.software_engineer import software_engineer_agent
-    from tools.github_tools import GitHubTools
     import json
 
-    gh = GitHubTools()
+    gh = _get_github_tools()
     arch_content = _state.architecture_content
     files_created = []
+
+    # =====================================================================
+    # EXISTING PROJECT — agent-driven updates on existing codebase
+    # =====================================================================
+    if _state.is_existing_repo:
+        _log("💻", "DEV", f"Iteration {_state.iteration} - Updating EXISTING repo...")
+
+        # 1. List all existing files
+        all_files = json.loads(gh.list_repository_files(_state.github_owner, _state.github_repo))
+        file_list = []
+        if isinstance(all_files, list):
+            file_list = [f.get('name', '') if isinstance(f, dict) else str(f) for f in all_files]
+
+        _log("📂", "DEV", f"Existing files: {', '.join(file_list[:30])}")
+
+        # 2. Read key existing files to give agent context
+        existing_code = {}
+        code_extensions = ('.html', '.css', '.js', '.jsx', '.tsx', '.ts', '.json', '.py', '.md')
+        files_to_read = [f for f in file_list if any(f.endswith(ext) for ext in code_extensions)][:10]
+
+        for file_path in files_to_read:
+            try:
+                content = json.loads(gh.get_file_contents(
+                    owner=_state.github_owner,
+                    repo=_state.github_repo,
+                    path=file_path,
+                ))
+                if isinstance(content, dict) and content.get("content"):
+                    existing_code[file_path] = content["content"][:3000]  # Truncate large files
+                    _log("📄", "DEV", f"Read: {file_path} ({len(content.get('content', ''))} chars)")
+            except Exception as e:
+                _log("⚠️", "DEV", f"Could not read {file_path}: {e}")
+
+        # 3. Build context of existing code for the agent
+        existing_code_context = "\n\n".join(
+            f"--- FILE: {path} ---\n{code}" for path, code in existing_code.items()
+        )
+
+        # 4. Ask agent to generate updates based on architecture + existing code
+        prompt = f"""You are updating an EXISTING project: {_state.project_name}
+Repository: https://github.com/{_state.github_owner}/{_state.github_repo}
+
+## Architecture / Requirements for changes:
+{arch_content[:4000]}
+
+## Current files in the repository:
+{', '.join(file_list)}
+
+## Current code (read from repo):
+{existing_code_context[:8000]}
+
+## YOUR TASK:
+Based on the architecture document above, make the required changes to this existing codebase.
+
+CRITICAL RULES:
+1. RESPECT existing code — do NOT rewrite files that don't need changes
+2. Only modify/create files that the architecture requires changing
+3. Match the existing code style, patterns, and tech stack
+4. Use create_or_update_file for EACH file you need to change
+5. Use conventional commit messages: "feat:", "fix:", "update:", "refactor:"
+6. Owner: "{_state.github_owner}", Repo: "{_state.github_repo}", Branch: "main"
+
+For EACH file you change, call create_or_update_file with the COMPLETE updated file content.
+List exactly which files you modified when done."""
+
+        _log("🤖", "DEV", "Asking Software Engineer to update existing code...")
+        user_id = _get_user_id()
+        result = _run_with_heartbeat(
+            software_engineer_agent.arun(prompt, user_id=user_id), "DEV-UPDATE", timeout_seconds=0
+        )
+
+        if result and result.content:
+            _log("✅", "DEV", f"Agent completed updates")
+            # The agent uses GitHub tools directly, so files are already pushed
+            return StepOutput(content=f"Updated existing repo: {result.content[:500]}", success=True)
+        else:
+            _log("❌", "DEV", "Agent failed to produce updates")
+            return StepOutput(content="ERROR: Agent failed to update existing repo", success=False)
+
+    # =====================================================================
+    # NEW PROJECT — generate files from scratch
+    # =====================================================================
+    _log("💻", "DEV", f"Iteration {_state.iteration} - Implementing NEW project code...")
 
     # --- Generate and create index.html (at root) ---
     _log("📄", "DEV", "Generating index.html...")
@@ -449,10 +764,9 @@ def code_review(step_input: StepInput) -> StepOutput:
     _log("👀", "CODE_REVIEW", "Checking project files...")
 
     # First, verify files exist directly (don't rely on agent)
-    from tools.github_tools import GitHubTools
     import json
 
-    gh = GitHubTools()
+    gh = _get_github_tools()
     files = json.loads(gh.list_repository_files(_state.github_owner, _state.github_repo))
 
     # Check for actual code files
@@ -486,7 +800,8 @@ def code_review_with_agent(step_input: StepInput) -> StepOutput:
 3. Reply: APPROVED ✓ or CHANGES_REQUESTED: [issues]
 """
 
-    result = _run_with_heartbeat(lead_engineer_agent.arun(prompt), "CODE_REVIEW", timeout_seconds=90)
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(lead_engineer_agent.arun(prompt, user_id=user_id), "CODE_REVIEW", timeout_seconds=90)
 
     if result is None:
         # Timeout/error — auto-approve since reviews are lenient by policy
@@ -529,10 +844,14 @@ def deploy_to_vercel(step_input: StepInput) -> StepOutput:
     _log("🚀", "DEPLOY", "Deploying to Vercel...")
     _log("📋", "DEPLOY", f"Owner: {_state.github_owner}, Repo: {_state.github_repo}, Project: {_state.project_name}")
 
-    # Verify VERCEL_TOKEN is set
-    if not os.environ.get("VERCEL_TOKEN"):
-        _log("❌", "DEPLOY", "VERCEL_TOKEN environment variable not set!")
-        return StepOutput(content="ERROR: VERCEL_TOKEN not set. Export VERCEL_TOKEN before running.", success=False)
+    # Verify Vercel token is available (per-user or env var)
+    vercel_token = _get_vercel_token()
+    if not vercel_token:
+        _log("❌", "DEPLOY", "No Vercel token found (checked user_api_keys and VERCEL_TOKEN env var)")
+        return StepOutput(content="ERROR: No Vercel token available.", success=False)
+
+    # Set env var so the deployer agent's tools can use it
+    os.environ["VERCEL_TOKEN"] = vercel_token
 
     from agents.vercel_deployer import vercel_deployer_agent
 
@@ -544,7 +863,8 @@ project_name: {_state.project_name}
 """
 
     _log("🤖", "DEPLOY", "Asking Vercel Deployer agent...")
-    result = _run_with_heartbeat(vercel_deployer_agent.arun(prompt), "DEPLOY", timeout_seconds=0)
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(vercel_deployer_agent.arun(prompt, user_id=user_id), "DEPLOY", timeout_seconds=0)
 
     if result is None:
         _log("❌", "DEPLOY", "Agent failed")

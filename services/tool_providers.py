@@ -117,3 +117,39 @@ def _supabase_mcp(user_id: str):
             headers={"Authorization": f"Bearer {pat}"},
         ),
     )
+
+
+@register("github")
+def _github(user_id: str):
+    from tools.github_tools import GitHubTools
+    from services.api_key_store import get_api_key
+
+    token = get_api_key(user_id, "github")
+    if not token:
+        return None
+    print(f"[tool_providers] GitHub token found for user {user_id!r}")
+    return GitHubTools(token=token)
+
+
+@register("vercel")
+def _vercel(user_id: str):
+    from tools.vercel_deploy_tools import VercelDeployTools
+    from services.api_key_store import get_api_key
+
+    token = get_api_key(user_id, "vercel")
+    if not token:
+        return None
+    print(f"[tool_providers] Vercel token found for user {user_id!r}")
+    return VercelDeployTools(token=token)
+
+
+@register("google_docs")
+def _google_docs(user_id: str):
+    from tools.google_docs_tools import GoogleDocsTools
+    from services.oauth_store import get_google_credentials
+
+    # Fetch Google Docs OAuth credentials (separate provider from google_sheets)
+    creds = get_google_credentials(user_id, "google_docs")
+    if not creds:
+        return None
+    return GoogleDocsTools(creds=creds)

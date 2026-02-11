@@ -52,4 +52,12 @@ def make_tool_hook(*provider_names: str):
 
 
 # Backward-compat shim — injects ALL known providers (previous behavior).
-inject_user_tools = make_tool_hook("google_sheets", "google_gmail", "elevenlabs", "supabase_mcp")
+inject_user_tools = make_tool_hook(
+    "google_sheets",
+    "google_gmail",
+    "google_docs",
+    "elevenlabs",
+    "github",
+    "vercel",
+    "supabase_mcp",
+)

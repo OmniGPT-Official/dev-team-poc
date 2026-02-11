@@ -12,8 +12,6 @@ Output: 2 Google Docs URLs (PRD/FS + Architecture)
 
 import os
 import sys
-import asyncio
-import re
 from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,54 +23,13 @@ from agno.utils.log import log_info
 
 
 # ============================================================================
-# STATE TO TRACK URLS
-# ============================================================================
-
-class WorkflowState:
-    """Track document URLs across workflow steps."""
-    def __init__(self):
-        self.prd_url = ""
-        self.architecture_url = ""
-        self.project_name = ""
-        self.project_type = "new"
-
-
-_state = WorkflowState()
-
-
-# ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
-def _run_async(coro):
-    """Run async coroutine from sync context."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
-
 
 def _log(emoji: str, step: str, msg: str, data: dict = None):
     """Concise logging."""
     print(f"{emoji} [{step}] {msg}")
     log_info(f"[{step}] {msg}")
-
-
-def _extract_url(text: str) -> Optional[str]:
-    """Extract Google Docs URL from text."""
-    match = re.search(r'https://docs\.google\.com/document/d/[a-zA-Z0-9_-]+/edit', text)
-    return match.group(0) if match else None
-
-
-def _extract_param(text: str, param: str) -> str:
-    """Extract parameter from text."""
-    match = re.search(rf'{param}:\s*([^\n]+)', text, re.IGNORECASE)
-    return match.group(1).strip() if match else ""
 
 
 def get_product_lead_agent():
@@ -114,335 +71,182 @@ def is_existing_project(step_input: StepInput) -> bool:
 
 
 # ============================================================================
-# WORKFLOW STEPS
+# SIMPLE EXECUTOR WRAPPERS
 # ============================================================================
 
-def create_prd(step_input: StepInput) -> StepOutput:
-    """Create PRD for new project."""
-    global _state
-    _state = WorkflowState()
+def create_prd_executor(step_input: StepInput) -> StepOutput:
+    """Simple wrapper to call product_lead with user_id from workflow."""
+    from agno.workflow.types import StepOutput
 
-    input_str = str(step_input.input)
-    _state.project_name = _extract_param(input_str, "PROJECT_NAME") or "New Project"
-    _state.project_type = "new"
-    description = _extract_param(input_str, "DESCRIPTION") or input_str
+    # Get user_id from workflow session
+    user_id = None
+    if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
+        user_id = step_input.workflow_session.user_id
 
-    _log("📝", "PRD", f"Creating PRD for: {_state.project_name}")
+    description = """You MUST create a PRD and save it to Google Docs.
 
-    prompt = f"""You MUST create a PRD and save it to Google Docs.
-
-**Project:** {_state.project_name}
-**Description:** {description}
+**CRITICAL: USE ONLY THE INFORMATION PROVIDED IN THE INPUT BELOW. DO NOT ADD EXAMPLES, DO NOT HALLUCINATE, DO NOT USE PLACEHOLDER CONTENT LIKE "REACT PRO" OR "TASK MANAGER". USE THE ACTUAL PROJECT DETAILS FROM THE INPUT.**
 
 **STEP 1: Write the PRD content with these exact sections:**
 
-1. OVERVIEW
-What is this product?
+1. OVERVIEW - What is this product? (USE ONLY INFO FROM INPUT)
+2. GOALS - What problem does it solve? (USE ONLY INFO FROM INPUT)
+3. TARGET USERS - Who will use it? (USE ONLY INFO FROM INPUT)
+4. FEATURES - List of features (USE ONLY FEATURES FROM INPUT - if none provided, write "To be defined")
+5. SUCCESS METRICS - How do we measure success? (USE ONLY INFO FROM INPUT - if none provided, write "To be defined")
 
-2. GOALS
-What problem does it solve?
-
-3. TARGET USERS
-Who will use it?
-
-4. FEATURES
-List of features (keep it focused)
-
-5. SUCCESS METRICS
-How do we measure success?
+**FORMATTING RULES:**
+- Use PLAIN TEXT only (no markdown symbols like **, __, ##, `, [])
+- Use "====" under section headings
+- Use simple bullet points with "•" or "-"
 
 **STEP 2: YOU MUST call the create_prd_document tool**
 
-Call it NOW with these parameters:
-- title: "PRD: {_state.project_name}"
-- content: (the PRD content you wrote above as plain text)
-- project_name: "{_state.project_name}"
+Call it NOW with:
+- title: "PRD: [EXACT project name from input - DO NOT CHANGE IT]"
+- content: (the PRD content you wrote above using ONLY the input data)
+- project_name: "[EXACT project name from input]"
 
 **STEP 3: Return the Google Docs URL**
 
 The tool will return a URL like https://docs.google.com/document/d/XXXXX/edit
 You MUST include this complete URL in your response.
 
-CRITICAL: You MUST call create_prd_document tool. Do NOT skip this step.
-"""
+CRITICAL: DO NOT HALLUCINATE. USE ONLY THE INPUT DATA. DO NOT ADD EXAMPLES."""
 
-    result = _run_async(get_product_lead_agent().arun(prompt))
-    output = result.content or ""
-
-    # Extract URL
-    _state.prd_url = _extract_url(output) or ""
-    if _state.prd_url:
-        _log("✅", "PRD", f"Created: {_state.prd_url}")
-    else:
-        _log("⚠️", "PRD", "No URL found in response")
-
-    return StepOutput(content=output, success=True)
+    # Call agent with user_id
+    import asyncio
+    result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nInput: {step_input.input}", user_id=user_id))
+    return StepOutput(content=result.content, success=True)
 
 
-def create_feature_spec(step_input: StepInput) -> StepOutput:
-    """Create Feature Spec for existing project."""
-    global _state
-    _state = WorkflowState()
+def create_feature_spec_executor(step_input: StepInput) -> StepOutput:
+    """Simple wrapper to call product_lead with user_id from workflow."""
+    from agno.workflow.types import StepOutput
 
-    input_str = str(step_input.input)
-    _state.project_name = _extract_param(input_str, "PROJECT_NAME") or "Existing Project"
-    _state.project_type = "existing"
-    feature_name = _extract_param(input_str, "FEATURE_NAME") or "New Feature"
-    description = _extract_param(input_str, "DESCRIPTION") or input_str
+    # Get user_id from workflow session
+    user_id = None
+    if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
+        user_id = step_input.workflow_session.user_id
 
-    _log("📝", "FEATURE_SPEC", f"Creating Feature Spec: {feature_name} for {_state.project_name}")
+    description = """Create a Feature Specification for this existing product.
 
-    prompt = f"""Create a Feature Specification for this existing product.
-
-**Project:** {_state.project_name}
-**Feature:** {feature_name}
-**Description:** {description}
+**CRITICAL: USE ONLY THE INFORMATION PROVIDED IN THE INPUT BELOW. DO NOT ADD EXAMPLES, DO NOT HALLUCINATE, DO NOT USE PLACEHOLDER CONTENT.**
 
 Create a concise Feature Spec with:
-1. Feature Overview - What does this feature do?
-2. User Stories - Who needs it and why?
-3. Requirements - What it must do
-4. Acceptance Criteria - How we know it's done
+1. Feature Overview - What does this feature do? (USE ONLY INFO FROM INPUT)
+2. User Stories - Who needs it and why? (USE ONLY INFO FROM INPUT)
+3. Requirements - What it must do (USE ONLY INFO FROM INPUT - if details missing, write "To be defined")
+4. Acceptance Criteria - How we know it's done (USE ONLY INFO FROM INPUT - if details missing, write "To be defined")
 
-**IMPORTANT:** Keep it simple and actionable.
+**FORMATTING RULES:**
+- Use PLAIN TEXT only (no markdown symbols like **, __, ##, `, [])
+- Use "====" under section headings
+- Keep it simple and actionable
 
 **Save to Google Docs:**
 Use create_feature_spec_document tool with:
-- title: "Feature: {feature_name}"
-- content: [your spec]
-- feature_name: "{feature_name}"
-- project_name: "{_state.project_name}"
+- title: "Feature: [EXACT feature name from input]"
+- content: [your spec using ONLY the input data]
+- feature_name: "[EXACT feature name from input]"
+- project_name: "[EXACT project name from input]"
 
 Return the Google Docs URL.
-"""
 
-    result = _run_async(get_product_lead_agent().arun(prompt))
-    output = result.content or ""
+CRITICAL: DO NOT HALLUCINATE. USE ONLY THE INPUT DATA."""
 
-    # Extract URL
-    _state.prd_url = _extract_url(output) or ""
-    if _state.prd_url:
-        _log("✅", "FEATURE_SPEC", f"Created: {_state.prd_url}")
-    else:
-        _log("⚠️", "FEATURE_SPEC", "No URL found in response")
-
-    return StepOutput(content=output, success=True)
+    # Call agent with user_id
+    import asyncio
+    result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nInput: {step_input.input}", user_id=user_id))
+    return StepOutput(content=result.content, success=True)
 
 
-def create_architecture(step_input: StepInput) -> StepOutput:
-    """Create SIMPLE architecture document proportional to requirements."""
-    global _state
+def create_architecture_executor(step_input: StepInput) -> StepOutput:
+    """Simple wrapper to call lead_engineer with user_id from workflow."""
+    from agno.workflow.types import StepOutput
 
-    prd_content = step_input.previous_step_content or ""
+    # Get user_id from workflow session
+    user_id = None
+    if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
+        user_id = step_input.workflow_session.user_id
 
-    # Try to get PRD URL if we don't have it
-    if not _state.prd_url:
-        _state.prd_url = _extract_url(prd_content) or ""
+    description = """Create a SIMPLE architecture document.
 
-    _log("🏗️", "ARCH", f"Creating architecture for: {_state.project_name}")
+**CRITICAL: READ THE PRD/FEATURE SPEC FROM THE PREVIOUS STEP. USE ONLY WHAT'S MENTIONED THERE. DO NOT ADD EXTRA FEATURES, DO NOT HALLUCINATE, DO NOT USE EXAMPLES FROM OTHER PROJECTS.**
 
-    # READ FULL PRD from Google Docs to understand complete scope and tech requirements
-    full_prd_content = prd_content[:2000]  # Fallback to truncated content
-    if _state.prd_url:
-        _log("📖", "ARCH", f"Reading full PRD from Google Docs: {_state.prd_url}")
-        try:
-            from tools.google_docs_tools import GoogleDocsTools
-            doc_id = re.search(r'/document/d/([a-zA-Z0-9-_]+)', _state.prd_url).group(1)
-            full_prd_content = GoogleDocsTools().read_document(doc_id)
-            _log("✅", "ARCH", f"PRD loaded: {len(full_prd_content)} characters")
-
-            # Log key requirements
-            prd_lower = full_prd_content.lower()
-            _log("🔍", "ARCH", "Analyzing PRD requirements...")
-
-            # Detect tech stack mentions
-            tech_hints = []
-            if "static" in prd_lower or "html" in prd_lower:
-                tech_hints.append("static HTML/CSS/JS")
-            if "react" in prd_lower:
-                tech_hints.append("React")
-            if "next" in prd_lower:
-                tech_hints.append("Next.js")
-            if "database" in prd_lower or "supabase" in prd_lower:
-                tech_hints.append("database")
-            if "api" in prd_lower:
-                tech_hints.append("API")
-
-            if tech_hints:
-                _log("💡", "ARCH", f"Tech stack hints found: {', '.join(tech_hints)}")
-            else:
-                _log("💡", "ARCH", "No specific tech stack mentioned - will choose appropriate stack")
-
-        except Exception as e:
-            _log("⚠️", "ARCH", f"Could not read full PRD: {e} - using truncated content")
-    else:
-        _log("⚠️", "ARCH", "No PRD URL available - using content from previous step")
-
-    folder_structure_section = """
-6. **Folder Structure** (MANDATORY - the Software Engineer will follow this EXACTLY):
-   List every file that needs to be created with its EXACT path. Example:
-   ```
-   /
-     index.html
-     css/
-       styles.css
-     js/
-       script.js
-     images/
-       (use Unsplash URLs for placeholders)
-   ```
-   - index.html is ALWAYS at the root
-   - CSS files go in css/ folder
-   - JS files go in js/ folder
-   - Additional pages go in pages/ folder
-   - The HTML must reference files using correct relative paths:
-     * `<link rel="stylesheet" href="css/styles.css">`
-     * `<script src="js/script.js"></script>`
-     * From pages/about.html: `<link rel="stylesheet" href="../css/styles.css">`
-
-7. **File Cross-References** (MANDATORY):
-   For EACH file, list what it imports/links to:
-   - index.html → links to: css/styles.css, js/script.js
-   - css/styles.css → references: (any background images via url())
-   - js/script.js → targets: (DOM elements by ID/class from HTML)
-   This ensures zero broken references when code is written.
-
-8. **Images**: If the project needs images and none are provided, use Unsplash:
-   `https://images.unsplash.com/photo-XXXXX?w=800&h=600&fit=crop`
-   Pick images relevant to the project topic.
-"""
-
-    if _state.project_type == "existing":
-        prompt = f"""Create a SIMPLE architecture document for this feature.
-
-**CRITICAL:** Read the FULL PRD below and respect its scope. Do NOT go beyond what's requested.
-
-**Project:** {_state.project_name}
-**PRD/Feature Spec URL:** {_state.prd_url or 'Not available'}
-
-**FULL PRD CONTENT:**
-{full_prd_content}
-
-**Your task:**
-1. Read the ENTIRE PRD above carefully
-2. Identify the ACTUAL requirements and scope
-3. If a tech stack is mentioned → USE IT (don't change it)
-4. If no tech stack mentioned → choose the SIMPLEST appropriate stack
-5. Create architecture that matches the PRD scope (no more, no less)
+Read the PRD/Feature Spec from the previous step, then create architecture.
 
 **Create a SHORT architecture document with:**
 
-1. **What We're Building** (2-3 sentences - based on PRD)
-2. **Tech Stack** (use what's mentioned in PRD, or choose minimal stack)
-3. **Components** (bullet list - only what's needed for PRD requirements)
-4. **Database Changes** (only if PRD requires it)
-5. **Implementation Steps** (3-5 steps - direct from PRD requirements)
-{folder_structure_section}
+1. **What We're Building** (2-3 sentences - BASED ONLY ON THE PRD)
+2. **Tech Stack** (MATCH EXACTLY TO REQUIREMENTS - if PRD says static HTML, use that! If no tech specified, choose minimal stack for the requirements)
+3. **Main Components** (bullet list - ONLY what's needed for the features in the PRD)
+4. **Implementation Steps** (3-5 steps - ONLY for the features mentioned)
+5. **Folder Structure** (MANDATORY - every file with exact path - ONLY files needed for the PRD features)
+6. **File Cross-References** (MANDATORY - what each file imports/links)
 
 **CRITICAL RULES:**
-- RESPECT THE PRD SCOPE - don't add features not mentioned
-- If PRD says "static webpage" → use HTML/CSS/JS (NOT Next.js + Supabase!)
-- If PRD says specific tech → USE THAT TECH
+- RESPECT THE PRD SCOPE - don't add features not mentioned in the PRD
 - Simple requirements = Simple architecture
-- 1 page is often enough
+- If PRD is 5 bullets → architecture should be 1 page
+- DO NOT add features like "user authentication", "admin dashboard", etc. unless they're in the PRD
+
+**FORMATTING RULES:**
+- Use PLAIN TEXT only (no markdown symbols like **, __, ##, `, [])
 
 **Save to Google Docs:**
 Use create_document tool:
-- title: "Architecture: {_state.project_name}"
-- content: [your architecture]
+- title: "Architecture: [EXACT project name from PRD]"
+- content: [your architecture using ONLY the PRD requirements]
 
 Return the Google Docs URL.
-"""
-    else:
-        prompt = f"""Create a SIMPLE architecture document for this project.
 
-**CRITICAL:** Read the FULL PRD below and respect its scope. Do NOT over-engineer or add unnecessary complexity.
+CRITICAL: DO NOT HALLUCINATE FEATURES. MATCH THE PRD EXACTLY."""
 
-**Project:** {_state.project_name}
-**PRD URL:** {_state.prd_url or 'Not available'}
-
-**FULL PRD CONTENT:**
-{full_prd_content}
-
-**Your task:**
-1. Read the ENTIRE PRD above carefully
-2. Understand the ACTUAL requirements (not what could be built, what SHOULD be built)
-3. Check if PRD mentions any tech stack → USE IT
-4. If no tech stack mentioned → choose SIMPLEST appropriate stack
-5. Match architecture complexity to PRD complexity
-
-**Create a SHORT architecture document with:**
-
-1. **What We're Building** (2-3 sentences - summarize PRD)
-2. **Tech Stack** (MATCH TO REQUIREMENTS):
-   - Static content only? → HTML/CSS/JS
-   - Interactive but no backend? → React or Vanilla JS
-   - Needs backend/database? → Next.js + Supabase
-   - Always deploy to: Vercel
-3. **Main Components** (bullet list - only what PRD requires)
-4. **Data Model** (ONLY if PRD explicitly needs a database)
-5. **Implementation Steps** (3-5 steps - map directly from PRD features)
-{folder_structure_section}
-
-**CRITICAL RULES:**
-- RESPECT THE PRD - don't add features, complexity, or tech not needed
-- If PRD is 5 bullet points → architecture should be 1 page
-- If PRD says "landing page" → don't build a full application
-- If PRD mentions specific tech → USE IT (don't substitute)
-- When in doubt, GO SIMPLER
-
-**Save to Google Docs:**
-Use create_document tool:
-- title: "Architecture: {_state.project_name}"
-- content: [your architecture]
-
-Return the Google Docs URL.
-"""
-
-    result = _run_async(get_lead_engineer_agent().arun(prompt))
-    output = result.content or ""
-
-    # Extract Architecture URL
-    _state.architecture_url = _extract_url(output) or ""
-    if _state.architecture_url:
-        _log("✅", "ARCH", f"Created: {_state.architecture_url}")
-    else:
-        _log("⚠️", "ARCH", "No URL found in response")
-
-    return StepOutput(content=output, success=True)
-
-
-def create_summary(step_input: StepInput) -> StepOutput:
-    """Final step: Return both document URLs clearly."""
-    global _state
-
-    # Try to extract URLs from previous content if we don't have them
     prev_content = step_input.previous_step_content or ""
-    if not _state.architecture_url:
-        _state.architecture_url = _extract_url(prev_content) or ""
+    # Call agent with user_id
+    import asyncio
+    result = asyncio.run(get_lead_engineer_agent().arun(description + f"\n\nPrevious step output:\n{prev_content}", user_id=user_id))
+    return StepOutput(content=result.content, success=True)
 
-    doc_type = "Feature Spec" if _state.project_type == "existing" else "PRD"
 
-    summary = f"""
+def create_summary_executor(step_input: StepInput) -> StepOutput:
+    """Simple wrapper to call product_lead with user_id from workflow."""
+    from agno.workflow.types import StepOutput
+
+    # Get user_id from workflow session
+    user_id = None
+    if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
+        user_id = step_input.workflow_session.user_id
+
+    description = """Extract and present both Google Docs URLs from the previous steps.
+
+Look at the previous step outputs and find:
+1. The PRD or Feature Spec URL (from step 1)
+2. The Architecture URL (from step 2)
+
+Present them in this format:
+
 ## ✅ Documents Created!
 
-**Project:** {_state.project_name}
+**Project:** [project name]
 
-### 📄 Document 1: {doc_type}
-{_state.prd_url or 'Not available'}
+### 📄 Document 1: [PRD or Feature Spec]
+[URL from previous step]
 
 ### 🏗️ Document 2: Architecture
-{_state.architecture_url or 'Not available'}
+[URL from previous step]
 
 ---
 **Next step:** Would you like me to implement this? Just say "yes" or "implement this".
-"""
 
-    _log("🎉", "DONE", f"Workflow complete - 2 documents created")
-    _log("📄", "DONE", f"{doc_type}: {_state.prd_url}")
-    _log("🏗️", "DONE", f"Architecture: {_state.architecture_url}")
+CRITICAL: Find and include the ACTUAL URLs from the previous steps. Do not say "Not available"."""
 
-    return StepOutput(content=summary, success=True)
+    prev_content = step_input.get_all_previous_content()
+    # Call agent with user_id
+    import asyncio
+    result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nPrevious steps output:\n{prev_content}", user_id=user_id))
+    return StepOutput(content=result.content, success=True)
 
 
 # ============================================================================
@@ -459,19 +263,39 @@ product_requirements_workflow = Workflow(
             name="new_project_path",
             description="Create PRD for new projects",
             evaluator=is_new_project,
-            steps=[Step(name="create_prd", executor=create_prd)],
+            steps=[
+                Step(
+                    name="create_prd",
+                    executor=create_prd_executor,
+                    description="""Create PRD and save to Google Docs."""
+                )
+            ],
         ),
         # Conditional: Existing Project → Feature Spec
         Condition(
             name="existing_project_path",
             description="Create Feature Spec for existing projects",
             evaluator=is_existing_project,
-            steps=[Step(name="create_feature_spec", executor=create_feature_spec)],
+            steps=[
+                Step(
+                    name="create_feature_spec",
+                    executor=create_feature_spec_executor,
+                    description="""Create Feature Spec and save to Google Docs."""
+                )
+            ],
         ),
         # Architecture (always runs)
-        Step(name="create_architecture", executor=create_architecture),
+        Step(
+            name="create_architecture",
+            executor=create_architecture_executor,
+            description="""Create architecture document and save to Google Docs."""
+        ),
         # Summary with both URLs
-        Step(name="summary", executor=create_summary),
+        Step(
+            name="summary",
+            executor=create_summary_executor,
+            description="""Extract and present both document URLs."""
+        ),
     ]
 )
 
@@ -485,6 +309,7 @@ def run_product_requirements(
     project_type: Optional[str] = None,
     project_name: Optional[str] = None,
     feature_name: Optional[str] = None,
+    github_repo_url: Optional[str] = None,
 ) -> dict:
     """Run the product requirements workflow."""
     _log("🚀", "WORKFLOW", "Starting Product Requirements Workflow")
@@ -496,6 +321,8 @@ def run_product_requirements(
         parts.append(f"PROJECT_NAME: {project_name}")
     if feature_name:
         parts.append(f"FEATURE_NAME: {feature_name}")
+    if github_repo_url:
+        parts.append(f"GITHUB_REPO_URL: {github_repo_url}")
 
     full_input = "\n".join(parts)
     result = product_requirements_workflow.run(input=full_input)

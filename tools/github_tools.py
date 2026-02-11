@@ -178,7 +178,8 @@ class GitHubTools(Toolkit):
         name: str,
         description: str = "",
         private: bool = False,
-        auto_init: bool = True
+        auto_init: bool = True,
+        org: str = ""
     ) -> str:
         """
         Create a new repository.
@@ -188,6 +189,7 @@ class GitHubTools(Toolkit):
             description: Repository description
             private: Whether the repo should be private
             auto_init: Initialize with a README
+            org: Organization name (optional). If provided, creates repo under org instead of user.
 
         Returns:
             JSON string with created repository information
@@ -198,7 +200,14 @@ class GitHubTools(Toolkit):
             "private": private,
             "auto_init": auto_init
         }
-        result = self._request("POST", "/user/repos", data=data)
+
+        # If org is specified, create under organization; otherwise create under authenticated user
+        if org:
+            endpoint = f"/orgs/{org}/repos"
+        else:
+            endpoint = "/user/repos"
+
+        result = self._request("POST", endpoint, data=data)
         return json.dumps(result, indent=2)
 
     def list_repository_files(

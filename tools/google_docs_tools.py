@@ -88,21 +88,28 @@ def _load_credentials() -> Credentials:
     return creds
 
 
-def _get_docs_service():
-    """Build Google Docs API service."""
-    return build("docs", "v1", credentials=_load_credentials())
+def _get_docs_service(creds=None):
+    """Build Google Docs API service. Uses provided creds or loads from env/file."""
+    return build("docs", "v1", credentials=creds or _load_credentials())
 
 
 class GoogleDocsTools(Toolkit):
     """
     Tools for creating Google Docs documents via the real Docs API.
 
-    Token sources (checked in order):
-    1. GOOGLE_DOCS_TOKEN env var (JSON string) - for Railway/production
-    2. tests/google_docs/token.json file - for local development
+    Credential sources (checked in order):
+    1. creds parameter (per-user OAuth from user_oauth_connections table)
+    2. GOOGLE_DOCS_TOKEN env var (JSON string) - for Railway/production
+    3. tests/google_docs/token.json file - for local development
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, creds: "Credentials | None" = None, **kwargs):
+        """
+        Args:
+            creds: Google OAuth2 Credentials object (per-user). If not provided,
+                   falls back to _load_credentials() (env var / token.json).
+        """
+        self._creds = creds
         tools = [
             self.create_prd_document,
             self.create_feature_spec_document,
@@ -138,7 +145,7 @@ class GoogleDocsTools(Toolkit):
             JSON string with document_url, document_id, and title
         """
         try:
-            service = _get_docs_service()
+            service = _get_docs_service(self._creds)
 
             doc = service.documents().create(
                 body={"title": f"PRD: {project_name} - {title}"}
@@ -188,7 +195,7 @@ class GoogleDocsTools(Toolkit):
             JSON string with document_url, document_id, and title
         """
         try:
-            service = _get_docs_service()
+            service = _get_docs_service(self._creds)
 
             doc = service.documents().create(
                 body={"title": f"Feature Spec: {feature_name} ({project_name})"}
@@ -234,7 +241,7 @@ class GoogleDocsTools(Toolkit):
             JSON string with document_url, document_id, and title
         """
         try:
-            service = _get_docs_service()
+            service = _get_docs_service(self._creds)
 
             doc = service.documents().create(
                 body={"title": title}
@@ -278,7 +285,7 @@ class GoogleDocsTools(Toolkit):
             Exception if document cannot be read
         """
         try:
-            service = _get_docs_service()
+            service = _get_docs_service(self._creds)
 
             # Get the document
             doc = service.documents().get(documentId=document_id).execute()

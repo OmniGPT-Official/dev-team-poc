@@ -37,7 +37,12 @@ class VercelDeployTools(Toolkit):
       3. Return the live URL
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, token: str | None = None, **kwargs):
+        """
+        Args:
+            token: Vercel API token. If not provided, falls back to VERCEL_TOKEN env var.
+        """
+        self._token = token
         tools = [self.deploy_to_vercel]
         super().__init__(name="vercel", tools=tools, **kwargs)
 
@@ -62,8 +67,8 @@ class VercelDeployTools(Toolkit):
         _log("VERCEL DEPLOYMENT STARTING")
         _log("=" * 50)
 
-        # Check VERCEL_TOKEN
-        vercel_token = os.environ.get("VERCEL_TOKEN", "")
+        # Check VERCEL_TOKEN (prefer injected token, fall back to env var)
+        vercel_token = self._token or os.environ.get("VERCEL_TOKEN", "")
         if not vercel_token:
             _log("ERROR: VERCEL_TOKEN environment variable is NOT SET!")
             return json.dumps({
@@ -93,6 +98,7 @@ class VercelDeployTools(Toolkit):
 
         env = {
             **os.environ,
+            "VERCEL_TOKEN":          vercel_token,
             "DEPLOY_GITHUB_ORG":     github_owner,
             "DEPLOY_GITHUB_REPO":    github_repo,
             "DEPLOY_PROJECT_NAME":   project_name,
