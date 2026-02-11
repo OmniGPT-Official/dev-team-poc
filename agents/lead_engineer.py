@@ -12,7 +12,7 @@ from agno.agent import Agent
 from db import db
 from agno.models.openrouter import OpenRouter
 from instructions.lead_engineer_instructions import LEAD_ENGINEER_INSTRUCTIONS
-from services.tool_injector import inject_user_tools
+from services.tool_injector import make_tool_hook
 
 lead_engineer_agent = Agent(
     name="Lead Engineer Agent",
@@ -24,7 +24,7 @@ lead_engineer_agent = Agent(
     markdown=True,
     instructions=LEAD_ENGINEER_INSTRUCTIONS,
     tools=[],  # Tools injected via pre_hooks
-    pre_hooks=[inject_user_tools],  # Inject per-user GitHub, Google Docs tools
+    pre_hooks=[make_tool_hook("google_docs", "github")],  # Inject per-user Google Docs and GitHub tools (updated from inject_user_tools)
     tool_call_limit=100,
-    debug_mode=True,
+    debug_mode=False,
 )

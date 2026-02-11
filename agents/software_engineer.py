@@ -26,5 +26,5 @@ software_engineer_agent = Agent(
     tools=[],  # Tools injected via pre_hooks
     pre_hooks=[inject_user_tools],  # Inject per-user GitHub, Vercel, Google Docs tools
     tool_call_limit=100,
-    debug_mode=True,
+    debug_mode=False,
 )

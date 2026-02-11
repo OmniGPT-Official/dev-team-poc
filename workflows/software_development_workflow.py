@@ -57,22 +57,32 @@ _state = ImplementationState()
 # ============================================================================
 
 def _run_with_heartbeat(coro, step_name: str, timeout_seconds: int = 0):
-    """Run coroutine in a background thread with heartbeat logging.
+    """Run coroutine in a background thread with heartbeat logging while preserving contextvars.
     If timeout_seconds <= 0, no timeout is applied (waits indefinitely).
     Returns the agent result, or None if errored."""
+    import contextvars
+
     result_holder = [None]
     error_holder = [None]
     done_event = threading.Event()
 
+    # Capture current context (including user_id contextvar) in parent thread
+    ctx = contextvars.copy_context()
+
     def _execute():
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result_holder[0] = loop.run_until_complete(coro)
-        except Exception as e:
-            error_holder[0] = e
-        finally:
-            done_event.set()
+        """Execute coroutine in captured context."""
+        def run_in_context():
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result_holder[0] = loop.run_until_complete(coro)
+            except Exception as e:
+                error_holder[0] = e
+            finally:
+                done_event.set()
+
+        # Run in the captured context from parent thread
+        ctx.run(run_in_context)
 
     thread = threading.Thread(target=_execute, daemon=True)
     thread.start()
@@ -201,11 +211,24 @@ def _get_github_tools():
 def _get_google_docs_tools():
     """Create GoogleDocsTools with per-user OAuth creds (falls back to env var / token.json)."""
     from tools.google_docs_tools import GoogleDocsTools
+    from google.auth.transport.requests import Request as GoogleRequest
     user_id = _get_user_id()
     if user_id:
-        from services.oauth_store import get_google_credentials
-        creds = get_google_credentials(user_id, "google_sheets")
+        from services.oauth_store import get_google_credentials, update_google_credentials
+        # Use google_docs provider for Google Docs operations (not google_sheets)
+        creds = get_google_credentials(user_id, "google_docs")
         if creds:
+            # Refresh token if expired
+            if creds.expired and creds.refresh_token:
+                try:
+                    _log("🔄", "OAUTH", "Refreshing expired Google OAuth token...")
+                    creds.refresh(GoogleRequest())
+                    # Persist refreshed token back to database
+                    update_google_credentials(user_id, "google_docs", creds)
+                    _log("✅", "OAUTH", "Token refreshed and persisted")
+                except Exception as e:
+                    _log("❌", "OAUTH", f"Token refresh failed: {e}")
+                    # Continue anyway - the API call might still work or will fail with a better error
             return GoogleDocsTools(creds=creds)
     return GoogleDocsTools()
 
@@ -266,6 +289,11 @@ def read_architecture(step_input: StepInput) -> StepOutput:
     """Step 1: Read Architecture from Google Docs. Detects existing vs new project."""
     global _state
     _state = ImplementationState()  # Fresh state
+
+    # Extract user_id from workflow session (same pattern as product_requirements_workflow)
+    if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
+        _state.user_id = step_input.workflow_session.user_id
+        _log("🔑", "READ", f"Extracted user_id from workflow: {_state.user_id}")
 
     input_str = step_input.input if isinstance(step_input.input, str) else ""
     parsed = parse_input_urls(input_str)
@@ -377,12 +405,37 @@ def create_github_repo(step_input: StepInput) -> StepOutput:
     # NEW PROJECT — create repo with initial structure
     # =====================================================================
     _log("🏗️", "REPO", f"New project — creating repository: {_state.github_owner}/{_state.github_repo}")
-    result = json.loads(gh.create_repository(
-        name=_state.github_repo,
-        description=_state.project_name,
-        private=False,
-        auto_init=True,
-    ))
+
+    # Determine if we're creating under user or organization
+    # Get the authenticated user to compare with owner
+    try:
+        authenticated_user = json.loads(gh.get_authenticated_user()).get("login", "")
+        _log("👤", "REPO", f"Authenticated user: {authenticated_user}, Target owner: {_state.github_owner}")
+    except Exception as e:
+        _log("⚠️", "REPO", f"Could not get authenticated user: {e}")
+        authenticated_user = ""
+
+    # If owner is different from authenticated user, assume it's an organization
+    is_org = authenticated_user and _state.github_owner and authenticated_user.lower() != _state.github_owner.lower()
+
+    if is_org:
+        _log("🏢", "REPO", f"Creating repo under organization: {_state.github_owner}")
+        result = json.loads(gh.create_repository(
+            name=_state.github_repo,
+            description=_state.project_name,
+            private=False,
+            auto_init=True,
+            org=_state.github_owner,
+        ))
+    else:
+        _log("👤", "REPO", f"Creating repo under user account: {_state.github_owner}")
+        result = json.loads(gh.create_repository(
+            name=_state.github_repo,
+            description=_state.project_name,
+            private=False,
+            auto_init=True,
+        ))
+
     if result.get("error"):
         # 422 = already exists — that's fine, continue
         if result.get("status_code") != 422:
@@ -521,7 +574,8 @@ Output ONLY the JavaScript code, nothing else. Start with // or 'use strict'"""
     if not prompt:
         return ""
 
-    result = _run_with_heartbeat(agent.arun(prompt), f"DEV-{file_type.upper()}", timeout_seconds=0)
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(agent.arun(prompt, user_id=user_id), f"DEV-{file_type.upper()}", timeout_seconds=0)
     if result and result.content:
         return _extract_code(result.content)
     return ""
@@ -613,8 +667,9 @@ For EACH file you change, call create_or_update_file with the COMPLETE updated f
 List exactly which files you modified when done."""
 
         _log("🤖", "DEV", "Asking Software Engineer to update existing code...")
+        user_id = _get_user_id()
         result = _run_with_heartbeat(
-            software_engineer_agent.arun(prompt), "DEV-UPDATE", timeout_seconds=0
+            software_engineer_agent.arun(prompt, user_id=user_id), "DEV-UPDATE", timeout_seconds=0
         )
 
         if result and result.content:
@@ -745,7 +800,8 @@ def code_review_with_agent(step_input: StepInput) -> StepOutput:
 3. Reply: APPROVED ✓ or CHANGES_REQUESTED: [issues]
 """
 
-    result = _run_with_heartbeat(lead_engineer_agent.arun(prompt), "CODE_REVIEW", timeout_seconds=90)
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(lead_engineer_agent.arun(prompt, user_id=user_id), "CODE_REVIEW", timeout_seconds=90)
 
     if result is None:
         # Timeout/error — auto-approve since reviews are lenient by policy
@@ -807,7 +863,8 @@ project_name: {_state.project_name}
 """
 
     _log("🤖", "DEPLOY", "Asking Vercel Deployer agent...")
-    result = _run_with_heartbeat(vercel_deployer_agent.arun(prompt), "DEPLOY", timeout_seconds=0)
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(vercel_deployer_agent.arun(prompt, user_id=user_id), "DEPLOY", timeout_seconds=0)
 
     if result is None:
         _log("❌", "DEPLOY", "Agent failed")

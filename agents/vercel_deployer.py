@@ -51,5 +51,5 @@ vercel_deployer_agent = Agent(
     tools=[],  # Tools injected via pre_hooks
     pre_hooks=[inject_user_tools],  # Inject per-user Vercel tools
     tool_call_limit=5,
-    debug_mode=True,
+    debug_mode=False,
 )

@@ -25,5 +25,5 @@ security_engineer_agent = Agent(
     tools=[],  # Tools injected via pre_hooks
     pre_hooks=[inject_user_tools],  # Inject per-user GitHub tools
     tool_call_limit=50,  # Prevent infinite loops
-    debug_mode=True,
+    debug_mode=False,
 )
