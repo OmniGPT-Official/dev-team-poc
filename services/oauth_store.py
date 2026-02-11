@@ -15,11 +15,15 @@ def get_supabase_client() -> Client:
     if _supabase_client is None:
         url = getenv("SUPABASE_URL")
         key = getenv("SUPABASE_SERVICE_ROLE_KEY")
+        url_preview = f"{url[:30]}..." if url and len(url) > 30 else url
+        key_preview = f"{key[:8]}...{key[-4:]}" if key and len(key) > 12 else ("(not set)" if not key else "***")
+        print(f"[supabase] Initializing client — URL={url_preview}, KEY={key_preview}")
         if not url or not key:
             raise RuntimeError(
                 "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set"
             )
         _supabase_client = create_client(url, key)
+        print(f"[supabase] Client created successfully")
     return _supabase_client
 
 

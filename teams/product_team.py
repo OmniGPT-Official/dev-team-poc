@@ -41,8 +41,9 @@ def run_software_development(input_data: str) -> str:
     - ARCHITECTURE_URL (required) - Google Docs URL
     - GITHUB_REPO_URL (optional) - Full GitHub URL for existing projects (e.g. https://github.com/user/repo)
     - GITHUB_REPO (optional) - repo name
-    - GITHUB_OWNER (optional) - owner name
     - PROJECT_NAME (optional) - project name
+
+    Note: GitHub owner is auto-resolved from the user's GitHub token. No need to pass it.
 
     Returns deployment link + GitHub repo URL.
     """
@@ -124,8 +125,8 @@ ARCHITECTURE_URL: https://docs.google.com/document/d/xxx (REQUIRED)
 GITHUB_REPO_URL: https://github.com/user/repo (for EXISTING projects - CRITICAL!)
 PROJECT_NAME: MyApp (optional)
 GITHUB_REPO: my-app (optional, auto-extracted from URL if provided)
-GITHUB_OWNER: username (optional, auto-extracted from URL if provided)
 ```
+Note: GitHub owner is auto-resolved from the user's token. No need to pass GITHUB_OWNER.
 
 **Example - NEW project:**
 ```
