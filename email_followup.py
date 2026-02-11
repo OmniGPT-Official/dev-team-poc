@@ -117,5 +117,4 @@ email_followup_agent = Agent(
     add_name_to_context=True,
     markdown=True,
     reasoning=False,
-    monitoring=True,  # FIX: Enable Agno dashboard monitoring
 )
