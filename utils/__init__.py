@@ -35,6 +35,15 @@ from utils.knowledge_base import (
     get_knowledge_base,
 )
 
+# Email tracker for duplicate prevention
+from utils.email_tracker import (
+    mark_email_sent,
+    check_email_sent,
+    get_sent_count,
+    get_sent_list,
+    reset_tracker,
+)
+
 __all__ = [
     # Smart MCP (recommended)
     "SmartGitHubMCP",
@@ -53,4 +62,10 @@ __all__ = [
     "GitHubMCPError",
     # Knowledge base
     "get_knowledge_base",
+    # Email tracker
+    "mark_email_sent",
+    "check_email_sent",
+    "get_sent_count",
+    "get_sent_list",
+    "reset_tracker",
 ]
