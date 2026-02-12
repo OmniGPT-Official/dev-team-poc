@@ -16,6 +16,7 @@ from agents.product_lead import product_lead_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
 from agents.security_engineer import security_engineer_agent
+from agents.credentials_manager import credentials_manager_agent
 from utils.knowledge_base import get_knowledge_base
 from workflows.product_requirements_workflow import product_requirements_workflow
 from workflows.software_development_workflow import software_development_workflow
@@ -82,6 +83,7 @@ product_team = Team(
     model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=16384),
     db=db,
     members=[
+        credentials_manager_agent,
         product_lead_agent,
         lead_engineer_agent,
         software_engineer_agent,
@@ -182,6 +184,14 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 
 ## TEAM ROLES
 
+**Credentials Manager** (Setup & Validation - RUNS FIRST)
+- Validates all required credentials BEFORE any workflow starts
+- Checks GitHub token, Vercel token, Google OAuth credentials
+- Asks user for missing tokens and stores them after validation
+- Extracts GitHub username from token (used for repo owner)
+- Reports when all credentials are valid
+- NOTE: NO workflow can run until Credentials Manager confirms everything is valid
+
 **Product Lead** (Discovery Only)
 - Asks business questions to understand what the user wants
 - Determines if this is a NEW project or EXISTING product
@@ -206,8 +216,15 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 
 **IMPORTANT: The TEAM calls all tools - not individual members.**
 
+**Phase 0: Credential Validation (MUST RUN FIRST)**
+1. **ALWAYS START** → Delegate to Credentials Manager: "Validate all user credentials"
+2. **Credentials Manager** → Checks GitHub, Vercel, Google tokens
+3. **If any missing** → Credentials Manager asks user for tokens → validates → stores
+4. **Once all valid** → Credentials Manager reports success with GitHub username
+5. **TEAM** → Proceeds to Phase 1 ONLY after credentials are validated
+
 **Phase 1: Requirements & Architecture**
-1. **ALWAYS START** → Search knowledge base for any existing project info
+1. **Search knowledge base** for any existing project info
 2. **Delegate to Product Lead** → "Gather requirements from the user" (NOT "create PRD" or "run workflow")
 3. **Product Lead** → Has conversation with user → Returns gathered requirements to Team
    - **If EXISTING project**: Product Lead MUST collect the GitHub repository URL from the user
@@ -252,9 +269,11 @@ When delegating to Product Lead, say:
 
 ## CRITICAL RULES
 
+0. **CREDENTIALS FIRST** - ALWAYS delegate to Credentials Manager FIRST before any other work. No workflows can run without valid credentials.
+
 1. **TEAM CALLS TOOLS** - The Team (you) calls `run_product_requirements` and `run_software_development` tools directly. Do NOT delegate tool calls to members.
 
-2. **ALWAYS SEARCH KNOWLEDGE BASE FIRST** - Before ANY work, search for existing project information
+2. **ALWAYS SEARCH KNOWLEDGE BASE FIRST** - After credential validation, search for existing project information
 
 3. **AUTO-RUN WHEN USER PROVIDES DOCUMENT** - If user says "implement this" OR provides a Google Docs URL:
    - If they also provided a GitHub repo URL → include it:
