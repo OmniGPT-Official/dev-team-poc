@@ -1,25 +1,21 @@
 """
-Campaign Manager - Pattern 1: Single Agent + Internal Workflow
+Campaign Manager - True Pattern 1: Single Agent
 
-A unified interface for outbound calling campaigns that internally orchestrates
-the full workflow: read leads → batch call → log results.
+A unified agent for outbound calling campaigns. User talks to ONE agent that
+handles the entire process: read leads → batch call → log results.
 
-User talks to ONE agent (Campaign Manager), which coordinates specialized
-sub-agents internally via workflow execution.
-
-Architecture Pattern: Single Agent + Internal Workflows
-- User Experience: Talk to one agent, get everything done
-- Internal: Workflow coordinates lead_reader, calling_coordinator, results_logger
-- Use Case: Deterministic process, hide complexity from user
+Architecture: Single Agent (no workflow, no team)
+- All tools directly on the agent
+- Clear step-by-step instructions
+- Simple conversational interface
 """
 
 from agno.agent import Agent
-from agno.workflow import Workflow, Step
 from agno.models.google import Gemini
-from agents.calling_agents import (
-    lead_reader_agent,
-    calling_coordinator_agent,
-    results_logger_agent,
+from tools.elevenlabs_tools import (
+    submit_batch_call,
+    get_batch_status,
+    retry_failed_calls,
 )
 from services.tool_injector import inject_user_tools
 from db import db
@@ -29,57 +25,7 @@ MODEL = Gemini(id="gemini-3-flash-preview")
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Internal Workflow (Hidden from User)
-# ─────────────────────────────────────────────────────────────────────────
-
-_outbound_calling_internal_workflow = Workflow(
-    name="_outbound_calling_workflow",  # _ prefix = internal/private
-    description="Internal workflow for automated outbound calling campaigns",
-    steps=[
-        Step(
-            name="Step 1: Read Leads",
-            agent=lead_reader_agent,
-            description="""
-            Read leads from user's Google Sheet.
-
-            Tasks:
-            1. Use read_sheet tool to fetch leads
-            2. Filter for valid phone numbers (E.164 format)
-            3. Return formatted leads list
-            """,
-        ),
-        Step(
-            name="Step 2: Submit Batch Call",
-            agent=calling_coordinator_agent,
-            description="""
-            Submit batch calling job to ElevenLabs.
-
-            Tasks:
-            1. Take leads from Step 1
-            2. Use submit_batch_call with proper formatting
-            3. Return batch_id for tracking
-            """,
-        ),
-        Step(
-            name="Step 3: Log Results",
-            agent=results_logger_agent,
-            description="""
-            Update Google Sheet with call results.
-
-            Tasks:
-            1. Use batch_id from Step 2
-            2. Monitor batch status
-            3. Update sheet with:
-               - Status: 'contacted'
-               - Last contact date: today's date
-            """,
-        ),
-    ],
-)
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Campaign Manager Agent (User Interface)
+# Campaign Manager - Single Agent with All Tools
 # ─────────────────────────────────────────────────────────────────────────
 
 campaign_manager = Agent(
@@ -87,76 +33,99 @@ campaign_manager = Agent(
     model=MODEL,
     description="Manages outbound calling campaigns from start to finish using Google Sheets and ElevenLabs",
     instructions=[
-        "You are the Campaign Manager - a single point of contact for outbound calling campaigns.",
+        "You are the Campaign Manager - a single agent that runs outbound calling campaigns.",
         "",
-        "## YOUR ROLE",
-        "You coordinate the entire calling campaign process internally.",
-        "User talks ONLY to you - they never interact with sub-agents.",
+        "## WORKFLOW PROCESS",
+        "When user wants to run a campaign, follow these steps in order:",
         "",
-        "## WORKFLOW STEPS",
-        "When user wants to run a campaign:",
+        "### STEP 1: Get Google Sheet URL",
+        "1. Ask: 'Please share your Google Sheet URL with the leads to call'",
+        "2. Validate it's a Google Sheets URL",
+        "3. Extract the spreadsheet ID (between /d/ and /edit)",
         "",
-        "### 1. Get Google Sheet URL",
-        "- Ask: 'Please share your Google Sheet URL with the leads to call'",
-        "- Validate the URL format",
-        "- Extract spreadsheet ID",
+        "### STEP 2: Read and Validate Leads",
+        "1. Use read_sheet tool with the spreadsheet ID",
+        "2. Expected columns: phone_number, restaurant_name, city, country, status, last_contact_date",
+        "3. Validate phone numbers are in E.164 format (+12025551234)",
+        "4. Filter for leads where status is empty or not 'contacted'",
+        "5. Report: '📊 Found X leads (Y with valid phone numbers)'",
         "",
-        "### 2. Run Internal Workflow",
-        "- Execute _outbound_calling_internal_workflow",
-        "- The workflow will:",
-        "  a) Read leads from the sheet",
-        "  b) Submit batch call to ElevenLabs",
-        "  c) Log results back to sheet",
+        "### STEP 3: Submit Batch Call",
+        "1. Format leads for ElevenLabs:",
+        "   - Each lead: {phone_number, restaurant_name, city, country}",
+        "2. Use submit_batch_call tool:",
+        "   - campaign_name: 'Campaign [Date]' or user-provided name",
+        "   - recipients: formatted leads list",
+        "3. Report: '✓ Batch submitted! Batch ID: batch_xyz'",
         "",
-        "### 3. Keep User Informed",
-        "Report progress throughout:",
-        "- '📊 Reading leads from your sheet...'",
-        "- '✓ Found X leads (Y with valid phone numbers)'",
-        "- '📞 Submitting batch call to ElevenLabs...'",
-        "- '✓ Batch submitted successfully! Batch ID: batch_xyz'",
-        "- '📝 Monitoring and logging results...'",
-        "- '✓ Campaign complete! All results logged to your sheet'",
+        "### STEP 4: Monitor and Log Results",
+        "1. Use get_batch_status with the batch_id",
+        "2. Report progress: 'X/Y calls completed'",
+        "3. Update Google Sheet:",
+        "   - Set status = 'contacted' for all called leads",
+        "   - Set last_contact_date = today's date (YYYY-MM-DD)",
+        "   - Use update_sheet in BATCH mode (one call for all updates)",
+        "4. Report: '✓ Campaign complete! All results logged'",
         "",
-        "## IMPORTANT RULES",
+        "## COMMUNICATION STYLE",
         "- Be conversational and clear",
+        "- Use emojis for visual progress: 📊 📞 ✓ ⚠️",
         "- Report progress at each major step",
-        "- Handle errors gracefully with helpful messages",
-        "- If OAuth credentials missing: 'Please connect your Google account in Settings'",
-        "- If ElevenLabs fails: Explain the error and next steps",
+        "- Celebrate success: 'Campaign complete! 🎉'",
         "",
-        "## GOOGLE SHEET REQUIREMENTS",
-        "The sheet should have these columns:",
-        "- phone_number (E.164 format: +12025551234)",
-        "- restaurant_name (or business name)",
-        "- city",
-        "- country",
-        "- status (you'll update this to 'contacted')",
-        "- last_contact_date (you'll update this to today's date)",
+        "## PHONE NUMBER VALIDATION",
+        "E.164 format required:",
+        "- ✅ Valid: +12025551234 (US), +442071234567 (UK), +66620230022 (Thailand)",
+        "- ❌ Invalid: (202) 555-1234, 2025551234, 202-555-1234",
+        "- Skip leads with invalid numbers and report count",
         "",
         "## ERROR HANDLING",
         "",
-        "**No Google credentials:**",
-        "- Tell user: 'You need to connect your Google account in Settings'",
-        "- Explain: 'This allows me to read from and update your Google Sheet'",
+        "**No Google Sheets credentials:**",
+        "- Message: 'Please connect your Google account in Settings → Integrations'",
+        "- Explain: 'I need Google Sheets access to read and update your leads'",
         "",
         "**Invalid phone numbers:**",
-        "- Skip leads without valid E.164 format",
-        "- Report: 'Skipped X leads with invalid phone numbers'",
+        "- Skip them and report: 'Skipped X leads with invalid phone numbers'",
+        "- Proceed with valid leads only",
         "",
         "**ElevenLabs API error:**",
-        "- Check if env vars are set (ELEVENLABS_API_KEY, etc.)",
-        "- Provide clear error message from API",
+        "- Check the error message from submit_batch_call",
+        "- Common issues:",
+        "  - Missing API key: 'ELEVENLABS_API_KEY not set'",
+        "  - Invalid agent ID: 'ELEVENLABS_AGENT_ID not found'",
+        "  - Network error: Report the error and suggest retry",
         "",
-        "## CONVERSATIONAL STYLE",
-        "- Friendly and professional",
-        "- Use emojis for visual progress indicators",
-        "- Provide clear next steps",
-        "- Celebrate successes: 'Campaign complete! 🎉'",
+        "**Batch call failures:**",
+        "- Use get_batch_status to check failed calls",
+        "- If failures exist, offer: 'Would you like me to retry the failed calls?'",
+        "- Use retry_failed_calls if user confirms",
+        "",
+        "## IMPORTANT RULES",
+        "- NEVER send calls without showing the user the leads list first",
+        "- ALWAYS get confirmation before submitting batch call",
+        "- ALWAYS update Google Sheet after calls complete",
+        "- Keep user informed with progress updates",
+        "- Be helpful and professional",
+        "",
+        "## GOOGLE SHEET REQUIREMENTS",
+        "Required columns:",
+        "- phone_number (E.164: +country_code + number)",
+        "- restaurant_name (or business_name)",
+        "- city",
+        "- country",
+        "- status (you'll update to 'contacted')",
+        "- last_contact_date (you'll update to today)",
     ],
-    tools=[_outbound_calling_internal_workflow],  # Workflow is a tool
-    pre_hooks=[inject_user_tools],  # OAuth for Google Sheets
+    tools=[
+        submit_batch_call,  # ElevenLabs batch calling
+        get_batch_status,   # Check batch progress
+        retry_failed_calls, # Retry failures
+    ],
+    # Google Sheets tools injected via pre-hook (OAuth)
+    pre_hooks=[inject_user_tools],
     db=db,
-    update_memory_on_run=True,  # Remember Sheet URLs across sessions
+    update_memory_on_run=True,  # Remember Sheet URLs
     add_history_to_context=True,
     add_datetime_to_context=True,
     markdown=True,
