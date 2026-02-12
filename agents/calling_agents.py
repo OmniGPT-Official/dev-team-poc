@@ -64,7 +64,6 @@ lead_reader_agent = Agent(
     db=db,
     add_history_to_context=False,  # FIX: Disable history to prevent context overflow in workflows
     num_history_messages=5,  # FIX: Limit to last 5 messages as safety measure
-    read_storage=False,  # FIX: Don't load previous runs
     markdown=True,
 )
 
@@ -97,7 +96,6 @@ calling_coordinator_agent = Agent(
     db=db,
     add_history_to_context=False,  # FIX: Disable history to prevent context overflow in workflows
     num_history_messages=5,  # FIX: Limit to last 5 messages as safety measure
-    read_storage=False,  # FIX: Don't load previous runs
     markdown=True,
 )
 
@@ -140,7 +138,6 @@ results_logger_agent = Agent(
     db=db,
     add_history_to_context=False,  # FIX: Disable history to prevent context overflow in workflows
     num_history_messages=5,  # FIX: Limit to last 5 messages as safety measure
-    read_storage=False,  # FIX: Don't load previous runs
     markdown=True,
 )
 
