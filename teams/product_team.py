@@ -294,5 +294,6 @@ When delegating to Product Lead, say:
     show_members_responses=True,
     add_history_to_context=True,
     num_history_messages=20,
+    add_team_history_to_members=True,
     debug_mode=False,
 )
