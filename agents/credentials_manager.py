@@ -7,7 +7,7 @@ Runs BEFORE workflows to ensure all required tokens are present and valid.
 
 from agno.agent import Agent
 from db import db
-from agno.models.gemini import Gemini
+from agno.models.google import Gemini
 
 from tools.credential_tools import (
     check_github_token,
