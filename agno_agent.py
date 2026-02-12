@@ -33,6 +33,7 @@ from agents.calling_agents import (
     results_logger_agent,
     campaign_coordinator_agent
 )
+from campaign_manager import campaign_manager  # Pattern 1: Single Agent + Workflow
 
 # Initialize Agent OS with Enhanced Tracing
 # Tracing provides visibility into:
@@ -63,6 +64,7 @@ agent_os = AgentOS(
         calling_coordinator_agent,  # Outbound Calling: Calling Coordinator
         results_logger_agent,  # Outbound Calling: Results Logger
         campaign_coordinator_agent,  # Outbound Calling: Campaign Coordinator
+        campaign_manager,  # Campaign Manager (Pattern 1: Single Agent + Internal Workflow)
     ],
     teams=[
         product_team,  # Product Development Team
