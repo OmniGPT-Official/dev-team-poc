@@ -3,7 +3,12 @@
 from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.team import Team
-from agno.tools.openai import OpenAITools
+from agno.tools import nano_banana as _nb
+from agno.tools.nano_banana import NanoBananaTools
+
+# Allow Nano Banana Pro (gemini-3-pro-image-preview) until Agno adds it upstream
+if "gemini-3-pro-image-preview" not in _nb.ALLOWED_MODELS:
+    _nb.ALLOWED_MODELS.append("gemini-3-pro-image-preview")
 
 from db import db
 
@@ -87,9 +92,9 @@ content_writer = Agent(
 # image_generator = Agent(
 #     name="Image Generator",
 #     model=Gemini(id="gemini-3-flash-preview"),
-#     description="Generates images using OpenAI's image generation and manages visual assets for content. Creates high-quality images to enhance content.",
+#     description="Generates images using Google's Nano Banana Pro model and manages visual assets for content. Creates high-quality images to enhance content.",
 #     instructions=[
-#         "You are an Image Generator who creates visual assets using OpenAI's image generation.",
+#         "You are an Image Generator who creates visual assets using Google's Nano Banana Pro image generation.",
 #         "",
 #         "## CRITICAL: Always Use Image Generation Tool",
 #         "When asked to generate, create, or make an image, you MUST:",
@@ -104,7 +109,7 @@ content_writer = Agent(
 #         "Return generated images in markdown format.",
 #         "Suggest appropriate visual placements within the content.",
 #     ],
-#     tools=[OpenAITools(image_model="gpt-image-1")],
+#     tools=[NanoBananaTools(model="gemini-3-pro-image-preview")],
 #     db=db,
 #     # enable_session_summaries=True,
 #     update_memory_on_run=False,
@@ -131,7 +136,7 @@ content_creation_team = Team(
     model=Gemini(id="gemini-3-flash-preview"),
     db=db,
     members=[content_strategist, content_writer],
-    tools=[OpenAITools(image_model="gpt-image-1")],
+    tools=[NanoBananaTools(model="gemini-3-pro-image-preview")],
     instructions=[
         "You are the leader of a Content Creation Team.",
         "",
@@ -194,7 +199,7 @@ content_creation_team = Team(
         "The ONLY exception is PHASE 3, where you generate exploratory sample images for style selection.",
         "",
         "## Image Generation",
-        "You have direct access to image generation tools via generate_image.",
+        "You have direct access to image generation tools via create_image.",
         "- Include returned image URLs in markdown format: ![description](url)",
         "- ALWAYS prepend the style template to every image prompt after PHASE 4",
         "- Generate an image for EVERY content piece — never leave text placeholders",
