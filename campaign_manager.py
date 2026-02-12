@@ -199,5 +199,4 @@ campaign_manager = Agent(
     num_history_messages=10,  # FIX: Limit history to last 10 messages as safety measure
     add_datetime_to_context=True,
     markdown=True,
-    monitoring=True,  # FIX: Enable Agno dashboard monitoring
 )
