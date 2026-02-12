@@ -137,6 +137,7 @@ content_creation_team = Team(
     db=db,
     members=[content_strategist, content_writer],
     tools=[NanoBananaTools(model="gemini-3-pro-image-preview")],
+    send_media_to_model=False,
     instructions=[
         "You are the leader of a Content Creation Team.",
         "",
