@@ -20,7 +20,6 @@ from content_creation import (
     content_strategist,
     content_writer,
     content_creation_team,
-    requirement_gathering_workflow_definition,
 )
 from email_followup import email_followup_agent
 from gmail_sheets_agent import gmail_sheets_agent
@@ -72,7 +71,6 @@ agent_os = AgentOS(
     workflows=[
         product_requirements_workflow,
         software_development_workflow,
-        requirement_gathering_workflow_definition,  # Content Creation Workflow
         email_followup_workflow,  # Email Follow-Up Manager (3-step, OAuth-enabled) ✅
         outbound_calling_workflow,  # Outbound Calling Campaign (full with ElevenLabs)
         simple_calling_workflow,  # Outbound Calling Campaign (simple test version)
