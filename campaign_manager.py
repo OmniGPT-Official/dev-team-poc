@@ -195,7 +195,9 @@ campaign_manager = Agent(
     pre_hooks=[inject_user_tools],  # Inject Google Sheets tools via OAuth
     db=db,
     update_memory_on_run=True,  # Remember Sheet URLs and campaign details
-    add_history_to_context=True,
+    add_history_to_context=True,  # Main agent needs context for conversation
+    num_history_messages=10,  # FIX: Limit history to last 10 messages as safety measure
     add_datetime_to_context=True,
     markdown=True,
+    monitoring=True,  # FIX: Enable Agno dashboard monitoring
 )
