@@ -1,5 +1,5 @@
 """
-Agent OS Main Application
+Agent OS Main Application - OmniGPT
 
 This is the main entry point for the Agent OS application.
 Clean architecture with multiple specialized agents, teams, and workflows.
