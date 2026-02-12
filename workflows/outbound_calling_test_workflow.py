@@ -11,44 +11,12 @@ This workflow uses OAuth-enabled tools to access real Google Sheets data.
 from agno.agent import Agent
 from agno.workflow import Workflow, Step
 from agno.models.google import Gemini
-from agno.tools.googlesheets import GoogleSheetsTools
-from services.oauth_store import get_google_credentials
+from services.tool_injector import make_tool_hook
 from tools.elevenlabs_tools import submit_batch_call, get_batch_status
 from db import db
 
 # Cost-effective model for testing
 MODEL = Gemini(id="gemini-3-flash-preview")
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# OAuth Pre-Hook (following email_followup.py pattern)
-# ─────────────────────────────────────────────────────────────────────────
-
-def inject_calling_tools(agent: Agent, user_id: str) -> None:
-    """Pre-hook: Inject OAuth tools before agent runs.
-
-    This ensures each user gets their own Google credentials and
-    ElevenLabs tools loaded at runtime.
-    """
-    tools = []
-
-    # Google Sheets OAuth
-    sheets_creds = get_google_credentials(user_id, "google_sheets")
-    if sheets_creds:
-        tools.append(GoogleSheetsTools(
-            creds=sheets_creds,
-            enable_read_sheet=True,
-            enable_create_sheet=False,
-            enable_update_sheet=True,
-        ))
-
-    # ElevenLabs tools (no OAuth needed, uses API key from env)
-    tools.extend([
-        submit_batch_call,
-        get_batch_status,
-    ])
-
-    agent.set_tools(tools)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -82,8 +50,8 @@ calling_test_agent = Agent(
         "- Always show user what you're doing before doing it",
         "- Be conversational and clear with status updates",
     ],
-    tools=[],  # Tools injected via pre_hook
-    pre_hooks=[inject_calling_tools],
+    tools=[submit_batch_call, get_batch_status],  # Static tools; Google Sheets injected via pre_hook
+    pre_hooks=[make_tool_hook("google_sheets")],
     db=db,
 )
 

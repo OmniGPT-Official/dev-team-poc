@@ -3,27 +3,16 @@ Software Engineer Agent Configuration
 
 The Software Engineer can read technical documents, save implementation code files,
 and interact with GitHub and Supabase.
+
+Tools are injected per-user at runtime via the pre-hook (tool_injector).
+Default tool instances here serve as fallbacks for local/dev usage.
 """
 
-import os
 from agno.agent import Agent
 from db import db
 from agno.models.openrouter import OpenRouter
-from agno.tools.mcp import MCPTools
 from instructions.software_engineer_instructions import SOFTWARE_ENGINEER_INSTRUCTIONS
-from tools.github_tools import GitHubTools
-from tools.vercel_deploy_tools import VercelDeployTools
-
-
-# GitHub Toolkit (direct API - more reliable than MCP)
-github_tools = GitHubTools()
-
-supabase_mcp = MCPTools(
-    command=f"npx -y @supabase/mcp-server-supabase@latest --access-token={os.environ.get('SUPABASE_ACCESS_TOKEN', '')}",
-    timeout_seconds=60,
-)
-
-vercel_deploy_tools = VercelDeployTools()
+from services.tool_injector import inject_user_tools
 
 software_engineer_agent = Agent(
     name="Software Engineer Agent",
@@ -34,11 +23,8 @@ software_engineer_agent = Agent(
     num_history_messages=20,
     markdown=True,
     instructions=SOFTWARE_ENGINEER_INSTRUCTIONS,
-    tools=[
-        github_tools,
-        supabase_mcp,
-        vercel_deploy_tools,
-    ],
-    tool_call_limit=100,  # Higher limit for code implementation
-    debug_mode=True,
+    tools=[],  # Tools injected via pre_hooks
+    pre_hooks=[inject_user_tools],  # Inject per-user GitHub, Vercel, Google Docs tools
+    tool_call_limit=100,
+    debug_mode=False,
 )
