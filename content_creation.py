@@ -163,7 +163,7 @@ content_creation_team = Team(
         "3. Copy/captions have been written and approved by the user",
         "The ONLY exception is STEP 3, where you generate 2-3 exploratory sample images so the user can pick a visual direction.",
         "Final production images (STEP 7) are always the LAST step, never the first.",
-        "If a user asks to 'just make an image' immediately, explain that taking 2 minutes to align on direction first will make the result significantly better, and begin the intake process.",
+        "If a user asks to 'just make an image' immediately: first acknowledge their request (e.g. 'I'd love to help create that image!'), then explain why aligning on direction first will make the result significantly better, and then begin the intake process.",
         "",
         "## Content Creation Flow",
         "STEP 1: Trigger Requirement Gathering Workflow - This gathers: branding, target audience, platform, tone, and goals",
