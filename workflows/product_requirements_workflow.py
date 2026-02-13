@@ -79,6 +79,46 @@ def is_existing_project(step_input: StepInput) -> bool:
 # SIMPLE EXECUTOR WRAPPERS
 # ============================================================================
 
+def create_project_entry_executor(step_input: StepInput) -> StepOutput:
+    """Create project entry in database at workflow start."""
+    from agno.workflow.types import StepOutput
+    from tools.project_tools import create_project
+    import re
+
+    _log("🗂️", "PROJECT-CREATE", "Creating project entry at workflow start")
+
+    # Extract project details from input
+    project_name_match = re.search(r'PROJECT_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
+    project_desc_match = re.search(r'DESCRIPTION:\s*(.+?)(?:PROJECT_TYPE:|$)', str(step_input.input), re.IGNORECASE | re.DOTALL)
+    project_type_match = re.search(r'PROJECT_TYPE:\s*(.+)', str(step_input.input), re.IGNORECASE)
+
+    project_name = project_name_match.group(1).strip() if project_name_match else "Unknown Project"
+    project_description = project_desc_match.group(1).strip() if project_desc_match else "No description provided"
+    project_type = project_type_match.group(1).strip() if project_type_match else "new"
+
+    _log("🗂️", "PROJECT-CREATE", f"Project: {project_name}, Type: {project_type}")
+
+    # Create project (this sets project_id in context)
+    result = create_project(
+        project_name=project_name,
+        project_description=project_description,
+        project_type=project_type
+    )
+
+    if result["success"]:
+        _log("✅", "PROJECT-CREATE", f"Project created: {result['project_id']}")
+        return StepOutput(
+            content=f"Project created successfully: {project_name} (ID: {result['project_id']})",
+            success=True
+        )
+    else:
+        _log("❌", "PROJECT-CREATE", f"Failed: {result['message']}")
+        return StepOutput(
+            content=f"Failed to create project: {result['message']}",
+            success=False
+        )
+
+
 def create_prd_executor(step_input: StepInput) -> StepOutput:
     """Simple wrapper to call product_lead with user_id from workflow."""
     from agno.workflow.types import StepOutput
@@ -254,34 +294,37 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
     _log("📋", "SUPERVISOR", f"Project: {project_name}")
     _log("📋", "SUPERVISOR", f"Type: {project_type}")
 
-    description = f"""You are the Supervisor. Validate documents and create project entry.
+    description = f"""You are the Supervisor. Validate documents and update existing project.
+
+**IMPORTANT:** A project was already created at workflow start. The project_id is available in context - you don't need to create it again.
 
 **Your tasks:**
 
-1. **Create Project**: Call create_project with:
-   - project_name: "{project_name}"
-   - project_description: "{project_description}"
-   - project_type: "{project_type}"
-   Store the project_id returned.
+1. **Extract Document URLs**: From the previous steps, find:
+   - PRD/Feature Spec URL (contains "docs.google.com/document")
+   - Architecture URL (contains "docs.google.com/document")
 
-2. **Extract Document URLs**: From the previous steps, find:
-   - PRD/Feature Spec URL (step 1 output)
-   - Architecture URL (step 2 output)
+2. **Validate PRD**: Call validate_prd_document(prd_url, "{project_name}")
+   - This will automatically use the project_id from context
 
-3. **Validate PRD**: Call validate_prd_document(prd_url, project_name)
+3. **Validate Architecture**: Call validate_architecture_document(architecture_url, "{project_name}")
+   - This will automatically use the project_id from context
 
-4. **Validate Architecture**: Call validate_architecture_document(architecture_url, project_name)
+4. **Update Project**: Get the project_id from context, then call:
+   update_project(project_id, prd_doc_url=..., architecture_doc_url=...)
 
-5. **Update Project**: Call update_project(project_id, prd_doc_url=..., architecture_doc_url=...)
+5. **Create Knowledge Base**: Call create_project_knowledge_base()
+   - This will automatically use the project_id from context
 
-6. **Create Knowledge Base**: Call create_project_knowledge_base()
-
-7. **Report**: Summarize validation results and project creation.
+6. **Report**: Summarize validation results.
 
 **Previous steps output (contains document URLs):**
 {all_content}
 
-**CRITICAL:** Extract the ACTUAL Google Docs URLs from above and use them."""
+**CRITICAL:**
+- Extract the ACTUAL Google Docs URLs from above
+- The project_id is already in context (from workflow start)
+- Do NOT call create_project - project already exists"""
 
     _log("🤖", "SUPERVISOR", "Calling Supervisor agent...")
     result = asyncio.run(get_supervisor_agent().arun(description, user_id=user_id))
@@ -293,11 +336,18 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
 def create_summary_executor(step_input: StepInput) -> StepOutput:
     """Simple wrapper to call product_lead with user_id from workflow."""
     from agno.workflow.types import StepOutput
+    from services.project_context import get_current_project_id
+    import re
 
     # Get user_id from workflow session
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
         user_id = step_input.workflow_session.user_id
+
+    # Get project_id from context
+    project_id = get_current_project_id()
+
+    _log("📊", "SUMMARY", f"Creating summary - project_id={project_id}")
 
     description = """Extract and present both Google Docs URLs from the previous steps.
 
@@ -323,10 +373,28 @@ Present them in this format:
 CRITICAL: Find and include the ACTUAL URLs from the previous steps. Do not say "Not available"."""
 
     prev_content = step_input.get_all_previous_content()
+
     # Call agent with user_id
     import asyncio
     result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nPrevious steps output:\n{prev_content}", user_id=user_id))
-    return StepOutput(content=result.content, success=True)
+
+    # Extract architecture URL for next workflow
+    architecture_url = None
+    if result.content:
+        arch_match = re.search(r'https://docs\.google\.com/document/d/[^/\s]+', result.content)
+        if arch_match:
+            architecture_url = arch_match.group(0)
+
+    _log("📊", "SUMMARY", f"Extracted architecture_url={architecture_url}")
+
+    # Append metadata for next workflow
+    final_content = result.content
+    if project_id:
+        final_content += f"\n\n---\n**Metadata for next workflow:**\nPROJECT_ID: {project_id}"
+        if architecture_url:
+            final_content += f"\nARCHITECTURE_URL: {architecture_url}"
+
+    return StepOutput(content=final_content, success=True)
 
 
 # ============================================================================
@@ -338,6 +406,12 @@ product_requirements_workflow = Workflow(
     stream=False,
     description="Create PRD/Feature Spec + Architecture documents",
     steps=[
+        # Step 1: Create project entry and set project_id in context
+        Step(
+            name="create_project_entry",
+            executor=create_project_entry_executor,
+            description="""Create project entry in database and set project_id in context."""
+        ),
         # Conditional: New Project → PRD
         Condition(
             name="new_project_path",
