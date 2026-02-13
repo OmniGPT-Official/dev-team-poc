@@ -368,20 +368,30 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
         user_id = step_input.workflow_session.user_id
 
-    # Get all previous content (PRD + Architecture)
-    all_content = step_input.get_all_previous_content() or ""
-
     _log("🔍", "SUPERVISOR", f"Starting supervisor validation for user_id={user_id}")
-    _log("🔍", "SUPERVISOR", f"Previous content length: {len(all_content)}")
 
-    # Extract URLs from previous content to prevent hallucination
-    prd_url_match = re.search(r'PRD Document URL:\s*(https://docs\.google\.com/document/d/[^\s]+)', all_content, re.IGNORECASE)
-    arch_url_match = re.search(r'Architecture Document URL:\s*(https://docs\.google\.com/document/d/[^\s]+)', all_content, re.IGNORECASE)
+    # Access specific previous steps by name (works even for nested steps in Condition blocks)
+    prd_content = step_input.get_step_content("create_prd") or ""
+    feature_spec_content = step_input.get_step_content("create_feature_spec") or ""
+    arch_content = step_input.get_step_content("create_architecture") or ""
 
+    _log("🔍", "SUPERVISOR", f"PRD content length: {len(prd_content)}")
+    _log("🔍", "SUPERVISOR", f"Feature spec content length: {len(feature_spec_content)}")
+    _log("🔍", "SUPERVISOR", f"Architecture content length: {len(arch_content)}")
+
+    # Extract URLs from specific step outputs
+    prd_url_match = re.search(r'PRD Document URL:\s*(https://docs\.google\.com/document/d/[^\s]+)', prd_content, re.IGNORECASE)
+    feature_url_match = re.search(r'Feature Spec URL:\s*(https://docs\.google\.com/document/d/[^\s]+)', feature_spec_content, re.IGNORECASE)
+    arch_url_match = re.search(r'Architecture Document URL:\s*(https://docs\.google\.com/document/d/[^\s]+)', arch_content, re.IGNORECASE)
+
+    # Determine which document type was created (PRD or Feature Spec)
     prd_url = prd_url_match.group(1).strip() if prd_url_match else None
+    if not prd_url and feature_url_match:
+        prd_url = feature_url_match.group(1).strip()  # Use feature spec URL if PRD not found
+
     arch_url = arch_url_match.group(1).strip() if arch_url_match else None
 
-    _log("🔗", "SUPERVISOR", f"Extracted PRD URL: {prd_url}")
+    _log("🔗", "SUPERVISOR", f"Extracted PRD/Feature Spec URL: {prd_url}")
     _log("🔗", "SUPERVISOR", f"Extracted Architecture URL: {arch_url}")
 
     # Extract project name and description from input
