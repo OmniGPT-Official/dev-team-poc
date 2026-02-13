@@ -42,6 +42,11 @@ def get_lead_engineer_agent():
     return lead_engineer_agent
 
 
+def get_supervisor_agent():
+    from agents.supervisor import supervisor_agent
+    return supervisor_agent
+
+
 # ============================================================================
 # CONDITION EVALUATORS
 # ============================================================================
@@ -83,6 +88,9 @@ def create_prd_executor(step_input: StepInput) -> StepOutput:
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
         user_id = step_input.workflow_session.user_id
 
+    _log("📝", "PRD-CREATE", f"Starting PRD creation for user_id={user_id}")
+    _log("📝", "PRD-CREATE", f"Input:\n{step_input.input}")
+
     description = """You MUST create a PRD and save it to Google Docs.
 
 **CRITICAL: USE ONLY THE INFORMATION PROVIDED IN THE INPUT BELOW. DO NOT ADD EXAMPLES, DO NOT HALLUCINATE, DO NOT USE PLACEHOLDER CONTENT LIKE "REACT PRO" OR "TASK MANAGER". USE THE ACTUAL PROJECT DETAILS FROM THE INPUT.**
@@ -116,7 +124,10 @@ CRITICAL: DO NOT HALLUCINATE. USE ONLY THE INPUT DATA. DO NOT ADD EXAMPLES."""
 
     # Call agent with user_id
     import asyncio
+    _log("🤖", "PRD-CREATE", "Calling Product Lead agent...")
     result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nInput: {step_input.input}", user_id=user_id))
+    _log("✅", "PRD-CREATE", f"Product Lead completed. Result length: {len(result.content) if result and result.content else 0}")
+    _log("📄", "PRD-CREATE", f"Result preview: {result.content[:200] if result and result.content else 'No content'}...")
     return StepOutput(content=result.content, success=True)
 
 
@@ -204,9 +215,78 @@ Return the Google Docs URL.
 CRITICAL: DO NOT HALLUCINATE FEATURES. MATCH THE PRD EXACTLY."""
 
     prev_content = step_input.previous_step_content or ""
+    _log("🏗️", "ARCH-CREATE", f"Starting architecture creation for user_id={user_id}")
+    _log("🏗️", "ARCH-CREATE", f"Previous content length: {len(prev_content)}")
     # Call agent with user_id
     import asyncio
+    _log("🤖", "ARCH-CREATE", "Calling Lead Engineer agent...")
     result = asyncio.run(get_lead_engineer_agent().arun(description + f"\n\nPrevious step output:\n{prev_content}", user_id=user_id))
+    _log("✅", "ARCH-CREATE", f"Lead Engineer completed. Result length: {len(result.content) if result and result.content else 0}")
+    return StepOutput(content=result.content, success=True)
+
+
+def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
+    """Supervisor validates documents and creates project in database."""
+    from agno.workflow.types import StepOutput
+    import re
+    import asyncio
+
+    # Get user_id from workflow session
+    user_id = None
+    if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
+        user_id = step_input.workflow_session.user_id
+
+    # Get all previous content (PRD + Architecture)
+    all_content = step_input.get_all_previous_content() or ""
+
+    _log("🔍", "SUPERVISOR", f"Starting supervisor validation for user_id={user_id}")
+    _log("🔍", "SUPERVISOR", f"Previous content length: {len(all_content)}")
+
+    # Extract project name and description from input
+    project_name_match = re.search(r'PROJECT_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
+    project_desc_match = re.search(r'DESCRIPTION:\s*(.+?)(?:PROJECT_TYPE:|$)', str(step_input.input), re.IGNORECASE | re.DOTALL)
+    project_type_match = re.search(r'PROJECT_TYPE:\s*(.+)', str(step_input.input), re.IGNORECASE)
+
+    project_name = project_name_match.group(1).strip() if project_name_match else "Unknown Project"
+    project_description = project_desc_match.group(1).strip() if project_desc_match else "No description provided"
+    project_type = project_type_match.group(1).strip() if project_type_match else "new"
+
+    _log("📋", "SUPERVISOR", f"Project: {project_name}")
+    _log("📋", "SUPERVISOR", f"Type: {project_type}")
+
+    description = f"""You are the Supervisor. Validate documents and create project entry.
+
+**Your tasks:**
+
+1. **Create Project**: Call create_project with:
+   - project_name: "{project_name}"
+   - project_description: "{project_description}"
+   - project_type: "{project_type}"
+   Store the project_id returned.
+
+2. **Extract Document URLs**: From the previous steps, find:
+   - PRD/Feature Spec URL (step 1 output)
+   - Architecture URL (step 2 output)
+
+3. **Validate PRD**: Call validate_prd_document(prd_url, project_name)
+
+4. **Validate Architecture**: Call validate_architecture_document(architecture_url, project_name)
+
+5. **Update Project**: Call update_project(project_id, prd_doc_url=..., architecture_doc_url=...)
+
+6. **Create Knowledge Base**: Call create_project_knowledge_base()
+
+7. **Report**: Summarize validation results and project creation.
+
+**Previous steps output (contains document URLs):**
+{all_content}
+
+**CRITICAL:** Extract the ACTUAL Google Docs URLs from above and use them."""
+
+    _log("🤖", "SUPERVISOR", "Calling Supervisor agent...")
+    result = asyncio.run(get_supervisor_agent().arun(description, user_id=user_id))
+    _log("✅", "SUPERVISOR", f"Supervisor completed. Result length: {len(result.content) if result and result.content else 0}")
+
     return StepOutput(content=result.content, success=True)
 
 
@@ -289,6 +369,12 @@ product_requirements_workflow = Workflow(
             name="create_architecture",
             executor=create_architecture_executor,
             description="""Create architecture document and save to Google Docs."""
+        ),
+        # Supervisor validation (validate docs and create project in DB)
+        Step(
+            name="supervisor_validation",
+            executor=supervisor_validation_executor,
+            description="""Supervisor validates documents, creates project in database, and stores doc URLs."""
         ),
         # Summary with both URLs
         Step(
