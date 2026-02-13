@@ -5,16 +5,12 @@ Agents for managing the outbound calling workflow via ElevenLabs.
 These agents coordinate to read leads, make calls, retry failures, and log results.
 
 Uses OAuth-based Google Sheets access (like email_followup agent).
+Uses custom ElevenLabsBatchCallingTools toolkit for API access.
 """
 
 from agno.agent import Agent
 from agno.models.google import Gemini
-from tools.elevenlabs_tools import (
-    submit_batch_call,
-    get_batch_status,
-    retry_failed_calls,
-    get_call_result
-)
+from tools.elevenlabs_batch_calling import ElevenLabsBatchCallingTools
 from services.tool_injector import make_tool_hook
 from db import db
 
@@ -87,12 +83,7 @@ calling_coordinator_agent = Agent(
         "Always report: total calls, successful, failed, pending retry",
         "Keep the user informed of progress throughout the campaign"
     ],
-    tools=[
-        submit_batch_call,
-        get_batch_status,
-        retry_failed_calls,
-        get_call_result
-    ],
+    tools=[ElevenLabsBatchCallingTools()],  # Use custom toolkit for batch calling
     db=db,
     add_history_to_context=False,  # FIX: Disable history to prevent context overflow in workflows
     num_history_messages=5,  # FIX: Limit to last 5 messages as safety measure
@@ -208,11 +199,8 @@ campaign_coordinator_agent = Agent(
         "",
         "You are friendly, professional, and results-oriented"
     ],
-    tools=[
-        submit_batch_call,
-        get_batch_status,
-        retry_failed_calls
-    ],  # Google Sheets tools injected via pre_hook
+    tools=[ElevenLabsBatchCallingTools()],  # Use custom toolkit for batch calling
+    # Google Sheets tools injected via pre_hook
     pre_hooks=[make_tool_hook("google_sheets")],
     db=db,
     add_history_to_context=True,  # Orchestrator needs context for conversation
