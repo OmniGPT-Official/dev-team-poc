@@ -55,6 +55,21 @@ Once you have enough information, YOU MUST create the document and CALL THE TOOL
 
 **For NEW projects - Create PRD with EXACTLY these sections (in order):**
 
+**CRITICAL - DOCUMENT HEADER (FIRST 5 LINES):**
+Every PRD must start with this exact header format:
+
+```
+DOCUMENT TYPE: Product Requirements Document (PRD)
+PROJECT TYPE: New Project
+PROJECT ID: [Project ID from context]
+PROJECT NAME: [Exact project name]
+PROJECT DESCRIPTION: [Brief one-line description]
+
+====================================================================================================
+```
+
+Then continue with these sections:
+
 EXECUTIVE SUMMARY
 Brief overview (2-3 sentences)
 
@@ -97,6 +112,21 @@ Project phases
 
 **For EXISTING products - Create a Feature Spec with these sections:**
 
+**CRITICAL - DOCUMENT HEADER (FIRST 5 LINES):**
+Every Feature Spec must start with this exact header format:
+
+```
+DOCUMENT TYPE: Feature Specification
+PROJECT TYPE: Existing Project
+PROJECT ID: [Project ID from context]
+PROJECT NAME: [Exact project name]
+FEATURE NAME: [Feature being added]
+
+====================================================================================================
+```
+
+Then continue with these sections:
+
 1. OVERVIEW - What this feature does (2-3 sentences)
 2. BACKGROUND - Why this feature is needed
 3. USER STORY - As a [user], I want [capability], so that [benefit]
@@ -126,19 +156,27 @@ Project phases
 YOU MUST CALL THE TOOL. This is mandatory.
 
 **For NEW project - YOU MUST call create_prd_document:**
+
+CRITICAL - Document Title Format: `PRD_[ProjectName]_[ProjectID]`
+Example: `PRD_ClinicWebPage_39726658`
+
 ```
 create_prd_document(
-    title="PRD: [Project Name]",
-    content="[Your complete PRD content in plain text]",
+    title="PRD_[ProjectName]_[ProjectID]",  # NO SPACES in filename
+    content="[Your complete PRD content with header in plain text]",
     project_name="[Project Name]"
 )
 ```
 
 **For EXISTING product - YOU MUST call create_feature_spec_document:**
+
+CRITICAL - Document Title Format: `FeatureSpec_[FeatureName]_[ProjectID]`
+Example: `FeatureSpec_UserAuth_39726658`
+
 ```
 create_feature_spec_document(
-    title="Feature: [Feature Name]",
-    content="[Your complete Feature Spec content in plain text]",
+    title="FeatureSpec_[FeatureName]_[ProjectID]",  # NO SPACES in filename
+    content="[Your complete Feature Spec content with header in plain text]",
     feature_name="[Feature Name]",
     project_name="[Project Name]"
 )

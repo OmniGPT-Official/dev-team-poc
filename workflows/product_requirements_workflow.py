@@ -122,146 +122,232 @@ def create_project_entry_executor(step_input: StepInput) -> StepOutput:
 def create_prd_executor(step_input: StepInput) -> StepOutput:
     """Simple wrapper to call product_lead with user_id from workflow."""
     from agno.workflow.types import StepOutput
+    from services.project_context import get_current_project_id
+    import re
 
     # Get user_id from workflow session
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
         user_id = step_input.workflow_session.user_id
 
-    _log("📝", "PRD-CREATE", f"Starting PRD creation for user_id={user_id}")
+    # Get project_id from context
+    project_id = get_current_project_id()
+
+    # Extract project details
+    project_name_match = re.search(r'PROJECT_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
+    project_desc_match = re.search(r'DESCRIPTION:\s*(.+?)(?:PROJECT_TYPE:|$)', str(step_input.input), re.IGNORECASE | re.DOTALL)
+
+    project_name = project_name_match.group(1).strip() if project_name_match else "Unknown Project"
+    project_description = project_desc_match.group(1).strip() if project_desc_match else "No description provided"
+
+    # Format project_id for filename (first 8 chars)
+    project_id_short = project_id[:8] if project_id else "00000000"
+
+    _log("📝", "PRD-CREATE", f"Starting PRD creation for user_id={user_id}, project_id={project_id}")
     _log("📝", "PRD-CREATE", f"Input:\n{step_input.input}")
 
-    description = """You MUST create a PRD and save it to Google Docs.
+    description = f"""You MUST create a PRD and save it to Google Docs.
 
-**CRITICAL: USE ONLY THE INFORMATION PROVIDED IN THE INPUT BELOW. DO NOT ADD EXAMPLES, DO NOT HALLUCINATE, DO NOT USE PLACEHOLDER CONTENT LIKE "REACT PRO" OR "TASK MANAGER". USE THE ACTUAL PROJECT DETAILS FROM THE INPUT.**
+**CRITICAL: USE ONLY THE INFORMATION PROVIDED IN THE INPUT BELOW. DO NOT ADD EXAMPLES, DO NOT HALLUCINATE.**
 
-**STEP 1: Write the PRD content with these exact sections:**
+**STEP 1: Write the PRD content starting with the DOCUMENT HEADER:**
 
-1. OVERVIEW - What is this product? (USE ONLY INFO FROM INPUT)
-2. GOALS - What problem does it solve? (USE ONLY INFO FROM INPUT)
-3. TARGET USERS - Who will use it? (USE ONLY INFO FROM INPUT)
-4. FEATURES - List of features (USE ONLY FEATURES FROM INPUT - if none provided, write "To be defined")
-5. SUCCESS METRICS - How do we measure success? (USE ONLY INFO FROM INPUT - if none provided, write "To be defined")
+DOCUMENT TYPE: Product Requirements Document (PRD)
+PROJECT TYPE: New Project
+PROJECT ID: {project_id}
+PROJECT NAME: {project_name}
+PROJECT DESCRIPTION: {project_description}
 
-**FORMATTING RULES:**
-- Use PLAIN TEXT only (no markdown symbols like **, __, ##, `, [])
-- Use "====" under section headings
-- Use simple bullet points with "•" or "-"
+====================================================================================================
+
+Then continue with all the PRD sections as per your instructions.
 
 **STEP 2: YOU MUST call the create_prd_document tool**
 
-Call it NOW with:
-- title: "PRD: [EXACT project name from input - DO NOT CHANGE IT]"
-- content: (the PRD content you wrote above using ONLY the input data)
-- project_name: "[EXACT project name from input]"
+CRITICAL - Document title format: PRD_{project_name.replace(' ', '')}_{project_id_short}
 
-**STEP 3: Return the Google Docs URL**
+Call it with:
+- title: "PRD_{project_name.replace(' ', '')}_{project_id_short}"
+- content: (the PRD content with header)
+- project_name: "{project_name}"
 
-The tool will return a URL like https://docs.google.com/document/d/XXXXX/edit
-You MUST include this complete URL in your response.
+**STEP 3: Return the Google Docs URL AND the full PRD content**
 
-CRITICAL: DO NOT HALLUCINATE. USE ONLY THE INPUT DATA. DO NOT ADD EXAMPLES."""
+Return in this format:
+PRD Document URL: [URL]
+
+PRD CONTENT:
+[Full PRD text content]
+
+CRITICAL: Include BOTH the URL and the FULL content in your response."""
 
     # Call agent with user_id
     import asyncio
     _log("🤖", "PRD-CREATE", "Calling Product Lead agent...")
     result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nInput: {step_input.input}", user_id=user_id))
     _log("✅", "PRD-CREATE", f"Product Lead completed. Result length: {len(result.content) if result and result.content else 0}")
-    _log("📄", "PRD-CREATE", f"Result preview: {result.content[:200] if result and result.content else 'No content'}...")
+
+    # Log first paragraph of PRD content
+    if result.content:
+        lines = result.content.split('\n')
+        first_paragraph = '\n'.join(lines[:10])  # First 10 lines
+        _log("📄", "PRD-CONTENT", f"PRD Preview:\n{first_paragraph}")
+
     return StepOutput(content=result.content, success=True)
 
 
 def create_feature_spec_executor(step_input: StepInput) -> StepOutput:
     """Simple wrapper to call product_lead with user_id from workflow."""
     from agno.workflow.types import StepOutput
+    from services.project_context import get_current_project_id
+    import re
 
     # Get user_id from workflow session
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
         user_id = step_input.workflow_session.user_id
 
-    description = """Create a Feature Specification for this existing product.
+    # Get project_id from context
+    project_id = get_current_project_id()
 
-**CRITICAL: USE ONLY THE INFORMATION PROVIDED IN THE INPUT BELOW. DO NOT ADD EXAMPLES, DO NOT HALLUCINATE, DO NOT USE PLACEHOLDER CONTENT.**
+    # Extract project details
+    project_name_match = re.search(r'PROJECT_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
+    feature_name_match = re.search(r'FEATURE_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
 
-Create a concise Feature Spec with:
-1. Feature Overview - What does this feature do? (USE ONLY INFO FROM INPUT)
-2. User Stories - Who needs it and why? (USE ONLY INFO FROM INPUT)
-3. Requirements - What it must do (USE ONLY INFO FROM INPUT - if details missing, write "To be defined")
-4. Acceptance Criteria - How we know it's done (USE ONLY INFO FROM INPUT - if details missing, write "To be defined")
+    project_name = project_name_match.group(1).strip() if project_name_match else "Unknown Project"
+    feature_name = feature_name_match.group(1).strip() if feature_name_match else "Unknown Feature"
 
-**FORMATTING RULES:**
-- Use PLAIN TEXT only (no markdown symbols like **, __, ##, `, [])
-- Use "====" under section headings
-- Keep it simple and actionable
+    # Format project_id for filename (first 8 chars)
+    project_id_short = project_id[:8] if project_id else "00000000"
+
+    _log("📝", "FEATURE-SPEC-CREATE", f"Starting Feature Spec creation for user_id={user_id}, project_id={project_id}")
+
+    description = f"""Create a Feature Specification for this existing product.
+
+**CRITICAL: USE ONLY THE INFORMATION PROVIDED IN THE INPUT BELOW.**
+
+**STEP 1: Write the Feature Spec starting with the DOCUMENT HEADER:**
+
+DOCUMENT TYPE: Feature Specification
+PROJECT TYPE: Existing Project
+PROJECT ID: {project_id}
+PROJECT NAME: {project_name}
+FEATURE NAME: {feature_name}
+
+====================================================================================================
+
+Then continue with all Feature Spec sections as per your instructions.
 
 **Save to Google Docs:**
-Use create_feature_spec_document tool with:
-- title: "Feature: [EXACT feature name from input]"
-- content: [your spec using ONLY the input data]
-- feature_name: "[EXACT feature name from input]"
-- project_name: "[EXACT project name from input]"
+CRITICAL - Document title format: FeatureSpec_{feature_name.replace(' ', '')}_{project_id_short}
 
-Return the Google Docs URL.
+Use create_feature_spec_document tool:
+- title: "FeatureSpec_{feature_name.replace(' ', '')}_{project_id_short}"
+- content: [your spec with header]
+- feature_name: "{feature_name}"
+- project_name: "{project_name}"
 
-CRITICAL: DO NOT HALLUCINATE. USE ONLY THE INPUT DATA."""
+**Return the Google Docs URL AND the full content**
+
+Return in this format:
+Feature Spec URL: [URL]
+
+FEATURE SPEC CONTENT:
+[Full content]"""
 
     # Call agent with user_id
     import asyncio
+    _log("🤖", "FEATURE-SPEC-CREATE", "Calling Product Lead agent...")
     result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nInput: {step_input.input}", user_id=user_id))
+    _log("✅", "FEATURE-SPEC-CREATE", f"Product Lead completed. Result length: {len(result.content) if result and result.content else 0}")
+
+    # Log first paragraph
+    if result.content:
+        lines = result.content.split('\n')
+        first_paragraph = '\n'.join(lines[:10])
+        _log("📄", "FEATURE-SPEC-CONTENT", f"Feature Spec Preview:\n{first_paragraph}")
+
     return StepOutput(content=result.content, success=True)
 
 
 def create_architecture_executor(step_input: StepInput) -> StepOutput:
     """Simple wrapper to call lead_engineer with user_id from workflow."""
     from agno.workflow.types import StepOutput
+    from services.project_context import get_current_project_id
+    import re
 
     # Get user_id from workflow session
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
         user_id = step_input.workflow_session.user_id
 
-    description = """Create a SIMPLE architecture document.
+    # Get project_id from context
+    project_id = get_current_project_id()
 
-**CRITICAL: READ THE PRD/FEATURE SPEC FROM THE PREVIOUS STEP. USE ONLY WHAT'S MENTIONED THERE. DO NOT ADD EXTRA FEATURES, DO NOT HALLUCINATE, DO NOT USE EXAMPLES FROM OTHER PROJECTS.**
+    # Extract PRD content from previous step
+    prev_content = step_input.previous_step_content or ""
 
-Read the PRD/Feature Spec from the previous step, then create architecture.
+    # Extract project name from PRD content
+    project_name_match = re.search(r'PROJECT NAME:\s*(.+)', prev_content, re.IGNORECASE)
+    project_name = project_name_match.group(1).strip() if project_name_match else "Unknown Project"
 
-**Create a SHORT architecture document with:**
+    # Format project_id for filename (first 8 chars)
+    project_id_short = project_id[:8] if project_id else "00000000"
 
-1. **What We're Building** (2-3 sentences - BASED ONLY ON THE PRD)
-2. **Tech Stack** (MATCH EXACTLY TO REQUIREMENTS - if PRD says static HTML, use that! If no tech specified, choose minimal stack for the requirements)
-3. **Main Components** (bullet list - ONLY what's needed for the features in the PRD)
-4. **Implementation Steps** (3-5 steps - ONLY for the features mentioned)
-5. **Folder Structure** (MANDATORY - every file with exact path - ONLY files needed for the PRD features)
-6. **File Cross-References** (MANDATORY - what each file imports/links)
+    _log("🏗️", "ARCH-CREATE", f"Starting architecture creation for user_id={user_id}, project_id={project_id}")
+    _log("🏗️", "ARCH-CREATE", f"Previous PRD content length: {len(prev_content)}")
+
+    description = f"""Create a SIMPLE architecture document based on the PRD content below.
+
+**CRITICAL: READ THE PRD CONTENT BELOW. USE ONLY WHAT'S MENTIONED THERE.**
+
+**STEP 1: Write the Architecture starting with the DOCUMENT HEADER:**
+
+DOCUMENT TYPE: Technical Architecture Document
+PROJECT TYPE: New Project
+PROJECT ID: {project_id}
+PROJECT NAME: {project_name}
+TECH STACK: [Choose appropriate stack based on PRD requirements - e.g., "HTML5/CSS3/JavaScript" or "Next.js, TypeScript, Tailwind CSS"]
+
+====================================================================================================
+
+Then continue with all architecture sections as per your instructions.
 
 **CRITICAL RULES:**
-- RESPECT THE PRD SCOPE - don't add features not mentioned in the PRD
+- RESPECT THE PRD SCOPE - don't add features not mentioned
 - Simple requirements = Simple architecture
-- If PRD is 5 bullets → architecture should be 1 page
-- DO NOT add features like "user authentication", "admin dashboard", etc. unless they're in the PRD
-
-**FORMATTING RULES:**
-- Use PLAIN TEXT only (no markdown symbols like **, __, ##, `, [])
+- Match tech stack to requirements (don't over-engineer)
 
 **Save to Google Docs:**
+CRITICAL - Document title format: Architecture_{project_name.replace(' ', '')}_{project_id_short}
+
 Use create_document tool:
-- title: "Architecture: [EXACT project name from PRD]"
-- content: [your architecture using ONLY the PRD requirements]
+- title: "Architecture_{project_name.replace(' ', '')}_{project_id_short}"
+- content: [your architecture with header]
 
-Return the Google Docs URL.
+**Return the Google Docs URL AND the full Architecture content**
 
-CRITICAL: DO NOT HALLUCINATE FEATURES. MATCH THE PRD EXACTLY."""
+Return in this format:
+Architecture Document URL: [URL]
 
-    prev_content = step_input.previous_step_content or ""
-    _log("🏗️", "ARCH-CREATE", f"Starting architecture creation for user_id={user_id}")
-    _log("🏗️", "ARCH-CREATE", f"Previous content length: {len(prev_content)}")
+ARCHITECTURE CONTENT:
+[Full architecture text content]
+
+CRITICAL: Include BOTH the URL and the FULL content in your response."""
+
     # Call agent with user_id
     import asyncio
     _log("🤖", "ARCH-CREATE", "Calling Lead Engineer agent...")
-    result = asyncio.run(get_lead_engineer_agent().arun(description + f"\n\nPrevious step output:\n{prev_content}", user_id=user_id))
+    _log("🤖", "ARCH-CREATE", f"Passing PRD content to Lead Engineer:\n{prev_content[:500]}...")
+    result = asyncio.run(get_lead_engineer_agent().arun(description + f"\n\nPRD CONTENT:\n{prev_content}", user_id=user_id))
     _log("✅", "ARCH-CREATE", f"Lead Engineer completed. Result length: {len(result.content) if result and result.content else 0}")
+
+    # Log first paragraph of Architecture content
+    if result.content:
+        lines = result.content.split('\n')
+        first_paragraph = '\n'.join(lines[:10])  # First 10 lines
+        _log("🏗️", "ARCH-CONTENT", f"Architecture Preview:\n{first_paragraph}")
+
     return StepOutput(content=result.content, success=True)
 
 
@@ -294,21 +380,31 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
     _log("📋", "SUPERVISOR", f"Project: {project_name}")
     _log("📋", "SUPERVISOR", f"Type: {project_type}")
 
-    description = f"""You are the Supervisor. Validate documents and update existing project.
+    description = f"""You are the Supervisor. Validate documents by READING THEM and update existing project.
 
-**IMPORTANT:** A project was already created at workflow start. The project_id is available in context - you don't need to create it again.
+**IMPORTANT:** A project was already created at workflow start. The project_id is available in context.
 
 **Your tasks:**
 
-1. **Extract Document URLs**: From the previous steps, find:
+1. **Extract Document URLs**: From the previous steps output, find:
    - PRD/Feature Spec URL (contains "docs.google.com/document")
    - Architecture URL (contains "docs.google.com/document")
 
-2. **Validate PRD**: Call validate_prd_document(prd_url, "{project_name}")
-   - This will automatically use the project_id from context
+2. **READ and Validate PRD**:
+   - Call validate_prd_document(prd_url, "{project_name}")
+   - This will READ the document and check:
+     * Does it have the proper header (DOCUMENT TYPE, PROJECT ID, etc.)?
+     * Does it contain valid PRD sections?
+     * Is the content complete and not placeholder text?
+   - The project_id from context is used automatically
 
-3. **Validate Architecture**: Call validate_architecture_document(architecture_url, "{project_name}")
-   - This will automatically use the project_id from context
+3. **READ and Validate Architecture**:
+   - Call validate_architecture_document(architecture_url, "{project_name}")
+   - This will READ the document and check:
+     * Does it have the proper header with TECH STACK?
+     * Does it contain architecture sections (file structure, components)?
+     * Is the tech stack appropriate for the requirements?
+   - The project_id from context is used automatically
 
 4. **Update Project**: Get the project_id from context, then call:
    update_project(project_id, prd_doc_url=..., architecture_doc_url=...)
@@ -316,13 +412,20 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
 5. **Create Knowledge Base**: Call create_project_knowledge_base()
    - This will automatically use the project_id from context
 
-6. **Report**: Summarize validation results.
+6. **Report**: Summarize validation results including:
+   - Are both documents valid and readable?
+   - Do they have proper headers?
+   - Are the URLs working?
+   - What tech stack was chosen?
 
-**Previous steps output (contains document URLs):**
+**Previous steps output (contains URLs and content):**
 {all_content}
 
 **CRITICAL:**
-- Extract the ACTUAL Google Docs URLs from above
+- Extract the ACTUAL Google Docs URLs from the output above
+- READ the documents to validate content (don't just check if URLs exist)
+- Check for proper document headers
+- Verify architecture contains tech stack
 - The project_id is already in context (from workflow start)
 - Do NOT call create_project - project already exists"""
 
