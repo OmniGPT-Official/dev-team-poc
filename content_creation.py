@@ -1,14 +1,127 @@
 """Content Creation Team - A team for creating content with strategist, writer, and image generator."""
 
+from io import BytesIO
+from typing import Optional
+from uuid import uuid4
+
 from agno.agent import Agent
+from agno.media import Image
 from agno.models.google import Gemini
 from agno.team import Team
 from agno.tools import nano_banana as _nb
-from agno.tools.nano_banana import NanoBananaTools
+from agno.tools.nano_banana import ALLOWED_RATIOS, NanoBananaTools
+from agno.tools.function import ToolResult
+from agno.utils.log import log_debug, logger
+from google import genai
+from google.genai import types
+from PIL import Image as PILImage
 
 # Allow Nano Banana Pro (gemini-3-pro-image-preview) until Agno adds it upstream
 if "gemini-3-pro-image-preview" not in _nb.ALLOWED_MODELS:
     _nb.ALLOWED_MODELS.append("gemini-3-pro-image-preview")
+
+
+class DynamicNanoBananaTools(NanoBananaTools):
+    """NanoBananaTools subclass that lets the AI choose aspect_ratio per image."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Re-register our override so Agno exposes the new signature to the LLM
+        self.tools = [self.create_image]
+
+    def create_image(
+        self,
+        prompt: str,
+        aspect_ratio: str = "1:1",
+    ) -> ToolResult:
+        """Generate an image from a text prompt.
+
+        Args:
+            prompt: The text prompt describing the image to generate.
+            aspect_ratio: Image aspect ratio. Supported values: 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9. Choose based on the platform — e.g. 9:16 for stories, 1:1 for feed posts, 16:9 for banners.
+        """
+        if aspect_ratio not in ALLOWED_RATIOS:
+            return ToolResult(
+                content=f"Invalid aspect_ratio '{aspect_ratio}'. Supported: {', '.join(ALLOWED_RATIOS)}"
+            )
+
+        try:
+            client = genai.Client(api_key=self.api_key)
+            log_debug(f"NanoBanana generating image with prompt: {prompt}, aspect_ratio: {aspect_ratio}")
+
+            cfg = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+            )
+
+            response = client.models.generate_content(
+                model=self.model,
+                contents=[prompt],
+                config=cfg,
+            )
+
+            generated_images = []
+            response_str = ""
+
+            if not hasattr(response, "candidates") or not response.candidates:
+                logger.warning("No candidates in response")
+                return ToolResult(content="No images were generated in the response")
+
+            for candidate in response.candidates:
+                if not hasattr(candidate, "content") or not candidate.content or not candidate.content.parts:
+                    continue
+
+                for part in candidate.content.parts:
+                    if hasattr(part, "text") and part.text:
+                        response_str += part.text + "\n"
+
+                    if hasattr(part, "inline_data") and part.inline_data:
+                        try:
+                            image_data = part.inline_data.data
+                            mime_type = getattr(part.inline_data, "mime_type", "image/png")
+
+                            if image_data:
+                                pil_img = PILImage.open(BytesIO(image_data))
+                                buffer = BytesIO()
+                                image_format = "PNG" if "png" in mime_type.lower() else "JPEG"
+                                pil_img.save(buffer, format=image_format)
+                                buffer.seek(0)
+
+                                agno_img = Image(
+                                    id=str(uuid4()),
+                                    content=buffer.getvalue(),
+                                    original_prompt=prompt,
+                                )
+                                generated_images.append(agno_img)
+
+                                log_debug(f"Successfully processed image with ID: {agno_img.id}")
+                                response_str += f"Image generated successfully (ID: {agno_img.id}).\n"
+
+                        except Exception as img_exc:
+                            logger.error(f"Failed to process image data: {img_exc}")
+                            response_str += f"Failed to process image: {img_exc}\n"
+
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                log_debug(
+                    f"Token usage - Prompt: {response.usage_metadata.prompt_token_count}, "
+                    f"Response: {response.usage_metadata.candidates_token_count}, "
+                    f"Total: {response.usage_metadata.total_token_count}"
+                )
+
+            if generated_images:
+                return ToolResult(
+                    content=response_str.strip() or "Image(s) generated successfully",
+                    images=generated_images,
+                )
+            else:
+                return ToolResult(
+                    content=response_str.strip() or "No images were generated",
+                    images=None,
+                )
+
+        except Exception as exc:
+            logger.error(f"NanoBanana image generation failed: {exc}")
+            return ToolResult(content=f"Error generating image: {str(exc)}")
 
 from db import db
 
@@ -136,7 +249,7 @@ content_creation_team = Team(
     model=Gemini(id="gemini-3-flash-preview"),
     db=db,
     members=[content_strategist, content_writer],
-    tools=[NanoBananaTools(model="gemini-3-pro-image-preview")],
+    tools=[DynamicNanoBananaTools(model="gemini-3-pro-image-preview")],
     send_media_to_model=False,
     instructions=[
         "You are the leader of a Content Creation Team.",
