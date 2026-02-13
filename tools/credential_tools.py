@@ -10,17 +10,18 @@ import requests
 from typing import Optional, Dict, Any
 from services.api_key_store import get_api_key, store_api_key
 from services.oauth_store import get_google_credentials, get_supabase_client
+from services.user_context import get_current_user_id
 
 
 # ============================================================================
 # GITHUB CREDENTIAL TOOLS
 # ============================================================================
 
-def check_github_token(user_id: str) -> Dict[str, Any]:
+def check_github_token(user_id: Optional[str] = None) -> Dict[str, Any]:
     """Check if GitHub token exists for user.
 
     Args:
-        user_id: User UUID
+        user_id: User UUID (optional - will auto-fetch from context if not provided)
 
     Returns:
         {
@@ -31,6 +32,18 @@ def check_github_token(user_id: str) -> Dict[str, Any]:
         }
     """
     try:
+        # Auto-fetch user_id from context if not provided
+        if not user_id:
+            user_id = get_current_user_id()
+
+        if not user_id:
+            return {
+                "exists": False,
+                "valid": False,
+                "username": None,
+                "message": "No user_id available in context. Please authenticate first."
+            }
+
         token = get_api_key(user_id, "github")
 
         if not token:
@@ -75,12 +88,12 @@ def check_github_token(user_id: str) -> Dict[str, Any]:
         }
 
 
-def validate_and_store_github_token(user_id: str, github_token: str) -> Dict[str, Any]:
+def validate_and_store_github_token(github_token: str, user_id: Optional[str] = None) -> Dict[str, Any]:
     """Validate a GitHub token and store it if valid.
 
     Args:
-        user_id: User UUID
         github_token: GitHub personal access token to validate
+        user_id: User UUID (optional - will auto-fetch from context if not provided)
 
     Returns:
         {
@@ -90,6 +103,17 @@ def validate_and_store_github_token(user_id: str, github_token: str) -> Dict[str
         }
     """
     try:
+        # Auto-fetch user_id from context if not provided
+        if not user_id:
+            user_id = get_current_user_id()
+
+        if not user_id:
+            return {
+                "success": False,
+                "username": None,
+                "message": "No user_id available in context. Please authenticate first."
+            }
+
         # Validate token by calling GitHub API
         headers = {
             "Authorization": f"token {github_token}",
@@ -129,11 +153,11 @@ def validate_and_store_github_token(user_id: str, github_token: str) -> Dict[str
 # VERCEL CREDENTIAL TOOLS
 # ============================================================================
 
-def check_vercel_token(user_id: str) -> Dict[str, Any]:
+def check_vercel_token(user_id: Optional[str] = None) -> Dict[str, Any]:
     """Check if Vercel token exists for user.
 
     Args:
-        user_id: User UUID
+        user_id: User UUID (optional - will auto-fetch from context if not provided)
 
     Returns:
         {
@@ -143,6 +167,17 @@ def check_vercel_token(user_id: str) -> Dict[str, Any]:
         }
     """
     try:
+        # Auto-fetch user_id from context if not provided
+        if not user_id:
+            user_id = get_current_user_id()
+
+        if not user_id:
+            return {
+                "exists": False,
+                "valid": False,
+                "message": "No user_id available in context. Please authenticate first."
+            }
+
         token = get_api_key(user_id, "vercel")
 
         if not token:
@@ -181,12 +216,12 @@ def check_vercel_token(user_id: str) -> Dict[str, Any]:
         }
 
 
-def validate_and_store_vercel_token(user_id: str, vercel_token: str) -> Dict[str, Any]:
+def validate_and_store_vercel_token(vercel_token: str, user_id: Optional[str] = None) -> Dict[str, Any]:
     """Validate a Vercel token and store it if valid.
 
     Args:
-        user_id: User UUID
         vercel_token: Vercel API token to validate
+        user_id: User UUID (optional - will auto-fetch from context if not provided)
 
     Returns:
         {
@@ -195,6 +230,16 @@ def validate_and_store_vercel_token(user_id: str, vercel_token: str) -> Dict[str
         }
     """
     try:
+        # Auto-fetch user_id from context if not provided
+        if not user_id:
+            user_id = get_current_user_id()
+
+        if not user_id:
+            return {
+                "success": False,
+                "message": "No user_id available in context. Please authenticate first."
+            }
+
         # Validate token by calling Vercel API
         headers = {
             "Authorization": f"Bearer {vercel_token}",
@@ -228,11 +273,11 @@ def validate_and_store_vercel_token(user_id: str, vercel_token: str) -> Dict[str
 # GOOGLE CREDENTIALS TOOLS
 # ============================================================================
 
-def check_google_credentials(user_id: str) -> Dict[str, Any]:
+def check_google_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
     """Check if Google OAuth credentials exist for user.
 
     Args:
-        user_id: User UUID
+        user_id: User UUID (optional - will auto-fetch from context if not provided)
 
     Returns:
         {
@@ -242,6 +287,17 @@ def check_google_credentials(user_id: str) -> Dict[str, Any]:
         }
     """
     try:
+        # Auto-fetch user_id from context if not provided
+        if not user_id:
+            user_id = get_current_user_id()
+
+        if not user_id:
+            return {
+                "exists": False,
+                "provider": None,
+                "message": "No user_id available in context. Please authenticate first."
+            }
+
         # Try google_docs first
         creds = get_google_credentials(user_id, "google_docs")
         if creds:
@@ -278,11 +334,11 @@ def check_google_credentials(user_id: str) -> Dict[str, Any]:
 # VALIDATION SUMMARY
 # ============================================================================
 
-def validate_all_credentials(user_id: str) -> Dict[str, Any]:
+def validate_all_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
     """Check all required credentials for a user.
 
     Args:
-        user_id: User UUID
+        user_id: User UUID (optional - will auto-fetch from context if not provided)
 
     Returns:
         {
@@ -293,6 +349,20 @@ def validate_all_credentials(user_id: str) -> Dict[str, Any]:
             "missing": list of missing providers
         }
     """
+    # Auto-fetch user_id from context if not provided
+    if not user_id:
+        user_id = get_current_user_id()
+
+    if not user_id:
+        return {
+            "github": {"exists": False, "valid": False, "message": "No user_id in context"},
+            "vercel": {"exists": False, "valid": False, "message": "No user_id in context"},
+            "google": {"exists": False, "provider": None, "message": "No user_id in context"},
+            "all_valid": False,
+            "missing": ["github", "vercel", "google"],
+            "error": "No user_id available in context. Please authenticate first."
+        }
+
     github = check_github_token(user_id)
     vercel = check_vercel_token(user_id)
     google = check_google_credentials(user_id)
