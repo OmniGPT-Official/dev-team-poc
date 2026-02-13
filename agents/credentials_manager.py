@@ -185,5 +185,4 @@ credentials_manager_agent = Agent(
     ],
     tool_call_limit=20,
     debug_mode=False,
-    show_tool_calls=True,
 )
