@@ -2,11 +2,25 @@
 
 from agno.agent import Agent
 from agno.models.google import Gemini
+from agno.compression.manager import CompressionManager
 
 from services.tool_injector import make_tool_hook
 
 from db import db
 
+
+# Compression Manager: Handles large Google Sheets data (450+ rows)
+compression_manager = CompressionManager(
+    model=Gemini(id="gemini-3-flash-preview"),  # Use same model for compression
+    compress_tool_results=True,  # Compress large tool outputs (sheet reads)
+    compress_tool_results_limit=2,  # Compress after reading sheet + checking Gmail
+    compress_tool_call_instructions=(
+        "Preserve key contact data: names, emails, phone numbers, company names, "
+        "demo sent status, last contact dates, current status values. "
+        "Summarize: total row counts, filtering results, patterns found, duplicates. "
+        "Keep all data needed for follow-up decisions."
+    ),
+)
 
 # Setup Email Follow-Up Agent
 email_followup_agent = Agent(
@@ -202,9 +216,10 @@ email_followup_agent = Agent(
     ],
     pre_hooks=[make_tool_hook("google_sheets", "google_gmail")],
     db=db,
-    update_memory_on_run=True,  # FIX: Enable memory to remember Sheet URL across sessions
+    compression_manager=compression_manager,  # FIX: Compress large sheet data (450+ rows)
+    update_memory_on_run=True,  # Enable memory to remember Sheet URL across sessions
     add_history_to_context=True,  # Keep conversation context for follow-up
-    num_history_messages=10,  # FIX: Limit history to prevent context overflow (1M+ tokens)
+    num_history_messages=10,  # Safety limit: prevent unbounded history growth
     add_datetime_to_context=True,
     add_name_to_context=True,
     markdown=True,
