@@ -287,15 +287,21 @@ def create_architecture_executor(step_input: StepInput) -> StepOutput:
     # Extract PRD content from previous step
     prev_content = step_input.previous_step_content or ""
 
-    # Extract project name from PRD content
-    project_name_match = re.search(r'PROJECT NAME:\s*(.+)', prev_content, re.IGNORECASE)
-    project_name = project_name_match.group(1).strip() if project_name_match else "Unknown Project"
+    # Extract project name from PRD content (try both formats: "PROJECT NAME:" and "PROJECT_NAME:")
+    project_name_match = re.search(r'PROJECT[_ ]NAME:\s*(.+)', prev_content, re.IGNORECASE)
+    if not project_name_match:
+        # Fallback: extract from original input
+        input_match = re.search(r'PROJECT_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
+        project_name = input_match.group(1).strip() if input_match else "Unknown Project"
+    else:
+        project_name = project_name_match.group(1).strip()
 
     # Format project_id for filename (first 8 chars)
     project_id_short = project_id[:8] if project_id else "00000000"
 
     _log("🏗️", "ARCH-CREATE", f"Starting architecture creation for user_id={user_id}, project_id={project_id}")
     _log("🏗️", "ARCH-CREATE", f"Previous PRD content length: {len(prev_content)}")
+    _log("🏗️", "ARCH-CREATE", f"Extracted project_name: {project_name}")
 
     description = f"""Create a SIMPLE architecture document based on the PRD content below.
 
