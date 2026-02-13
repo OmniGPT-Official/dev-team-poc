@@ -298,20 +298,30 @@ def check_google_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
                 "message": "No user_id available in context. Please authenticate first."
             }
 
-        # Query user_oauth_connections table directly for any Google providers
+        # Query user_oauth_connections table for known Google providers
+        # Note: provider column is an enum, so we check specific values
         supabase = get_supabase_client()
-        result = supabase.table("user_oauth_connections") \
-            .select("provider") \
-            .eq("user_id", user_id) \
-            .like("provider", "google%") \
-            .execute()
 
-        if result.data and len(result.data) > 0:
-            providers = [row["provider"] for row in result.data]
+        # Check for common Google OAuth provider names
+        google_providers = ["google_docs", "google_sheets", "google_gmail"]
+        found_providers = []
+
+        for provider in google_providers:
+            result = supabase.table("user_oauth_connections") \
+                .select("provider") \
+                .eq("user_id", user_id) \
+                .eq("provider", provider) \
+                .limit(1) \
+                .execute()
+
+            if result.data and len(result.data) > 0:
+                found_providers.append(provider)
+
+        if found_providers:
             return {
                 "exists": True,
-                "providers": providers,
-                "message": f"Google OAuth credentials found: {', '.join(providers)}"
+                "providers": found_providers,
+                "message": f"Google OAuth credentials found: {', '.join(found_providers)}"
             }
 
         return {
