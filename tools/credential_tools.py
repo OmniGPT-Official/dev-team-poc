@@ -274,7 +274,7 @@ def validate_and_store_vercel_token(vercel_token: str, user_id: Optional[str] = 
 # ============================================================================
 
 def check_google_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
-    """Check if Google OAuth credentials exist for user.
+    """Check if Google OAuth credentials exist for user by querying user_oauth_connections table.
 
     Args:
         user_id: User UUID (optional - will auto-fetch from context if not provided)
@@ -282,7 +282,7 @@ def check_google_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
     Returns:
         {
             "exists": bool,
-            "provider": str (google_docs or google_sheets),
+            "providers": list of provider names found,
             "message": str
         }
     """
@@ -294,38 +294,36 @@ def check_google_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
         if not user_id:
             return {
                 "exists": False,
-                "provider": None,
+                "providers": [],
                 "message": "No user_id available in context. Please authenticate first."
             }
 
-        # Try google_docs first
-        creds = get_google_credentials(user_id, "google_docs")
-        if creds:
-            return {
-                "exists": True,
-                "provider": "google_docs",
-                "message": "Google Docs credentials found"
-            }
+        # Query user_oauth_connections table directly for any Google providers
+        supabase = get_supabase_client()
+        result = supabase.table("user_oauth_connections") \
+            .select("provider") \
+            .eq("user_id", user_id) \
+            .like("provider", "google%") \
+            .execute()
 
-        # Try google_sheets
-        creds = get_google_credentials(user_id, "google_sheets")
-        if creds:
+        if result.data and len(result.data) > 0:
+            providers = [row["provider"] for row in result.data]
             return {
                 "exists": True,
-                "provider": "google_sheets",
-                "message": "Google Sheets credentials found"
+                "providers": providers,
+                "message": f"Google OAuth credentials found: {', '.join(providers)}"
             }
 
         return {
             "exists": False,
-            "provider": None,
-            "message": "No Google OAuth credentials found"
+            "providers": [],
+            "message": "No Google OAuth credentials found in user_oauth_connections table"
         }
 
     except Exception as e:
         return {
             "exists": False,
-            "provider": None,
+            "providers": [],
             "message": f"Error checking Google credentials: {str(e)}"
         }
 
@@ -357,10 +355,11 @@ def validate_all_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
         return {
             "github": {"exists": False, "valid": False, "message": "No user_id in context"},
             "vercel": {"exists": False, "valid": False, "message": "No user_id in context"},
-            "google": {"exists": False, "provider": None, "message": "No user_id in context"},
+            "google": {"exists": False, "providers": [], "message": "No user_id in context"},
             "all_valid": False,
             "missing": ["github", "vercel", "google"],
-            "error": "No user_id available in context. Please authenticate first."
+            "error": "No user_id available in context. Please authenticate first.",
+            "summary": "❌ Missing: github, vercel, google"
         }
 
     github = check_github_token(user_id)
@@ -375,10 +374,13 @@ def validate_all_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
     if not google.get("exists"):
         missing.append("google")
 
+    all_valid = len(missing) == 0
+
     return {
         "github": github,
         "vercel": vercel,
         "google": google,
-        "all_valid": len(missing) == 0,
-        "missing": missing
+        "all_valid": all_valid,
+        "missing": missing,
+        "summary": f"{'✅ All credentials valid' if all_valid else f'❌ Missing: {', '.join(missing)}'}"
     }
