@@ -47,7 +47,7 @@ def submit_batch_call(campaign_name: str, recipients: List[Dict[str, Any]]) -> d
                 "message": "Set ELEVENLABS_AGENT_ID and ELEVENLABS_PHONE_NUMBER_ID env vars"
             }
 
-        response = client.convai.batch_calling.submit(
+        response = client.conversational_ai.batch_calls.submit(
             call_name=campaign_name,
             agent_id=agent_id,
             agent_phone_number_id=phone_number_id,
@@ -92,7 +92,7 @@ def get_batch_status(batch_id: str) -> dict:
         from elevenlabs import ElevenLabs
 
         client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
-        response = client.convai.batch_calling.get(batch_id)
+        response = client.conversational_ai.batch_calls.get(batch_id)
 
         return {
             "success": True,
@@ -138,7 +138,7 @@ def retry_failed_calls(batch_id: str) -> dict:
         from elevenlabs import ElevenLabs
 
         client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
-        response = client.convai.batch_calling.retry(batch_id)
+        response = client.conversational_ai.batch_calls.retry(batch_id)
 
         return {
             "success": True,
@@ -178,7 +178,7 @@ def get_call_result(conversation_id: str) -> dict:
         from elevenlabs import ElevenLabs
 
         client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
-        response = client.convai.conversations.get(conversation_id)
+        response = client.conversational_ai.conversations.get(conversation_id)
 
         return {
             "success": True,
