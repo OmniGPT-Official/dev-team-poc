@@ -169,7 +169,7 @@ You: "✅ All credentials validated! You're ready to start development."
 credentials_manager_agent = Agent(
     name="Credentials Manager",
     role="Validates and manages user credentials (GitHub, Vercel, Google OAuth) before workflows run",
-    model=Gemini(id="gemini-2.0-flash-exp"),
+    model=Gemini(id="gemini-3-flash-preview"),  # Fixed: Use valid model ID
     db=db,
     add_history_to_context=True,
     num_history_messages=10,

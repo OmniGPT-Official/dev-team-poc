@@ -64,7 +64,7 @@ When asked to deploy to Vercel:
 devops_engineer_agent = Agent(
     name="DevOps Engineer",
     role="Creates GitHub repositories, deploys to Vercel, and manages infrastructure setup.",
-    model=OpenRouter(id="google/gemini-2.0-flash-001", max_tokens=4096),
+    model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=4096),  # Fixed: Use valid model ID
     markdown=True,
     instructions=DEVOPS_ENGINEER_INSTRUCTIONS,
     tools=[],  # Tools injected via pre_hooks
