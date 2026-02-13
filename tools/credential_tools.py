@@ -376,11 +376,17 @@ def validate_all_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
 
     all_valid = len(missing) == 0
 
+    # Build summary message
+    if all_valid:
+        summary = "✅ All credentials valid"
+    else:
+        summary = f"❌ Missing: {', '.join(missing)}"
+
     return {
         "github": github,
         "vercel": vercel,
         "google": google,
         "all_valid": all_valid,
         "missing": missing,
-        "summary": f"{'✅ All credentials valid' if all_valid else f'❌ Missing: {', '.join(missing)}'}"
+        "summary": summary
     }
