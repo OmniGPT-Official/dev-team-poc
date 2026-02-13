@@ -27,4 +27,5 @@ lead_engineer_agent = Agent(
     pre_hooks=[make_tool_hook("google_docs", "github")],  # Inject per-user Google Docs and GitHub tools (updated from inject_user_tools)
     tool_call_limit=100,
     debug_mode=False,
+    reasoning=False,  # Explicitly disable reasoning to avoid Gemini API errors
 )
