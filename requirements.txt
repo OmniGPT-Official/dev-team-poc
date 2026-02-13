@@ -1,7 +1,7 @@
 agno
 mcp
 anthropic
-google-genai==1.0.1  # Pin to version compatible with Agno 2.4.8
+google-genai
 Pillow
 openai
 uvicorn[standard]
