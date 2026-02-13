@@ -6,11 +6,12 @@ Supports batch calling, status monitoring, retries, and result retrieval.
 """
 
 import os
+from typing import List, Dict, Any
 from agno.tools import tool
 
 
 @tool(show_result=True)
-def submit_batch_call(campaign_name: str, recipients: list) -> dict:
+def submit_batch_call(campaign_name: str, recipients: List[Dict[str, Any]]) -> dict:
     """Submit a batch of outbound calls to ElevenLabs.
 
     Each recipient should be a dict with:
