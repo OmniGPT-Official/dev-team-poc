@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from agno.agent import Agent
 from agno.media import Image
+from agno.models.anthropic import Claude
 from agno.models.google import Gemini
 from agno.team import Team
 from agno.tools import nano_banana as _nb
@@ -246,11 +247,11 @@ content_creation_team = Team(
     id="content-creation-team",
     name="Content Creation Team",
     description="A team that creates content including articles, blog posts, and other written materials with AI-generated images.",
-    model=Gemini(id="gemini-3-flash-preview"),
+    model=Claude(id="claude-sonnet-4-5-20250929"),
     db=db,
     members=[content_strategist, content_writer],
     tools=[DynamicNanoBananaTools(model="gemini-3-pro-image-preview")],
-    send_media_to_model=False,
+    send_media_to_model=True,
     instructions=[
         "You are the leader of a Content Creation Team.",
         "",
