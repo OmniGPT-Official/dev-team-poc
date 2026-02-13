@@ -374,6 +374,16 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
     _log("🔍", "SUPERVISOR", f"Starting supervisor validation for user_id={user_id}")
     _log("🔍", "SUPERVISOR", f"Previous content length: {len(all_content)}")
 
+    # Extract URLs from previous content to prevent hallucination
+    prd_url_match = re.search(r'PRD Document URL:\s*(https://docs\.google\.com/document/d/[^\s]+)', all_content, re.IGNORECASE)
+    arch_url_match = re.search(r'Architecture Document URL:\s*(https://docs\.google\.com/document/d/[^\s]+)', all_content, re.IGNORECASE)
+
+    prd_url = prd_url_match.group(1).strip() if prd_url_match else None
+    arch_url = arch_url_match.group(1).strip() if arch_url_match else None
+
+    _log("🔗", "SUPERVISOR", f"Extracted PRD URL: {prd_url}")
+    _log("🔗", "SUPERVISOR", f"Extracted Architecture URL: {arch_url}")
+
     # Extract project name and description from input
     project_name_match = re.search(r'PROJECT_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
     project_desc_match = re.search(r'DESCRIPTION:\s*(.+?)(?:PROJECT_TYPE:|$)', str(step_input.input), re.IGNORECASE | re.DOTALL)
@@ -386,54 +396,58 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
     _log("📋", "SUPERVISOR", f"Project: {project_name}")
     _log("📋", "SUPERVISOR", f"Type: {project_type}")
 
+    if not prd_url or not arch_url:
+        _log("❌", "SUPERVISOR", "ERROR: Could not extract document URLs from previous steps")
+        return StepOutput(
+            content=f"ERROR: Could not extract document URLs. PRD URL: {prd_url}, Architecture URL: {arch_url}",
+            success=False
+        )
+
     description = f"""You are the Supervisor. Validate documents by READING THEM and update existing project.
 
 **IMPORTANT:** A project was already created at workflow start. The project_id is available in context.
 
+**DOCUMENT URLs (ALREADY EXTRACTED):**
+- PRD Document URL: {prd_url}
+- Architecture Document URL: {arch_url}
+
 **Your tasks:**
 
-1. **Extract Document URLs**: From the previous steps output, find:
-   - PRD/Feature Spec URL (contains "docs.google.com/document")
-   - Architecture URL (contains "docs.google.com/document")
-
-2. **READ and Validate PRD**:
-   - Call validate_prd_document(prd_url, "{project_name}")
+1. **READ and Validate PRD**:
+   - Call validate_prd_document("{prd_url}", "{project_name}")
    - This will READ the document and check:
      * Does it have the proper header (DOCUMENT TYPE, PROJECT ID, etc.)?
      * Does it contain valid PRD sections?
      * Is the content complete and not placeholder text?
    - The project_id from context is used automatically
 
-3. **READ and Validate Architecture**:
-   - Call validate_architecture_document(architecture_url, "{project_name}")
+2. **READ and Validate Architecture**:
+   - Call validate_architecture_document("{arch_url}", "{project_name}")
    - This will READ the document and check:
      * Does it have the proper header with TECH STACK?
      * Does it contain architecture sections (file structure, components)?
      * Is the tech stack appropriate for the requirements?
    - The project_id from context is used automatically
 
-4. **Update Project**: Get the project_id from context, then call:
-   update_project(project_id, prd_doc_url=..., architecture_doc_url=...)
+3. **Update Project**: Get the project_id from context, then call:
+   update_project(project_id, prd_doc_url="{prd_url}", architecture_doc_url="{arch_url}", status="in_development")
 
-5. **Create Knowledge Base**: Call create_project_knowledge_base()
+4. **Create Knowledge Base**: Call create_project_knowledge_base()
    - This will automatically use the project_id from context
 
-6. **Report**: Summarize validation results including:
+5. **Report**: Summarize validation results including:
    - Are both documents valid and readable?
    - Do they have proper headers?
-   - Are the URLs working?
    - What tech stack was chosen?
 
-**Previous steps output (contains URLs and content):**
-{all_content}
-
 **CRITICAL:**
-- Extract the ACTUAL Google Docs URLs from the output above
+- USE THE URLs PROVIDED ABOVE - DO NOT extract or hallucinate URLs
 - READ the documents to validate content (don't just check if URLs exist)
 - Check for proper document headers
 - Verify architecture contains tech stack
 - The project_id is already in context (from workflow start)
-- Do NOT call create_project - project already exists"""
+- Do NOT call create_project - project already exists
+- Use status='in_development' when updating project"""
 
     _log("🤖", "SUPERVISOR", "Calling Supervisor agent...")
     result = asyncio.run(get_supervisor_agent().arun(description, user_id=user_id))
