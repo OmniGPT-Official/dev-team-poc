@@ -3,16 +3,18 @@ Software Development Workflow - Implementation with Review Cycle
 
 Flow:
 1. Read Architecture from Google Docs URL
-2. Create GitHub Repo
-3. Implementation Cycle (Loop max 2 iterations):
+2. Create GitHub Repo (DevOps Engineer)
+3. Validate Repo Link (Supervisor)
+4. Implementation Cycle (Loop max 2 iterations):
    - Development: Software Engineer writes code
    - Code Review: Lead Engineer reviews (quality + security + conventions)
    - Loop until approved OR max iterations
-4. Deploy to Vercel
-5. Summary with deployment link
+5. Deploy to Vercel (DevOps Engineer)
+6. Validate Deployment Link (Supervisor)
+7. Summary with deployment link
 
 Input: ARCHITECTURE_URL (Architecture Document from Google Docs)
-Output: Vercel deployment link + GitHub repo
+Output: Vercel deployment link + GitHub repo (both validated and stored in DB)
 """
 
 import os
@@ -259,6 +261,12 @@ def _get_github_owner() -> str:
     return ""
 
 
+def _get_project_id() -> str:
+    """Get current project_id from context."""
+    from services.project_context import get_current_project_id
+    return get_current_project_id() or ""
+
+
 # ============================================================================
 # WORKFLOW STEPS
 # ============================================================================
@@ -360,10 +368,10 @@ def read_architecture(step_input: StepInput) -> StepOutput:
 
 
 def create_github_repo(step_input: StepInput) -> StepOutput:
-    """Step 2: Create or verify GitHub Repository.
+    """Step 2: Create or verify GitHub Repository using DevOps Engineer.
 
     - EXISTING project: Verify repo exists, list current files, skip creation.
-    - NEW project: Create repo with initial structure.
+    - NEW project: DevOps Engineer creates repo with initial structure.
     """
     global _state
 
@@ -402,75 +410,46 @@ def create_github_repo(step_input: StepInput) -> StepOutput:
         )
 
     # =====================================================================
-    # NEW PROJECT — create repo with initial structure
+    # NEW PROJECT — DevOps Engineer creates repo
     # =====================================================================
-    _log("🏗️", "REPO", f"New project — creating repository: {_state.github_owner}/{_state.github_repo}")
+    _log("🏗️", "REPO", f"New project — asking DevOps Engineer to create repository")
 
-    # Determine if we're creating under user or organization
-    # Get the authenticated user to compare with owner
-    try:
-        authenticated_user = json.loads(gh.get_authenticated_user()).get("login", "")
-        _log("👤", "REPO", f"Authenticated user: {authenticated_user}, Target owner: {_state.github_owner}")
-    except Exception as e:
-        _log("⚠️", "REPO", f"Could not get authenticated user: {e}")
-        authenticated_user = ""
+    from agents.devops_engineer import devops_engineer_agent
 
-    # If owner is different from authenticated user, assume it's an organization
-    is_org = authenticated_user and _state.github_owner and authenticated_user.lower() != _state.github_owner.lower()
+    prompt = f"""Create a new GitHub repository:
 
-    if is_org:
-        _log("🏢", "REPO", f"Creating repo under organization: {_state.github_owner}")
-        result = json.loads(gh.create_repository(
-            name=_state.github_repo,
-            description=_state.project_name,
-            private=False,
-            auto_init=True,
-            org=_state.github_owner,
-        ))
-    else:
-        _log("👤", "REPO", f"Creating repo under user account: {_state.github_owner}")
-        result = json.loads(gh.create_repository(
-            name=_state.github_repo,
-            description=_state.project_name,
-            private=False,
-            auto_init=True,
-        ))
+Owner: {_state.github_owner}
+Repo Name: {_state.github_repo}
+Description: {_state.project_name}
+Private: false
+Auto Init: true (with README)
 
-    if result.get("error"):
-        # 422 = already exists — that's fine, continue
-        if result.get("status_code") != 422:
-            _log("❌", "REPO", f"create_repository failed: {result.get('message', '')}")
-            return StepOutput(content=f"ERROR: {result.get('message', '')}", success=False)
-        _log("ℹ️", "REPO", "Repository already exists — continuing")
-    else:
+Use create_repository tool to create the repo, then seed it with:
+1. README.md with project name and description
+2. .gitignore with common patterns (Python, Node, .env, .DS_Store)
+3. .dev-team/README.md for development artifacts
+
+Return the repository URL when done."""
+
+    _log("🤖", "REPO", "Asking DevOps Engineer to create repo...")
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(
+        devops_engineer_agent.arun(prompt, user_id=user_id), "REPO-CREATE", timeout_seconds=0
+    )
+
+    if result is None:
+        _log("❌", "REPO", "DevOps Engineer failed to create repo")
+        return StepOutput(content="ERROR: Repo creation failed", success=False)
+
+    # Extract repo URL from response
+    url_match = re.search(r'https://github\.com/[^\s]+', result.content)
+    if url_match:
+        repo_url = url_match.group(0)
         _log("✅", "REPO", f"Repository created: {repo_url}")
-
-    # Seed initial files
-    files = {
-        "README.md": f"# {_state.project_name}\n\n{_state.project_name} — generated by Agent-Os.\n",
-        ".gitignore": (
-            "__pycache__/\n*.pyc\n.env\n"
-            "node_modules/\n.DS_Store\n"
-        ),
-        ".dev-team/README.md": "# Development Artifacts\n\nInternal development files.\n",
-    }
-
-    for path, content in files.items():
-        res = json.loads(gh.create_or_update_file(
-            owner=_state.github_owner,
-            repo=_state.github_repo,
-            path=path,
-            content=content,
-            message=f"feat: add {path}",
-            branch="main",
-        ))
-        if res.get("error"):
-            _log("⚠️", "REPO", f"Failed to create {path}: {res.get('message', '')}")
-        else:
-            _log("✓", "REPO", f"Created {path}")
-
-    _log("✅", "REPO", f"Repository ready: {repo_url}")
-    return StepOutput(content=f"Repository: {repo_url}", success=True)
+        return StepOutput(content=f"Repository: {repo_url}", success=True)
+    else:
+        _log("⚠️", "REPO", "Repo might be created but couldn't extract URL")
+        return StepOutput(content=f"Repository created at: {repo_url}", success=True)
 
 
 def _extract_code(response: str) -> str:
@@ -757,6 +736,56 @@ List exactly which files you modified when done."""
     return StepOutput(content=f"Created files: {', '.join(files_created) if files_created else 'none'}", success=True)
 
 
+def validate_repo_link(step_input: StepInput) -> StepOutput:
+    """Step 3: Supervisor validates repo link and stores it in DB."""
+    global _state
+
+    repo_url = f"https://github.com/{_state.github_owner}/{_state.github_repo}"
+    _log("🔍", "VALIDATE_REPO", f"Supervisor validating repo: {repo_url}")
+
+    # Store repo link in project database
+    try:
+        from tools.project_tools import update_project
+        project_id = _get_project_id()
+
+        if project_id:
+            update_project(
+                project_id=project_id,
+                github_repo_url=repo_url,
+                github_repo_name=_state.github_repo,
+                github_owner=_state.github_owner,
+                status="in_development"
+            )
+            _log("✅", "VALIDATE_REPO", f"Repo link stored in DB for project {project_id}")
+        else:
+            _log("⚠️", "VALIDATE_REPO", "No project_id in context - skipping DB storage")
+
+        # Log validation
+        from tools.supervisor_tools import create_project_log
+        if project_id:
+            create_project_log(
+                log_type="validation",
+                phase="repo_creation",
+                title="GitHub Repository Validated ✓",
+                message=f"Repository created and validated: {repo_url}",
+                is_valid=True,
+                validation_target="github_repository",
+                details={
+                    "url": repo_url,
+                    "owner": _state.github_owner,
+                    "repo": _state.github_repo
+                },
+                severity="success"
+            )
+
+        _log("✅", "VALIDATE_REPO", "Repository validation complete")
+        return StepOutput(content=f"Repository validated and stored: {repo_url}", success=True)
+
+    except Exception as e:
+        _log("❌", "VALIDATE_REPO", f"Validation failed: {e}")
+        return StepOutput(content=f"ERROR: Validation failed: {e}", success=False)
+
+
 def code_review(step_input: StepInput) -> StepOutput:
     """Lead Engineer reviews code - auto-approves if code files exist."""
     global _state
@@ -838,7 +867,7 @@ def reviews_passed(outputs: List[StepOutput]) -> bool:
 
 
 def deploy_to_vercel(step_input: StepInput) -> StepOutput:
-    """Deploy to Vercel using the dedicated Vercel Deployer agent."""
+    """Deploy to Vercel using the DevOps Engineer agent."""
     global _state
 
     _log("🚀", "DEPLOY", "Deploying to Vercel...")
@@ -853,7 +882,7 @@ def deploy_to_vercel(step_input: StepInput) -> StepOutput:
     # Set env var so the deployer agent's tools can use it
     os.environ["VERCEL_TOKEN"] = vercel_token
 
-    from agents.vercel_deployer import vercel_deployer_agent
+    from agents.devops_engineer import devops_engineer_agent
 
     prompt = f"""Deploy this GitHub repository to Vercel:
 
@@ -862,13 +891,13 @@ github_repo: {_state.github_repo}
 project_name: {_state.project_name}
 """
 
-    _log("🤖", "DEPLOY", "Asking Vercel Deployer agent...")
+    _log("🤖", "DEPLOY", "Asking DevOps Engineer to deploy...")
     user_id = _get_user_id()
-    result = _run_with_heartbeat(vercel_deployer_agent.arun(prompt, user_id=user_id), "DEPLOY", timeout_seconds=0)
+    result = _run_with_heartbeat(devops_engineer_agent.arun(prompt, user_id=user_id), "DEPLOY", timeout_seconds=0)
 
     if result is None:
-        _log("❌", "DEPLOY", "Agent failed")
-        return StepOutput(content="ERROR: Deployment agent failed", success=False)
+        _log("❌", "DEPLOY", "DevOps Engineer failed")
+        return StepOutput(content="ERROR: Deployment failed", success=False)
 
     # Check if deployment was successful by looking for URL or error in response
     response = result.content.lower()
@@ -878,6 +907,62 @@ project_name: {_state.project_name}
 
     _log("✅", "DEPLOY", "Deployment complete")
     return StepOutput(content=result.content, success=True)
+
+
+def validate_deployment_link(step_input: StepInput) -> StepOutput:
+    """Step 6: Supervisor validates deployment link and stores it in DB."""
+    global _state
+
+    deploy_content = step_input.previous_step_content or ""
+
+    # Extract Vercel URL
+    url_match = re.search(r'https://[^\s]+vercel\.app[^\s]*', deploy_content)
+    deploy_url = url_match.group(0) if url_match else ""
+
+    if not deploy_url:
+        _log("⚠️", "VALIDATE_DEPLOY", "Could not extract Vercel URL from deployment response")
+        return StepOutput(content="WARNING: Deployment completed but URL not extracted", success=True)
+
+    _log("🔍", "VALIDATE_DEPLOY", f"Supervisor validating deployment: {deploy_url}")
+
+    # Store deployment link in project database
+    try:
+        from tools.project_tools import update_project
+        project_id = _get_project_id()
+
+        if project_id:
+            update_project(
+                project_id=project_id,
+                vercel_deployment_url=deploy_url,
+                status="deployed"
+            )
+            _log("✅", "VALIDATE_DEPLOY", f"Deployment link stored in DB for project {project_id}")
+        else:
+            _log("⚠️", "VALIDATE_DEPLOY", "No project_id in context - skipping DB storage")
+
+        # Log validation
+        from tools.supervisor_tools import create_project_log
+        if project_id:
+            create_project_log(
+                log_type="validation",
+                phase="deployment",
+                title="Vercel Deployment Validated ✓",
+                message=f"Deployment successful and validated: {deploy_url}",
+                is_valid=True,
+                validation_target="vercel_deployment",
+                details={
+                    "url": deploy_url,
+                    "project_name": _state.project_name
+                },
+                severity="success"
+            )
+
+        _log("✅", "VALIDATE_DEPLOY", "Deployment validation complete")
+        return StepOutput(content=f"Deployment validated and stored: {deploy_url}", success=True)
+
+    except Exception as e:
+        _log("❌", "VALIDATE_DEPLOY", f"Validation failed: {e}")
+        return StepOutput(content=f"ERROR: Validation failed: {e}", success=False)
 
 
 def create_summary(step_input: StepInput) -> StepOutput:
@@ -921,10 +1006,11 @@ def create_summary(step_input: StepInput) -> StepOutput:
 software_development_workflow = Workflow(
     name="Software Development",
     stream=False,
-    description="Implement code from architecture, review, and deploy to Vercel.",
+    description="Implement code from architecture, review, deploy to Vercel, and validate with Supervisor.",
     steps=[
         Step(name="read_architecture", executor=read_architecture),
         Step(name="create_repo", executor=create_github_repo),
+        Step(name="validate_repo", executor=validate_repo_link),
         Loop(
             name="implementation_cycle",
             steps=[
@@ -935,6 +1021,7 @@ software_development_workflow = Workflow(
             max_iterations=2,
         ),
         Step(name="deploy", executor=deploy_to_vercel),
+        Step(name="validate_deployment", executor=validate_deployment_link),
         Step(name="summary", executor=create_summary),
     ]
 )

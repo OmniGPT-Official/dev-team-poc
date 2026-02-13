@@ -12,7 +12,7 @@ from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
 from agents.software_engineer_2 import software_engineer_2_agent
 from agents.security_engineer import security_engineer_agent
-from agents.vercel_deployer import vercel_deployer_agent
+from agents.devops_engineer import devops_engineer_agent
 from agents.credentials_manager import credentials_manager_agent
 from teams.product_team import product_team
 from workflows.product_requirements_workflow import product_requirements_workflow
@@ -56,7 +56,7 @@ agent_os = AgentOS(
         software_engineer_agent,
         software_engineer_2_agent,  # Interactive Development Agent
         security_engineer_agent,
-        vercel_deployer_agent,  # Vercel Deployer
+        devops_engineer_agent,  # DevOps Engineer (repo creation + Vercel deployment)
         content_strategist,  # Content Creation Team
         content_writer,  # Content Creation Team
         email_followup_agent,  # Email Follow-Up Agent (OAuth-enabled)
