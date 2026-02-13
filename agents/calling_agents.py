@@ -215,7 +215,8 @@ campaign_coordinator_agent = Agent(
     ],  # Google Sheets tools injected via pre_hook
     pre_hooks=[make_tool_hook("google_sheets")],
     db=db,
-    add_history_to_context=True,
+    add_history_to_context=True,  # Orchestrator needs context for conversation
+    num_history_messages=10,  # FIX: Limit history to prevent 1M+ token overflow
     add_datetime_to_context=True,
     markdown=True,
 )
