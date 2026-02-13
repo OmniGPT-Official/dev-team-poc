@@ -46,3 +46,62 @@ def get_api_key_with_metadata(user_id: str, provider: str) -> Optional[dict]:
     if not result.data:
         return None
     return result.data[0]
+
+
+def store_api_key(user_id: str, provider: str, api_key: str, metadata: Optional[dict] = None) -> bool:
+    """Store or update an API key for a user.
+
+    Args:
+        user_id: User UUID
+        provider: Provider name (e.g., "github", "vercel")
+        api_key: The API key/token to store
+        metadata: Optional metadata dict
+
+    Returns:
+        True if successful, False otherwise
+    """
+    print(f"[api_key_store] store_api_key(user_id={user_id!r}, provider={provider!r})")
+    try:
+        # Check if key already exists
+        existing = (
+            get_supabase_client()
+            .table("user_api_keys")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("provider", provider)
+            .limit(1)
+            .execute()
+        )
+
+        data = {
+            "user_id": user_id,
+            "provider": provider,
+            "api_key": api_key,
+            "metadata": metadata or {}
+        }
+
+        if existing.data:
+            # Update existing
+            result = (
+                get_supabase_client()
+                .table("user_api_keys")
+                .update(data)
+                .eq("user_id", user_id)
+                .eq("provider", provider)
+                .execute()
+            )
+        else:
+            # Insert new
+            result = (
+                get_supabase_client()
+                .table("user_api_keys")
+                .insert(data)
+                .execute()
+            )
+
+        print(f"[api_key_store] Successfully stored {provider} key for user {user_id}")
+        return True
+
+    except Exception as e:
+        print(f"[api_key_store] ERROR storing API key: {e}")
+        return False
