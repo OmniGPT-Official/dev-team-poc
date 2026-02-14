@@ -171,6 +171,25 @@ The workflow will SEQUENTIALLY:
    - Consider edge cases and error handling
 
 Output Format for Technical Specs (Stack-Dependent):
+
+**CRITICAL - DOCUMENT HEADER (FIRST 6 LINES):**
+Every Architecture document must start with this exact header format:
+
+```
+DOCUMENT TYPE: Technical Architecture Document
+PROJECT TYPE: [New Project / Existing Project]
+PROJECT ID: [Project ID from context]
+PROJECT NAME: [Exact project name]
+TECH STACK: [Primary technologies - e.g., "HTML5/CSS3/JavaScript" or "Next.js, TypeScript, Tailwind CSS, Supabase"]
+
+====================================================================================================
+```
+
+**CRITICAL - Document Title Format:** `Architecture_[ProjectName]_[ProjectID]`
+Example: `Architecture_ClinicWebPage_39726658`
+
+Then continue with these sections:
+
 - **Technology Stack Decision**: Chosen stack with justification based on requirements
 - **Overview**: High-level architecture approach
 - **GitHub Repository**: (CRITICAL for existing projects!) Include the repo URL if this is an existing project

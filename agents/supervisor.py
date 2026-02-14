@@ -13,9 +13,16 @@ from agno.models.openrouter import OpenRouter
 from tools.supervisor_tools import (
     validate_prd_document,
     validate_architecture_document,
+    validate_feature_spec_document,
+    validate_technical_doc_document,
     create_project_knowledge_base,
     validate_workflow_phase_completion,
-    create_project_log
+)
+from tools.project_tools import (
+    create_project,
+    update_project,
+    add_feature_spec,
+    add_technical_doc
 )
 
 
@@ -57,12 +64,27 @@ You act as a quality gatekeeper after PRD and Architecture documents are created
    - Returns list of issues if any
    - Logs validation result
 
-5. **create_project_log(...)** - Manually create log entries
-   - Use for custom logging when needed
+5. **create_project(project_name: str, project_description: str, project_type: str)** - Create project in database
+   - Creates new project entry in Supabase
+   - Returns project_id for subsequent updates
+   - Call this FIRST before validation
+
+7. **update_project(project_id: str, prd_doc_url: str, architecture_doc_url: str, status: str)** - Update project with document URLs
+   - Updates project with PRD and Architecture document URLs
+   - Call after validation succeeds
+   - Stores validated documents in database
+   - **CRITICAL**: Valid status values are ONLY: 'planning', 'in_development', 'deployed', 'archived'
+   - Use status='in_development' after documents are validated
 
 ## HOW YOU WORK
 
-### Step 1: Validate PRD Document
+### Step 1: Create Project Entry
+
+When validation workflow starts:
+1. Call `create_project(project_name, project_description, project_type="new")`
+2. Store the returned project_id for later use
+
+### Step 2: Validate PRD Document
 
 When called after PRD creation:
 1. Call `validate_prd_document(prd_url, project_name)`
@@ -80,9 +102,16 @@ When called after Architecture creation:
 4. Note any keyword warnings (means document uses different terminology)
 5. Only report failure if document is INACCESSIBLE (credentials/permissions issue)
 
-### Step 3: Store in Agno Knowledge Base (CRITICAL!)
+### Step 4: Update Project with Document URLs
 
-After both documents are validated:
+After validation succeeds:
+1. Call `update_project(project_id, prd_doc_url=..., architecture_doc_url=..., status='in_development')`
+2. This stores the validated document URLs in the database
+3. **CRITICAL**: Only use valid status values: 'planning', 'in_development', 'deployed', 'archived'
+
+### Step 5: Store in Agno Knowledge Base (CRITICAL!)
+
+After project is updated:
 1. ⭐ MUST call `create_project_knowledge_base()` to store documents in Agno Knowledge Base
 2. This reads FULL document content from Google Docs
 3. Stores with OpenAI embeddings in PgVector for RAG semantic search
@@ -90,7 +119,7 @@ After both documents are validated:
 5. This enables semantic search across all user projects
 6. Knowledge base storage is REQUIRED for project completion
 
-### Step 4: Report Results
+### Step 6: Report Results
 
 Provide a clear summary:
 
@@ -155,9 +184,7 @@ Please verify document permissions and re-authenticate Google Docs if needed.
    - Keywords are checked but DON'T block validation
    - Only fail if document is inaccessible (credentials/permission errors)
 
-3. **LOG EVERYTHING** - All validations are automatically logged with keyword check results
-
-4. **⭐ MUST CREATE KNOWLEDGE BASE** - After validation, ALWAYS call `create_project_knowledge_base()`
+3. **⭐ MUST CREATE KNOWLEDGE BASE** - After validation, ALWAYS call `create_project_knowledge_base()`
    - This stores PRD/Architecture in Agno Knowledge Base with RAG embeddings
    - Uses OpenAI embeddings + PgVector for semantic search
    - Required for project to be searchable later
@@ -197,7 +224,7 @@ All validation checks passed. The project is ready for implementation."
 
 supervisor_agent = Agent(
     name="Supervisor",
-    role="Validates PRD/Architecture documents, maintains project intelligence, and logs validation results",
+    role="Validates PRD/Architecture/Feature Spec/Technical Doc documents, maintains project intelligence, and logs validation results",
     model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=16384),
     db=db,
     add_history_to_context=True,
@@ -207,11 +234,16 @@ supervisor_agent = Agent(
     tools=[
         validate_prd_document,
         validate_architecture_document,
+        validate_feature_spec_document,
+        validate_technical_doc_document,
         create_project_knowledge_base,
         validate_workflow_phase_completion,
-        create_project_log
+        create_project,
+        update_project,
+        add_feature_spec,
+        add_technical_doc
     ],
-    tool_call_limit=20,
+    tool_call_limit=25,  # Increased from 20 to accommodate additional validation tools
     debug_mode=False,
     reasoning=False,  # Disable reasoning to avoid Gemini API errors
 )

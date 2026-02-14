@@ -20,6 +20,7 @@ from agents.credentials_manager import credentials_manager_agent
 from utils.knowledge_base import get_knowledge_base
 from workflows.product_requirements_workflow import product_requirements_workflow
 from workflows.software_development_workflow import software_development_workflow
+from tools.project_tools import list_user_projects, get_project, search_projects_by_name, find_project_by_github_url
 
 
 def run_product_requirements(input_data: str, **kwargs) -> str:
@@ -89,7 +90,7 @@ product_team = Team(
         software_engineer_agent,
         security_engineer_agent,
     ],
-    tools=[run_product_requirements, run_software_development],
+    tools=[run_product_requirements, run_software_development, list_user_projects, get_project, search_projects_by_name, find_project_by_github_url],
     knowledge=get_knowledge_base(),
     search_knowledge=True,
     add_knowledge_to_context=True,
@@ -106,30 +107,68 @@ product_team = Team(
 **Available Tool Functions:**
 
 ### 1. `run_product_requirements(input_data: str)`
-Creates PRD/Feature Spec AND Architecture documents.
+Creates PRD/Feature Spec AND Architecture/Technical documents using Router + Steps architecture.
 
 **When to use:** After Product Lead gathers all requirements from user.
 
-**Input format (single string with all parameters):**
+**TWO WORKFLOW PATHS:**
+
+#### Path A: NEW PROJECT (Router → new_project_path)
+Creates PRD + Architecture documents.
+
+**Input format:**
 ```
 PROJECT_TYPE: new
 PROJECT_NAME: MyApp
 DESCRIPTION: A mobile app for tracking fitness goals with social features
-FEATURE_NAME: Social Sharing (optional, for existing projects only)
 ```
 
-**Example tool call:**
+**Example:**
 ```
 run_product_requirements(input_data="PROJECT_TYPE: new\\nPROJECT_NAME: FitTracker\\nDESCRIPTION: A fitness tracking app with workout plans and progress charts")
 ```
 
+**Workflow steps:**
+1. Create project entry in DB
+2. Create PRD document (Product Lead)
+3. Create Architecture document (Lead Engineer)
+4. Supervisor validates both, creates knowledge base
+5. Summary with both URLs
+
+#### Path B: EXISTING PROJECT (Router → existing_project_path)
+Creates Feature Spec + Technical Doc documents for existing projects.
+
+**Input format:**
+```
+PROJECT_TYPE: existing
+PROJECT_ID: <uuid-from-database>
+PROJECT_NAME: MyApp
+FEATURE_NAME: Dark Mode
+DESCRIPTION: Add dark mode toggle to user settings
+```
+
+**Example:**
+```
+run_product_requirements(input_data="PROJECT_TYPE: existing\\nPROJECT_ID: abc123-def456\\nPROJECT_NAME: FitTracker\\nFEATURE_NAME: Social Sharing\\nDESCRIPTION: Add ability to share workouts on social media")
+```
+
+**Workflow steps:**
+1. Get project from DB + search knowledge base for context
+2. Validate GitHub repo (if exists)
+3. Create Feature Specification (Product Lead)
+4. Create Feature Technical Document (Lead Engineer)
+5. Supervisor validates both, stores in feature_specs/technical_docs arrays
+6. Summary with both URLs
+
 **Returns:** 2 Google Docs URLs in the output:
 ```
-Document 1: PRD (or Feature Spec)
-- URL: https://docs.google.com/document/d/xxx/edit
+NEW PROJECT:
+- Document 1: PRD - URL: https://docs.google.com/document/d/xxx/edit
+- Document 2: Architecture - URL: https://docs.google.com/document/d/yyy/edit
 
-Document 2: Architecture
-- URL: https://docs.google.com/document/d/yyy/edit
+EXISTING PROJECT:
+- Document 1: Feature Spec - URL: https://docs.google.com/document/d/xxx/edit
+- Document 2: Technical Doc - URL: https://docs.google.com/document/d/yyy/edit
 ```
 
 **IMPORTANT:** Always share BOTH URLs with the user after calling this tool.
@@ -182,6 +221,22 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 
 ---
 
+### 3. Project Lookup Tools (query projects database)
+
+- **`list_user_projects(limit=50)`** - List all user's projects. Returns list of project dicts.
+- **`get_project(project_id)`** - Get full project details by UUID.
+- **`search_projects_by_name(search_query)`** - Search projects by name (e.g. "pizza", "fitness").
+- **`find_project_by_github_url(github_url)`** - Find project by GitHub repo URL.
+
+**When user mentions a project by name** (e.g. "update my pizza project", "work on FitTracker"):
+1. Call `search_projects_by_name("pizza")` to find matching projects
+2. If no results, call `list_user_projects()` to show all projects
+3. Show the matching project(s) to user: "I found **Pizza App** (project_id: xxx). Is this the one?"
+4. User confirms → keep that project_id and project details in context for the session
+5. Proceed with the existing project workflow using that project_id
+
+---
+
 ## TEAM ROLES
 
 **Credentials Manager** (Setup & Validation - RUNS FIRST)
@@ -224,18 +279,89 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 5. **TEAM** → Proceeds to Phase 1 ONLY after credentials are validated
 
 **Phase 1: Requirements & Architecture**
+
+**CRITICAL: For EXISTING projects, check if GitHub repo is in database first!**
+
 1. **Search knowledge base** for any existing project info
+
 2. **Delegate to Product Lead** → "Gather requirements from the user" (NOT "create PRD" or "run workflow")
+
 3. **Product Lead** → Has conversation with user → Returns gathered requirements to Team
-   - **If EXISTING project**: Product Lead MUST collect the GitHub repository URL from the user
-   - **If NEW project**: No GitHub URL needed
-4. **TEAM** → Calls `run_product_requirements` tool with gathered info:
-   - For new: `run_product_requirements(input_data="PROJECT_TYPE: new\\nPROJECT_NAME: AppName\\nDESCRIPTION: Full description here")`
-   - For existing: `run_product_requirements(input_data="PROJECT_TYPE: existing\\nPROJECT_NAME: AppName\\nGITHUB_REPO_URL: https://github.com/user/repo\\nDESCRIPTION: Changes needed")`
+   - **If NEW project**: No project_id needed → proceed to step 4
+   - **If EXISTING project**: Product Lead asks for GitHub repo URL
+
+4. **TEAM checks if GitHub repo exists in DB** (for existing projects):
+
+   **Option A: Use project tools directly**
+   ```python
+   from tools.project_tools import find_project_by_github_url, list_user_projects
+
+   # Search by GitHub URL
+   project = find_project_by_github_url("https://github.com/user/repo")
+
+   if project:
+       # Found! Use existing project_id
+       project_id = project["id"]
+   else:
+       # Not found! This is a PROJECT IMPORT
+       # Show user their existing projects
+       projects = list_user_projects(limit=10)
+       # Ask user for context about this repo
+       # Follow Project Import Flow (see below)
+   ```
+
+   **Project Import Flow** (when GitHub repo NOT in database):
+
+   a) **Show user existing projects:**
+      - List their projects: "Your existing projects: Project A, Project B, ..."
+      - Ask: "Is this repo one of these, or a new repo to import?"
+
+   b) **Gather project context:**
+      - Ask user to describe the project
+      - Ask for Vercel/deployment link (if deployed)
+      - Ask about tech stack (if they know)
+
+   c) **Analyze GitHub repo:**
+      - Search knowledge base for any context
+      - Read GitHub repo structure (README, package.json, etc.)
+
+   d) **Create PRD for existing project:**
+      - Include context from user + GitHub analysis
+      - Document current state and architecture
+      - Use PROJECT TYPE: Existing Project (GitHub Import)
+
+   e) **Store in database:**
+      - Project will be created with GitHub repo URL
+      - Vercel link stored (if provided)
+      - Creates project_id for future use
+
+   f) **Confirm and proceed:**
+      - "✅ Project imported! PRD: [URL]"
+      - "Now, what feature/changes do you want to make?"
+      - Create Feature Spec + Technical Doc for the requested changes
+
+5. **TEAM** → Calls `run_product_requirements` tool with gathered info:
+   - For **NEW** projects:
+     ```
+     run_product_requirements(input_data="PROJECT_TYPE: new\\nPROJECT_NAME: AppName\\nDESCRIPTION: Full description here")
+     ```
+     Router will direct to **new_project_path** → PRD + Architecture
+
+   - For **EXISTING** projects:
+     ```
+     run_product_requirements(input_data="PROJECT_TYPE: existing\\nPROJECT_ID: <uuid>\\nPROJECT_NAME: AppName\\nFEATURE_NAME: FeatureName\\nDESCRIPTION: Feature description")
+     ```
+     Router will direct to **existing_project_path** → Feature Spec + Technical Doc
+
+     **Critical for existing projects:**
+     - MUST include PROJECT_ID (get from DB via search or ask user)
+     - MUST include FEATURE_NAME
+     - GitHub repo URL is retrieved from DB automatically (no need to ask user)
+
 5. **TEAM** → Shares BOTH returned URLs with user:
    - "Here are your documents:"
-   - "1. PRD/Feature Spec: [URL 1]"
-   - "2. Architecture: [URL 2]"
+   - For new: "1. PRD: [URL 1]" + "2. Architecture: [URL 2]"
+   - For existing: "1. Feature Spec: [URL 1]" + "2. Technical Doc: [URL 2]"
    - "Would you like me to proceed with implementation?"
 
 **Phase 2: Implementation & Deployment**
@@ -301,10 +427,15 @@ When delegating to Product Lead, say:
    **DO NOT implement automatically** - always ask for confirmation first
 
 6. **EXISTING PROJECT DETECTION** - If user mentions:
-   - A GitHub repo URL (github.com/user/repo)
+   - A GitHub repo URL (github.com/user/repo) → call `find_project_by_github_url(url)`
    - "existing project", "update", "modify", "add feature to"
+   - A project by name (e.g. "my pizza project", "FitTracker") → call `search_projects_by_name("pizza")`
    - A repo they want to change
-   Then this is an EXISTING project. ALWAYS ask for or include the GitHub repo URL.
+   Then this is an EXISTING project. Look it up in the database first:
+   1. Search by name or GitHub URL
+   2. If found → show user: "I found **[name]** — is this the project you mean?"
+   3. User confirms → use that project_id and context going forward
+   4. If NOT found → call `list_user_projects()` to show all projects, let user pick or import new
 
 7. **ALL FILES IN GITHUB** - Code and reviews stored in GitHub repository under .dev-team/
 """,
@@ -313,6 +444,5 @@ When delegating to Product Lead, say:
     show_members_responses=True,
     add_history_to_context=True,
     num_history_messages=20,
-    add_team_history_to_members=True,
     debug_mode=False,
 )
