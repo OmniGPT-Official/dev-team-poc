@@ -319,65 +319,79 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
 
 
 def create_summary_executor(step_input: StepInput) -> StepOutput:
-    """Simple wrapper to call product_lead with user_id from workflow."""
+    """Build summary directly from previous step outputs (no agent call needed)."""
     import re
-    import asyncio
 
-    # Get user_id from workflow session
-    user_id = None
-    if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
-        user_id = step_input.workflow_session.user_id
-
-    # Get project_id from context
     project_id = get_current_project_id()
 
     _log("📊", "SUMMARY", f"Creating summary - project_id={project_id}")
 
-    description = """Extract and present both Google Docs URLs from the previous steps.
-
-Look at the previous step outputs and find:
-1. The PRD or Feature Spec URL (from step 1)
-2. The Architecture or Technical Doc URL (from step 2)
-
-Present them in this format:
-
-## ✅ Documents Created!
-
-**Project:** [project name]
-
-### 📄 Document 1: [PRD or Feature Spec]
-[URL from previous step]
-
-### 🏗️ Document 2: [Architecture or Technical Doc]
-[URL from previous step]
-
----
-**Next step:** Would you like me to implement this? Just say "yes" or "implement this".
-
-CRITICAL: Find and include the ACTUAL URLs from the previous steps. Do not say "Not available"."""
-
+    # Collect all previous step content
     prev_content = step_input.get_all_previous_content()
 
-    # Call agent with user_id
-    result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nPrevious steps output:\n{prev_content}", user_id=user_id))
+    # Extract all Google Docs URLs from previous steps
+    doc_urls = re.findall(r'https://docs\.google\.com/document/d/[a-zA-Z0-9_-]+(?:/edit)?', prev_content)
+    # Deduplicate while preserving order
+    seen = set()
+    unique_urls = []
+    for url in doc_urls:
+        normalized = url.rstrip('/edit').rstrip('/')
+        if normalized not in seen:
+            seen.add(normalized)
+            unique_urls.append(url)
 
-    # Extract architecture URL for next workflow
-    architecture_url = None
-    if result.content:
-        arch_match = re.search(r'https://docs\.google\.com/document/d/[^/\s]+', result.content)
-        if arch_match:
-            architecture_url = arch_match.group(0)
+    # Extract project name from previous content
+    project_name_match = re.search(r'PROJECT[_ ]NAME:\s*(.+)', prev_content, re.IGNORECASE)
+    project_name = project_name_match.group(1).strip() if project_name_match else "Project"
 
-    _log("📊", "SUMMARY", f"Extracted architecture_url={architecture_url}")
+    # Extract feature name (for existing projects)
+    feature_name_match = re.search(r'FEATURE[_ ]NAME:\s*(.+)', prev_content, re.IGNORECASE)
+    feature_name = feature_name_match.group(1).strip() if feature_name_match else None
+
+    # Detect project type from content
+    is_existing = "existing" in prev_content.lower()[:500] or feature_name is not None
+
+    # Build summary from previous step outputs
+    if is_existing:
+        doc1_label = "Feature Specification"
+        doc2_label = "Technical Document"
+    else:
+        doc1_label = "Product Requirements Document (PRD)"
+        doc2_label = "Architecture Document"
+
+    doc1_url = unique_urls[0] if len(unique_urls) > 0 else "Not found in previous steps"
+    doc2_url = unique_urls[1] if len(unique_urls) > 1 else "Not found in previous steps"
+
+    summary_parts = [
+        "Documents Created Successfully!",
+        f"Project: {project_name}",
+    ]
+    if feature_name:
+        summary_parts.append(f"Feature: {feature_name}")
+
+    summary_parts.extend([
+        "",
+        f"Document 1: {doc1_label}",
+        f"URL: {doc1_url}",
+        "",
+        f"Document 2: {doc2_label}",
+        f"URL: {doc2_url}",
+        "",
+        "Next step: Would you like me to implement this? Just say 'yes' or 'implement this'.",
+    ])
+
+    summary = "\n".join(summary_parts)
+
+    _log("📊", "SUMMARY", f"Doc1: {doc1_url}")
+    _log("📊", "SUMMARY", f"Doc2: {doc2_url}")
 
     # Append metadata for next workflow
-    final_content = result.content
     if project_id:
-        final_content += f"\n\n---\n**Metadata for next workflow:**\nPROJECT_ID: {project_id}"
-        if architecture_url:
-            final_content += f"\nARCHITECTURE_URL: {architecture_url}"
+        summary += f"\n\n---\nMetadata for next workflow:\nPROJECT_ID: {project_id}"
+        if doc2_url.startswith("https://"):
+            summary += f"\nARCHITECTURE_URL: {doc2_url}"
 
-    return StepOutput(content=final_content, success=True)
+    return StepOutput(content=summary, success=True)
 
 
 # ============================================================================
