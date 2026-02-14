@@ -294,6 +294,62 @@ def search_projects_by_name(search_query: str) -> List[Dict[str, Any]]:
             return []
 
 
+def find_project_by_github_url(github_url: str) -> Optional[Dict[str, Any]]:
+    """Find a project by GitHub repository URL.
+
+    Args:
+        github_url: GitHub repository URL (e.g., "https://github.com/user/repo")
+
+    Returns:
+        Project dict if found, None otherwise
+    """
+    user_id = get_current_user_id()
+    if not user_id:
+        print(f"[project_tools] ERROR: No user_id in context")
+        return None
+
+    # Normalize GitHub URL (remove trailing slashes, .git suffix)
+    normalized_url = github_url.rstrip('/').replace('.git', '')
+
+    try:
+        # Search by exact match
+        result = (
+            get_supabase_client()
+            .table("projects")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("github_repo_url", normalized_url)
+            .limit(1)
+            .execute()
+        )
+
+        if result.data:
+            print(f"[project_tools] Found project by GitHub URL: {result.data[0]['project_name']}")
+            return result.data[0]
+
+        # Fallback: Try LIKE search in case URL format is slightly different
+        result = (
+            get_supabase_client()
+            .table("projects")
+            .select("*")
+            .eq("user_id", user_id)
+            .ilike("github_repo_url", f"%{normalized_url}%")
+            .limit(1)
+            .execute()
+        )
+
+        if result.data:
+            print(f"[project_tools] Found project by GitHub URL (fuzzy match): {result.data[0]['project_name']}")
+            return result.data[0]
+
+        print(f"[project_tools] No project found for GitHub URL: {normalized_url}")
+        return None
+
+    except Exception as e:
+        print(f"[project_tools] ERROR finding project by GitHub URL: {e}")
+        return None
+
+
 # ============================================================================
 # KNOWLEDGE BASE INTEGRATION
 # ============================================================================
@@ -411,3 +467,131 @@ def search_projects_semantic(query: str, limit: int = 5) -> List[Dict[str, Any]]
     except Exception as e:
         print(f"[project_tools] ERROR in semantic search: {e}")
         return []
+
+
+# ============================================================================
+# FEATURE SPECS & TECHNICAL DOCS (ARRAY OPERATIONS)
+# ============================================================================
+
+def add_feature_spec(
+    project_id: str,
+    doc_url: str,
+    title: str
+) -> Dict[str, Any]:
+    """
+    Prepend a feature spec document to the project's feature_specs array.
+
+    Args:
+        project_id: Project UUID
+        doc_url: Google Docs URL
+        title: Document title
+
+    Returns:
+        {
+            "success": bool,
+            "message": str
+        }
+    """
+    try:
+        # Get current feature_specs array
+        project = get_project(project_id)
+        if not project:
+            return {
+                "success": False,
+                "message": "Project not found"
+            }
+
+        feature_specs = project.get("feature_specs", [])
+
+        # Prepend new spec (most recent first)
+        new_spec = {
+            "url": doc_url,
+            "title": title,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        feature_specs.insert(0, new_spec)  # Prepend to beginning
+
+        # Update project
+        result = (
+            get_supabase_client()
+            .table("projects")
+            .update({"feature_specs": feature_specs})
+            .eq("id", project_id)
+            .execute()
+        )
+
+        print(f"[project_tools] Added feature spec to project {project_id}: {title}")
+
+        return {
+            "success": True,
+            "message": f"Feature spec added: {title}"
+        }
+
+    except Exception as e:
+        print(f"[project_tools] ERROR adding feature spec: {e}")
+        return {
+            "success": False,
+            "message": f"Failed to add feature spec: {str(e)}"
+        }
+
+
+def add_technical_doc(
+    project_id: str,
+    doc_url: str,
+    title: str
+) -> Dict[str, Any]:
+    """
+    Prepend a technical document to the project's technical_docs array.
+
+    Args:
+        project_id: Project UUID
+        doc_url: Google Docs URL
+        title: Document title
+
+    Returns:
+        {
+            "success": bool,
+            "message": str
+        }
+    """
+    try:
+        # Get current technical_docs array
+        project = get_project(project_id)
+        if not project:
+            return {
+                "success": False,
+                "message": "Project not found"
+            }
+
+        technical_docs = project.get("technical_docs", [])
+
+        # Prepend new doc (most recent first)
+        new_doc = {
+            "url": doc_url,
+            "title": title,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        technical_docs.insert(0, new_doc)  # Prepend to beginning
+
+        # Update project
+        result = (
+            get_supabase_client()
+            .table("projects")
+            .update({"technical_docs": technical_docs})
+            .eq("id", project_id)
+            .execute()
+        )
+
+        print(f"[project_tools] Added technical doc to project {project_id}: {title}")
+
+        return {
+            "success": True,
+            "message": f"Technical doc added: {title}"
+        }
+
+    except Exception as e:
+        print(f"[project_tools] ERROR adding technical doc: {e}")
+        return {
+            "success": False,
+            "message": f"Failed to add technical doc: {str(e)}"
+        }

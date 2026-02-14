@@ -54,6 +54,7 @@ inject_user_tools = make_tool_hook(
     "google_docs",
     "elevenlabs",
     "github",
-    "vercel",
+    "vercel",  # Comprehensive Vercel project tools with GitHub integration
+    "vercel_deploy",  # Fallback one-time deployment tools
     "supabase_mcp",
 )

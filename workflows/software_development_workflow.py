@@ -1,7 +1,12 @@
 """
-Software Development Workflow - Implementation with Review Cycle
+Software Development Workflow - Implementation with Review Cycle (Conditional)
 
-Flow:
+Flow is conditional based on project type (new vs existing):
+
+**Step 1: Read Architecture** (all projects)
+- Extract project context, determine if existing or new project
+
+**NEW PROJECTS** (complete flow):
 1. Read Architecture from Google Docs URL
 2. Create GitHub Repo (DevOps Engineer)
 3. Validate Repo Link (Supervisor)
@@ -13,8 +18,19 @@ Flow:
 6. Validate Deployment Link (Supervisor)
 7. Summary with deployment link
 
+**EXISTING PROJECTS** (skip repo creation + deployment):
+1. Read Architecture from Google Docs URL
+2. Validate Repo Link (Supervisor) - verify existing repo
+3. Implementation Cycle (Loop max 2 iterations):
+   - Development: Software Engineer writes code to update project
+   - Code Review: Lead Engineer reviews (quality + security + conventions)
+   - Loop until approved OR max iterations
+4. Summary with GitHub repo (skip deployment - already deployed)
+
 Input: ARCHITECTURE_URL (Architecture Document from Google Docs)
-Output: Vercel deployment link + GitHub repo (both validated and stored in DB)
+Output:
+- New projects: Vercel deployment link + GitHub repo (both validated and stored in DB)
+- Existing projects: GitHub repo with updated code (skip deployment)
 """
 
 import os
@@ -28,7 +44,7 @@ from typing import List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agno.workflow import Step, Workflow, Loop
+from agno.workflow import Step, Workflow, Loop, Router, Steps
 from agno.workflow.types import StepInput, StepOutput
 from agno.utils.log import log_info, log_error
 
@@ -316,6 +332,16 @@ def read_architecture(step_input: StepInput) -> StepOutput:
         doc_id = re.search(r'/document/d/([a-zA-Z0-9-_]+)', parsed["architecture_url"]).group(1)
         _state.architecture_content = _get_google_docs_tools().read_document(doc_id)
         _log("✅", "READ", f"Architecture loaded ({len(_state.architecture_content)} chars)")
+
+        # Extract project_id from architecture document header
+        project_id_match = re.search(r'PROJECT\s*ID:\s*([a-zA-Z0-9-]+)', _state.architecture_content, re.IGNORECASE)
+        if project_id_match:
+            project_id = project_id_match.group(1).strip()
+            from services.project_context import set_current_project_id
+            set_current_project_id(project_id)
+            _log("📋", "READ", f"Extracted project_id from architecture: {project_id}")
+        else:
+            _log("⚠️", "READ", "No PROJECT_ID found in architecture document - will skip DB storage")
 
         # Extract project name
         _state.project_name = parsed["project_name"] or _extract_project_name(_state.architecture_content) or "project"
@@ -760,24 +786,6 @@ def validate_repo_link(step_input: StepInput) -> StepOutput:
         else:
             _log("⚠️", "VALIDATE_REPO", "No project_id in context - skipping DB storage")
 
-        # Log validation
-        from tools.supervisor_tools import create_project_log
-        if project_id:
-            create_project_log(
-                log_type="validation",
-                phase="repo_creation",
-                title="GitHub Repository Validated ✓",
-                message=f"Repository created and validated: {repo_url}",
-                is_valid=True,
-                validation_target="github_repository",
-                details={
-                    "url": repo_url,
-                    "owner": _state.github_owner,
-                    "repo": _state.github_repo
-                },
-                severity="success"
-            )
-
         _log("✅", "VALIDATE_REPO", "Repository validation complete")
         return StepOutput(content=f"Repository validated and stored: {repo_url}", success=True)
 
@@ -884,11 +892,27 @@ def deploy_to_vercel(step_input: StepInput) -> StepOutput:
 
     from agents.devops_engineer import devops_engineer_agent
 
-    prompt = f"""Deploy this GitHub repository to Vercel:
+    prompt = f"""Deploy this GitHub repository to Vercel using the 2-step process:
 
-github_owner: {_state.github_owner}
-github_repo: {_state.github_repo}
-project_name: {_state.project_name}
+**STEP 1: Create Vercel Project**
+Call `create_vercel_project` with:
+- project_name: {_state.project_name}
+- github_repo: {_state.github_repo}
+- github_owner: {_state.github_owner}
+- framework: null (let Vercel auto-detect)
+
+This will create the project and link it to GitHub.
+
+**STEP 2: Trigger Initial Deployment**
+Call `trigger_deployment` with:
+- project_name: {_state.project_name}
+- git_branch: main
+
+This will trigger the first deployment. Future git pushes will auto-deploy via GitHub webhooks.
+
+**CRITICAL**: You MUST call BOTH functions. Don't skip trigger_deployment!
+
+Return the deployment URL when done.
 """
 
     _log("🤖", "DEPLOY", "Asking DevOps Engineer to deploy...")
@@ -940,23 +964,6 @@ def validate_deployment_link(step_input: StepInput) -> StepOutput:
         else:
             _log("⚠️", "VALIDATE_DEPLOY", "No project_id in context - skipping DB storage")
 
-        # Log validation
-        from tools.supervisor_tools import create_project_log
-        if project_id:
-            create_project_log(
-                log_type="validation",
-                phase="deployment",
-                title="Vercel Deployment Validated ✓",
-                message=f"Deployment successful and validated: {deploy_url}",
-                is_valid=True,
-                validation_target="vercel_deployment",
-                details={
-                    "url": deploy_url,
-                    "project_name": _state.project_name
-                },
-                severity="success"
-            )
-
         _log("✅", "VALIDATE_DEPLOY", "Deployment validation complete")
         return StepOutput(content=f"Deployment validated and stored: {deploy_url}", success=True)
 
@@ -1000,15 +1007,14 @@ def create_summary(step_input: StepInput) -> StepOutput:
 
 
 # ============================================================================
-# WORKFLOW DEFINITION
+# WORKFLOW DEFINITION WITH ROUTER
 # ============================================================================
 
-software_development_workflow = Workflow(
-    name="Software Development",
-    stream=False,
-    description="Implement code from architecture, review, deploy to Vercel, and validate with Supervisor.",
+# Define grouped steps for NEW projects (full flow with repo creation + deployment)
+new_project_steps = Steps(
+    name="new_project_path",
+    description="Complete workflow for new projects: create repo, implement, deploy, validate",
     steps=[
-        Step(name="read_architecture", executor=read_architecture),
         Step(name="create_repo", executor=create_github_repo),
         Step(name="validate_repo", executor=validate_repo_link),
         Loop(
@@ -1023,5 +1029,55 @@ software_development_workflow = Workflow(
         Step(name="deploy", executor=deploy_to_vercel),
         Step(name="validate_deployment", executor=validate_deployment_link),
         Step(name="summary", executor=create_summary),
+    ]
+)
+
+# Define grouped steps for EXISTING projects (skip repo creation + deployment)
+existing_project_steps = Steps(
+    name="existing_project_path",
+    description="Workflow for existing projects: validate repo, implement, summary (skip creation + deployment)",
+    steps=[
+        Step(name="validate_repo", executor=validate_repo_link),
+        Loop(
+            name="implementation_cycle",
+            steps=[
+                Step(name="development", executor=development),
+                Step(name="code_review", executor=code_review),
+            ],
+            end_condition=reviews_passed,
+            max_iterations=2,
+        ),
+        Step(name="summary", executor=create_summary),
+    ]
+)
+
+
+def route_by_repo_type(step_input: StepInput) -> List[Step]:
+    """
+    Route based on whether this is a new or existing project.
+
+    Checks _state.is_existing_repo flag (set in read_architecture executor).
+    - New projects: create repo → implement → deploy → validate
+    - Existing projects: validate repo → implement → summary (skip creation + deployment)
+    """
+    if _state.is_existing_repo:
+        _log("🔀", "ROUTER", "Route: EXISTING PROJECT PATH (skip repo creation + deployment)")
+        return existing_project_steps.steps
+    else:
+        _log("🔀", "ROUTER", "Route: NEW PROJECT PATH (full flow)")
+        return new_project_steps.steps
+
+
+software_development_workflow = Workflow(
+    name="Software Development",
+    stream=False,
+    description="Implement code from architecture, review, and deploy to Vercel (conditional based on project type).",
+    steps=[
+        Step(name="read_architecture", executor=read_architecture),
+        Router(
+            name="project_type_router",
+            selector=route_by_repo_type,
+            choices=[new_project_steps, existing_project_steps]
+        )
     ]
 )

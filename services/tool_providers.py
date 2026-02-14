@@ -133,13 +133,26 @@ def _github(user_id: str):
 
 @register("vercel")
 def _vercel(user_id: str):
-    from tools.vercel_deploy_tools import VercelDeployTools
+    """Vercel project management tools (comprehensive GitHub integration)."""
+    from tools.vercel_project_tools import VercelProjectTools
     from services.api_key_store import get_api_key
 
     token = get_api_key(user_id, "vercel")
     if not token:
         return None
     print(f"[tool_providers] Vercel token found for user {user_id!r}")
+    return VercelProjectTools(token=token)
+
+
+@register("vercel_deploy")
+def _vercel_deploy(user_id: str):
+    """Vercel one-time deployment tools (fallback for quick deployments)."""
+    from tools.vercel_deploy_tools import VercelDeployTools
+    from services.api_key_store import get_api_key
+
+    token = get_api_key(user_id, "vercel")
+    if not token:
+        return None
     return VercelDeployTools(token=token)
 
 

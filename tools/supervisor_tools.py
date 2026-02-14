@@ -1,100 +1,14 @@
 """
 Supervisor Tools
 
-Tools for validating documents, logging workflow progress, and ensuring project quality.
+Tools for validating documents and ensuring project quality.
 Used by the Supervisor agent after PRD/Architecture creation to validate outputs.
 """
 
-import uuid
 from typing import Dict, Any, Optional
-from datetime import datetime
-from services.oauth_store import get_supabase_client
 from services.project_context import get_current_project_id
 from services.user_context import get_current_user_id
 from tools.project_tools import update_project, add_project_to_knowledge_base, get_project
-
-
-# ============================================================================
-# PROJECT LOGGING
-# ============================================================================
-
-def create_project_log(
-    log_type: str,
-    phase: str,
-    title: str,
-    message: str,
-    is_valid: Optional[bool] = None,
-    validation_target: Optional[str] = None,
-    details: Optional[Dict] = None,
-    severity: str = "info"
-) -> Dict[str, Any]:
-    """Create a project development log entry.
-
-    Args:
-        log_type: Type of log ('validation', 'error', 'warning', 'info', 'milestone')
-        phase: Workflow phase ('prd_creation', 'architecture_creation', 'repo_creation', 'deployment')
-        title: Short log title
-        message: Detailed log message
-        is_valid: For validation logs - True/False/None
-        validation_target: What was validated ('prd_document', 'architecture_document', etc.)
-        details: Additional structured data
-        severity: 'critical', 'error', 'warning', 'info', 'success'
-
-    Returns:
-        {
-            "success": bool,
-            "log_id": str (if successful),
-            "message": str
-        }
-    """
-    project_id = get_current_project_id()
-    if not project_id:
-        print(f"[supervisor_tools] ERROR: Cannot create log - no project_id in context")
-        return {
-            "success": False,
-            "log_id": None,
-            "message": "No project_id in context"
-        }
-
-    print(f"[supervisor_tools] Creating {log_type} log for project {project_id}: {title}")
-
-    try:
-        log_data = {
-            "id": str(uuid.uuid4()),
-            "project_id": project_id,
-            "log_type": log_type,
-            "phase": phase,
-            "title": title,
-            "message": message,
-            "is_valid": is_valid,
-            "validation_target": validation_target,
-            "details": details or {},
-            "severity": severity,
-            "created_by": "supervisor"
-        }
-
-        result = (
-            get_supabase_client()
-            .table("project_development_logs")
-            .insert(log_data)
-            .execute()
-        )
-
-        print(f"[supervisor_tools] Created {log_type} log for project {project_id}: {title}")
-
-        return {
-            "success": True,
-            "log_id": log_data["id"],
-            "message": f"Log created: {title}"
-        }
-
-    except Exception as e:
-        print(f"[supervisor_tools] ERROR creating log: {e}")
-        return {
-            "success": False,
-            "log_id": None,
-            "message": f"Failed to create log: {str(e)}"
-        }
 
 
 # ============================================================================
@@ -235,29 +149,6 @@ def validate_prd_document(prd_url: str, project_name: str) -> Dict[str, Any]:
 
     print(f"[supervisor_tools] PRD validation result: valid={validation['valid']}, accessible={validation.get('accessible')}, keywords_found={validation.get('contains_keywords')}")
 
-    # Build log message
-    log_message = validation["message"]
-    if validation.get("keyword_warning"):
-        log_message += f"\n{validation['keyword_warning']}"
-
-    # Log validation result
-    create_project_log(
-        log_type="validation",
-        phase="prd_creation",
-        title=f"PRD Document Validation {'✓' if validation['valid'] else '✗'}",
-        message=log_message,
-        is_valid=validation["valid"],
-        validation_target="prd_document",
-        details={
-            "url": prd_url,
-            "preview": validation.get("preview"),
-            "accessible": validation.get("accessible"),
-            "contains_keywords": validation.get("contains_keywords"),
-            "keyword_warning": validation.get("keyword_warning")
-        },
-        severity="success" if validation["valid"] else "error"
-    )
-
     return {
         "success": True,
         "valid": validation["valid"],
@@ -299,29 +190,6 @@ def validate_architecture_document(architecture_url: str, project_name: str) -> 
     validation = validate_google_doc(architecture_url, [project_name, "architecture"])
 
     print(f"[supervisor_tools] Architecture validation result: valid={validation['valid']}, accessible={validation.get('accessible')}, keywords_found={validation.get('contains_keywords')}")
-
-    # Build log message
-    log_message = validation["message"]
-    if validation.get("keyword_warning"):
-        log_message += f"\n{validation['keyword_warning']}"
-
-    # Log validation result
-    create_project_log(
-        log_type="validation",
-        phase="architecture_creation",
-        title=f"Architecture Document Validation {'✓' if validation['valid'] else '✗'}",
-        message=log_message,
-        is_valid=validation["valid"],
-        validation_target="architecture_document",
-        details={
-            "url": architecture_url,
-            "preview": validation.get("preview"),
-            "accessible": validation.get("accessible"),
-            "contains_keywords": validation.get("contains_keywords"),
-            "keyword_warning": validation.get("keyword_warning")
-        },
-        severity="success" if validation["valid"] else "error"
-    )
 
     return {
         "success": True,
@@ -435,33 +303,10 @@ def create_project_knowledge_base() -> Dict[str, Any]:
 
         print(f"[supervisor_tools] Knowledge base creation result: success={result.get('success')}, kb_id={result.get('knowledge_base_id')}")
 
-        # Log knowledge base creation
-        create_project_log(
-            log_type="milestone",
-            phase="architecture_creation",
-            title="Knowledge Base Created",
-            message=f"Project added to knowledge base for RAG search",
-            details={
-                "knowledge_base_id": result.get("knowledge_base_id"),
-                "prd_included": prd_content is not None,
-                "architecture_included": arch_content is not None
-            },
-            severity="success" if result["success"] else "error"
-        )
-
         return result
 
     except Exception as e:
         print(f"[supervisor_tools] ERROR creating knowledge base: {e}")
-
-        create_project_log(
-            log_type="error",
-            phase="architecture_creation",
-            title="Knowledge Base Creation Failed",
-            message=f"Error: {str(e)}",
-            severity="error"
-        )
-
         return {
             "success": False,
             "knowledge_base_id": None,
@@ -472,6 +317,92 @@ def create_project_knowledge_base() -> Dict[str, Any]:
 # ============================================================================
 # WORKFLOW VALIDATION
 # ============================================================================
+
+def validate_feature_spec_document(feature_spec_url: str, project_name: str, feature_name: str) -> Dict[str, Any]:
+    """Validate Feature Specification document exists and contains relevant content.
+
+    Args:
+        feature_spec_url: Google Docs URL for Feature Spec
+        project_name: Project name
+        feature_name: Feature name
+
+    Returns:
+        {
+            "success": bool,
+            "valid": bool,
+            "preview": str,
+            "message": str
+        }
+    """
+    project_id = get_current_project_id()
+    if not project_id:
+        print(f"[supervisor_tools] ERROR: No project_id in context for Feature Spec validation")
+        return {
+            "success": False,
+            "valid": False,
+            "preview": None,
+            "message": "No project_id in context"
+        }
+
+    print(f"[supervisor_tools] Validating Feature Spec document for project {project_id}")
+    print(f"[supervisor_tools] Feature Spec URL: {feature_spec_url}")
+    print(f"[supervisor_tools] Expected feature name: {feature_name}")
+
+    # Validate document
+    validation = validate_google_doc(feature_spec_url, [feature_name, "feature", "specification"])
+
+    print(f"[supervisor_tools] Feature Spec validation result: valid={validation['valid']}, accessible={validation.get('accessible')}, keywords_found={validation.get('contains_keywords')}")
+
+    return {
+        "success": True,
+        "valid": validation["valid"],
+        "preview": validation.get("preview"),
+        "message": validation["message"]
+    }
+
+
+def validate_technical_doc_document(tech_doc_url: str, project_name: str, feature_name: str) -> Dict[str, Any]:
+    """Validate Feature Technical Document exists and contains relevant content.
+
+    Args:
+        tech_doc_url: Google Docs URL for Technical Doc
+        project_name: Project name
+        feature_name: Feature name
+
+    Returns:
+        {
+            "success": bool,
+            "valid": bool,
+            "preview": str,
+            "message": str
+        }
+    """
+    project_id = get_current_project_id()
+    if not project_id:
+        print(f"[supervisor_tools] ERROR: No project_id in context for Technical Doc validation")
+        return {
+            "success": False,
+            "valid": False,
+            "preview": None,
+            "message": "No project_id in context"
+        }
+
+    print(f"[supervisor_tools] Validating Technical Doc document for project {project_id}")
+    print(f"[supervisor_tools] Technical Doc URL: {tech_doc_url}")
+    print(f"[supervisor_tools] Expected feature name: {feature_name}")
+
+    # Validate document
+    validation = validate_google_doc(tech_doc_url, [feature_name, "technical", "architecture"])
+
+    print(f"[supervisor_tools] Technical Doc validation result: valid={validation['valid']}, accessible={validation.get('accessible')}, keywords_found={validation.get('contains_keywords')}")
+
+    return {
+        "success": True,
+        "valid": validation["valid"],
+        "preview": validation.get("preview"),
+        "message": validation["message"]
+    }
+
 
 def validate_workflow_phase_completion(phase: str) -> Dict[str, Any]:
     """Validate that a workflow phase completed successfully.
@@ -519,18 +450,6 @@ def validate_workflow_phase_completion(phase: str) -> Dict[str, Any]:
                 issues.append("Architecture document URL not stored")
 
         complete = len(issues) == 0
-
-        # Log validation
-        create_project_log(
-            log_type="validation",
-            phase=phase,
-            title=f"Phase Completion Check: {phase}",
-            message=f"Phase {'complete' if complete else 'incomplete'}: {', '.join(issues) if issues else 'All checks passed'}",
-            is_valid=complete,
-            validation_target=f"{phase}_completion",
-            details={"issues": issues},
-            severity="success" if complete else "warning"
-        )
 
         return {
             "success": True,
