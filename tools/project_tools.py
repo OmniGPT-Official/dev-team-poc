@@ -396,11 +396,11 @@ def add_project_to_knowledge_base(
         kb = get_knowledge_base()
         kb_id = f"project_{project_id}"
 
-        # Store in knowledge base using insert() method
-        kb.insert(
+        # Store in knowledge base
+        kb.load_text(
+            text=full_content,
             name=f"Project: {project_name}",
-            content=full_content,
-            metadata={"project_id": project_id, "project_name": project_name}
+            id=kb_id
         )
 
         # Update project with knowledge base reference

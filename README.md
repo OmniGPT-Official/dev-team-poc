@@ -5,14 +5,38 @@ AI-powered product development system with end-to-end workflow automation.
 
 ## Features
 
+### Agents (14 total)
+
+**Product Development Team:**
 - **Product Lead Agent**: Conducts product discovery, creates PRDs and Feature Specs
 - **Lead Engineer Agent**: Designs technical architecture
 - **Software Engineer Agent**: Implements code
 - **Security Engineer Agent**: Reviews code for security
-- **Content Creation Team**: Content strategist, writer, and image generator
+- **Vercel Deployer Agent**: Handles Vercel deployment automation
+
+**Content Creation Team:**
+- **Content Strategist**: Plans content strategy
+- **Content Writer**: Writes content
+
+**OAuth-Enabled Agents:**
+- **Email Follow-Up Agent**: Manages email follow-ups with Google Sheets and Gmail integration
+- **Gmail & Sheets Agent**: Direct Gmail and Google Sheets access (Claude-powered)
+
+**Outbound Calling Agents:**
+- **Lead Reader Agent**: Reads leads from Google Sheets
+- **Calling Coordinator Agent**: Coordinates calling campaigns
+- **Results Logger Agent**: Logs call results to Google Sheets
+- **Campaign Coordinator Agent**: Orchestrates entire campaigns
+
+**System Agents:**
+- **Supabase Manager Agent**: Manages Supabase operations (MCP-enabled)
+
+### Core Features
 - **Google Docs Integration**: Automatically creates PRDs and Feature Specs in Google Docs
-- **Knowledge Base**: Stores project context and requirements
-- **Multiple Workflows**: Product Requirements, Software Development, Content Creation
+- **OAuth Pre-Hook Pattern**: Per-user Google API authentication for multi-tenant workflows
+- **Knowledge Base**: PostgreSQL-backed knowledge storage via DATABASE_URL
+- **ElevenLabs Integration**: Voice synthesis for outbound calling workflows
+- **OpenTelemetry Tracing**: Built-in observability for all agent interactions
 
 ## Quick Start
 
@@ -72,29 +96,75 @@ Visit `http://localhost:8000/authorize` and authorize the app. The token will be
 ## Architecture
 
 ```
-Agent-Os/
-├── agents/              # 4 agents: product_lead, lead_engineer, software_engineer, security_engineer
-├── teams/               # product_team (all 4 agents)
-├── workflows/           # 2 workflows: product_requirements, software_development
-├── tools/               # Custom tools: GoogleDocsTools, KnowledgeBaseTools, GitHubTools
-├── instructions/        # Agent instructions
-├── utils/               # Knowledge base utilities
-└── tests/               # Test files for Google Docs, GitHub MCP, etc.
+Agent-OS/
+├── agents/              # 14 agents across 4 domains:
+│   ├── product_lead.py           # Product discovery & PRDs
+│   ├── lead_engineer.py          # Technical architecture
+│   ├── software_engineer.py      # Implementation
+│   ├── security_engineer.py      # Security review
+│   ├── vercel_deployer.py        # Vercel deployment
+│   └── calling_agents.py         # 4 outbound calling agents (OAuth-enabled)
+├── teams/               # 2 teams:
+│   └── product_team.py           # Product development team
+├── workflows/           # 7 workflows:
+│   ├── product_requirements_workflow.py
+│   ├── software_development_workflow.py
+│   ├── email_followup_workflow_working.py    # 3-step OAuth workflow
+│   ├── outbound_calling_workflow.py          # Full ElevenLabs integration
+│   ├── outbound_calling_test_workflow.py     # OAuth test version
+│   └── simple_calling_workflow (in outbound_calling_workflow.py)
+├── tools/               # Custom tools:
+│   ├── google_docs_tools.py      # Google Docs integration
+│   ├── knowledge_base_tools.py   # PostgreSQL knowledge base
+│   ├── github_tools.py           # GitHub operations
+│   ├── vercel_deploy_tools.py    # Vercel deployment
+│   └── elevenlabs_tools.py       # Voice synthesis
+├── services/            # Shared services:
+│   └── oauth_store.py            # Per-user OAuth credential storage
+├── utils/               # Utilities:
+│   └── credentials.py            # OAuth credential retrieval
+├── instructions/        # Agent instruction files
+├── tests/               # Integration tests
+└── agno_agent.py        # Main FastAPI application
 ```
 
 ## Workflows
 
-### Product Requirements Workflow
+### 1. Product Requirements Workflow
 - Asks business questions (new vs existing project)
 - Creates PRD (new) or Feature Spec (existing)
 - Saves to knowledge base
 - Creates Google Doc with shareable link
 
-### Software Development Workflow
+### 2. Software Development Workflow
 1. Product Requirements (PRD/Feature Spec)
 2. Architecture Design (Lead Engineer)
 3. Implementation (Software Engineer)
 4. Summary with links
+
+### 3. Content Creation Workflow (Requirement Gathering)
+- Content strategist defines strategy
+- Content writer creates content
+- Integrated content planning and execution
+
+### 4. Email Follow-Up Workflow (OAuth-Enabled)
+**3-step workflow with Google API integration:**
+1. **Read Leads**: Fetches leads from Google Sheets using OAuth
+2. **Draft Emails**: Creates personalized follow-up emails
+3. **Log Results**: Saves sent emails to Google Sheets
+
+### 5. Outbound Calling Workflow (Full Version)
+**Complete calling campaign with ElevenLabs voice synthesis:**
+1. Lead Reader: Fetches leads from Google Sheets
+2. Calling Coordinator: Makes calls with voice synthesis
+3. Results Logger: Logs call outcomes to Google Sheets
+4. Campaign Coordinator: Orchestrates entire campaign
+
+### 6. Simple Calling Workflow
+Simplified test version of outbound calling without voice synthesis
+
+### 7. Outbound Calling Test Workflow
+OAuth integration test for calling workflows (first iteration)
 
 ## API
 

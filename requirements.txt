@@ -1,7 +1,8 @@
-agno
+agno>=2.4.8  # Requires 2.2.3+ for CompressionManager
 mcp
 anthropic
 google-genai
+Pillow
 openai
 uvicorn[standard]
 fastapi

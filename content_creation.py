@@ -1,13 +1,128 @@
 """Content Creation Team - A team for creating content with strategist, writer, and image generator."""
 
+from io import BytesIO
+from typing import Optional
+from uuid import uuid4
+
 from agno.agent import Agent
+from agno.media import Image
+from agno.models.anthropic import Claude
 from agno.models.google import Gemini
 from agno.team import Team
-from agno.tools.openai import OpenAITools
-# from agno.tools.reasoning import ReasoningTools
-from agno.tools.workflow import WorkflowTools
-from agno.workflow.step import Step
-from agno.workflow.workflow import Workflow
+from agno.tools import nano_banana as _nb
+from agno.tools.nano_banana import ALLOWED_RATIOS, NanoBananaTools
+from agno.tools.function import ToolResult
+from agno.utils.log import log_debug, logger
+from google import genai
+from google.genai import types
+from PIL import Image as PILImage
+
+# Allow Nano Banana Pro (gemini-3-pro-image-preview) until Agno adds it upstream
+if "gemini-3-pro-image-preview" not in _nb.ALLOWED_MODELS:
+    _nb.ALLOWED_MODELS.append("gemini-3-pro-image-preview")
+
+
+class DynamicNanoBananaTools(NanoBananaTools):
+    """NanoBananaTools subclass that lets the AI choose aspect_ratio per image."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Re-register our override so Agno exposes the new signature to the LLM
+        self.tools = [self.create_image]
+
+    def create_image(
+        self,
+        prompt: str,
+        aspect_ratio: str = "1:1",
+    ) -> ToolResult:
+        """Generate an image from a text prompt.
+
+        Args:
+            prompt: The text prompt describing the image to generate.
+            aspect_ratio: Image aspect ratio. Supported values: 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9. Choose based on the platform — e.g. 9:16 for stories, 1:1 for feed posts, 16:9 for banners.
+        """
+        if aspect_ratio not in ALLOWED_RATIOS:
+            return ToolResult(
+                content=f"Invalid aspect_ratio '{aspect_ratio}'. Supported: {', '.join(ALLOWED_RATIOS)}"
+            )
+
+        try:
+            client = genai.Client(api_key=self.api_key)
+            log_debug(f"NanoBanana generating image with prompt: {prompt}, aspect_ratio: {aspect_ratio}")
+
+            cfg = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+            )
+
+            response = client.models.generate_content(
+                model=self.model,
+                contents=[prompt],
+                config=cfg,
+            )
+
+            generated_images = []
+            response_str = ""
+
+            if not hasattr(response, "candidates") or not response.candidates:
+                logger.warning("No candidates in response")
+                return ToolResult(content="No images were generated in the response")
+
+            for candidate in response.candidates:
+                if not hasattr(candidate, "content") or not candidate.content or not candidate.content.parts:
+                    continue
+
+                for part in candidate.content.parts:
+                    if hasattr(part, "text") and part.text:
+                        response_str += part.text + "\n"
+
+                    if hasattr(part, "inline_data") and part.inline_data:
+                        try:
+                            image_data = part.inline_data.data
+                            mime_type = getattr(part.inline_data, "mime_type", "image/png")
+
+                            if image_data:
+                                pil_img = PILImage.open(BytesIO(image_data))
+                                buffer = BytesIO()
+                                image_format = "PNG" if "png" in mime_type.lower() else "JPEG"
+                                pil_img.save(buffer, format=image_format)
+                                buffer.seek(0)
+
+                                agno_img = Image(
+                                    id=str(uuid4()),
+                                    content=buffer.getvalue(),
+                                    original_prompt=prompt,
+                                )
+                                generated_images.append(agno_img)
+
+                                log_debug(f"Successfully processed image with ID: {agno_img.id}")
+                                response_str += f"Image generated successfully (ID: {agno_img.id}).\n"
+
+                        except Exception as img_exc:
+                            logger.error(f"Failed to process image data: {img_exc}")
+                            response_str += f"Failed to process image: {img_exc}\n"
+
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                log_debug(
+                    f"Token usage - Prompt: {response.usage_metadata.prompt_token_count}, "
+                    f"Response: {response.usage_metadata.candidates_token_count}, "
+                    f"Total: {response.usage_metadata.total_token_count}"
+                )
+
+            if generated_images:
+                return ToolResult(
+                    content=response_str.strip() or "Image(s) generated successfully",
+                    images=generated_images,
+                )
+            else:
+                return ToolResult(
+                    content=response_str.strip() or "No images were generated",
+                    images=None,
+                )
+
+        except Exception as exc:
+            logger.error(f"NanoBanana image generation failed: {exc}")
+            return ToolResult(content=f"Error generating image: {str(exc)}")
 
 from db import db
 
@@ -19,27 +134,36 @@ content_strategist = Agent(
     instructions=[
         "You are a Content Strategist who helps plan and strategize content creation.",
         "",
-        "## Requirements Gathering",
-        "When gathering requirements, ask about these 5 key areas:",
-        "1. BRANDING: Brand identity, guidelines, colors, fonts, style",
-        "2. AUDIENCE: Target audience demographics, interests, pain points",
-        "3. PLATFORM: Which platform(s) the content is for",
-        "4. TONE: Desired tone (professional, casual, playful, etc.)",
-        "5. GOAL: Content goal (engagement, awareness, sales, education)",
+        "## Requirements Gathering — Adaptive Intake",
+        "You need information across 5 areas: BRANDING, AUDIENCE, PLATFORM, TONE, and GOAL.",
+        "However, you must NEVER re-ask something the user already told you — read the full conversation history first.",
         "",
-        "Note: User can upload a file if they already have this information.",
+        "Follow this process:",
+        "1. Read the user's message AND the team conversation history. Identify what has already been provided about each of the 5 areas.",
+        "2. Acknowledge what you understood — briefly list it back so the user feels heard.",
+        "3. Only ask about what is genuinely MISSING, all in ONE consolidated message (never one question at a time).",
+        "4. If the user provided nearly everything (like a detailed brief), just confirm your understanding and ask 1-2 small clarifying questions at most.",
         "",
-        "## Strategy Development",
-        "Create a content brief that guides the writing process.",
-        "Consider SEO, engagement, and the purpose of the content.",
-        "Identify key messages and content structure.",
+        "80/20 rule: If the user gave you 80% of what you need, confirm the 80% and ask only about the remaining 20%.",
+        "",
+        "Note: The user can upload a file if they already have this information.",
+        "",
+        "## Output: Structured Brief",
+        "Once you have enough information, output a structured content brief with these sections:",
+        "- **Brand**: name, colors, visual identity notes",
+        "- **Audience**: who the content is for",
+        "- **Platform**: where it will be published (Instagram, LinkedIn, blog, etc.)",
+        "- **Tone**: voice and style (professional, playful, bold, etc.)",
+        "- **Goal**: what the content should achieve (awareness, sales, engagement, etc.)",
+        "- **Key messages**: the core ideas to communicate",
+        "",
+        "This brief will guide the rest of the team. Keep it concise and actionable.",
     ],
     db=db,
     # enable_session_summaries=True,
     update_memory_on_run=False,
     add_history_to_context=True,
-    # num_history_runs=3,
-    # num_history_messages=10,
+    num_history_messages=10,
     add_datetime_to_context=True,
     add_name_to_context=True,
     markdown=True,
@@ -53,17 +177,25 @@ content_writer = Agent(
     description="Writes articles, blog posts, social media content, and other written materials based on the content strategy and requirements.",
     instructions=[
         "You are a Content Writer who creates engaging written content.",
-        "Write articles, blog posts, social media posts, and other content as requested.",
-        "Follow the content brief and strategy provided.",
-        "Ensure the writing matches the target audience and tone.",
-        "Structure content with clear headings, paragraphs, and flow.",
+        "",
+        "## Writing Process",
+        "1. Read the content brief and style direction from the conversation history.",
+        "2. Write captions, copy, or articles that match the brief's tone, audience, and platform.",
+        "3. Structure each piece clearly — if writing multiple pieces (e.g. carousel slides), number them.",
+        "4. For social media: write platform-appropriate captions with hashtags where relevant.",
+        "5. For long-form: use clear headings, logical flow, and a strong opening hook.",
+        "",
+        "## Quality Standards",
+        "- Match the specified tone exactly (don't default to generic marketing voice).",
+        "- Keep copy concise — every word should earn its place.",
+        "- If writing for multiple slides/posts, ensure they tell a cohesive story together.",
+        "- Include a call-to-action where appropriate.",
     ],
     db=db,
     # enable_session_summaries=True,
     update_memory_on_run=False,
     add_history_to_context=True,
-    # num_history_runs=3,
-    # num_history_messages=10,
+    num_history_messages=10,
     add_datetime_to_context=True,
     add_name_to_context=True,
     markdown=True,
@@ -74,9 +206,9 @@ content_writer = Agent(
 # image_generator = Agent(
 #     name="Image Generator",
 #     model=Gemini(id="gemini-3-flash-preview"),
-#     description="Generates images using OpenAI's image generation and manages visual assets for content. Creates high-quality images to enhance content.",
+#     description="Generates images using Google's Nano Banana Pro model and manages visual assets for content. Creates high-quality images to enhance content.",
 #     instructions=[
-#         "You are an Image Generator who creates visual assets using OpenAI's image generation.",
+#         "You are an Image Generator who creates visual assets using Google's Nano Banana Pro image generation.",
 #         "",
 #         "## CRITICAL: Always Use Image Generation Tool",
 #         "When asked to generate, create, or make an image, you MUST:",
@@ -91,7 +223,7 @@ content_writer = Agent(
 #         "Return generated images in markdown format.",
 #         "Suggest appropriate visual placements within the content.",
 #     ],
-#     tools=[OpenAITools(image_model="gpt-image-1")],
+#     tools=[NanoBananaTools(model="gemini-3-pro-image-preview")],
 #     db=db,
 #     # enable_session_summaries=True,
 #     update_memory_on_run=False,
@@ -105,85 +237,100 @@ content_writer = Agent(
 #     debug_mode=False,
 # )
 
-# Setup Requirement Gathering Workflow
-# This workflow is triggered when the team detects user intent to create content
-# It asks clarifying questions first before proceeding with content creation
-requirement_gathering_workflow_definition = Workflow(
-    id="requirement-gathering-workflow",
-    name="Requirement Gathering Workflow",
-    description="A question generation workflow that triggers when user intent is to create content. Gathers requirements by asking clarifying questions before content creation begins.",
-    db=db,  # Commented out: causes session deserialization conflict when workflow shares session_id with team
-    steps=[
-        Step(
-            name="Gather Requirements",
-            description="""Content Strategist asks clarifying questions to understand the content requirements.
-
-Ask about the following key areas (user can also upload a file if they already have this info):
-1. BRANDING: What is your brand identity? Any brand guidelines, colors, fonts, or style to follow?
-2. AUDIENCE: Who is your target audience? Demographics, interests, pain points?
-3. PLATFORM: Which platform(s) is this content for? (Instagram, LinkedIn, Twitter, TikTok, etc.)
-4. TONE: What tone do you want? (Professional, casual, playful, inspirational, etc.)
-5. GOAL: What is the goal of this content? (Engagement, awareness, sales, education, etc.)
-
-After gathering these requirements, inform the team leader that requirements are complete and the next step is to ask the user: 'What specifically do you want to create? Do you have any references or inspiration to share?'""",
-            agent=content_strategist,
-        )
-    ],
-    add_workflow_history_to_steps=True,
-    # num_history_runs=3,
-)
-
-# Setup WorkflowTools to allow the team to trigger the requirement gathering workflow
-requirement_gathering_workflow = WorkflowTools(
-    workflow=requirement_gathering_workflow_definition,
-    enable_think=False,
-    enable_run_workflow=True,
-    enable_analyze=False,
-    add_instructions=True,
-    add_few_shot=True,
-)
-
 # Setup Content Creation Team (Supervisor Pattern - default)
 # The leader controls: which members to use, what task to give them, and how to combine outputs
+# NOTE: WorkflowTools was removed because WorkflowTools.run_workflow() creates a new workflow run
+# on every call, losing all prior context and causing infinite intake loops. The team's built-in
+# delegate_task_to_member is used instead — members receive team history via
+# add_team_history_to_members=True, avoiding the fresh-run problem.
 content_creation_team = Team(
     id="content-creation-team",
     name="Content Creation Team",
     description="A team that creates content including articles, blog posts, and other written materials with AI-generated images.",
-    model=Gemini(id="gemini-3-flash-preview"),
+    model=Claude(id="claude-sonnet-4-5-20250929"),
     db=db,
     members=[content_strategist, content_writer],
-    tools=[requirement_gathering_workflow, OpenAITools(image_model="gpt-image-1")],
+    tools=[DynamicNanoBananaTools(model="gemini-3-pro-image-preview")],
+    send_media_to_model=True,
     instructions=[
         "You are the leader of a Content Creation Team.",
         "",
-        "## CRITICAL: Content Creation Intent Detection",
-        "When you detect the user wants to create ANY content (social media posts, images, articles, blog posts, etc.):",
-        "1. IMMEDIATELY trigger the 'Requirement Gathering Workflow' using your workflow tools",
-        "2. Do NOT proceed with content creation until requirements are gathered",
+        "## CRITICAL: State-Aware Progression",
+        "Before EVERY response, read the full conversation history and determine which PHASE you are in.",
+        "Do NOT re-trigger intake if requirements have already been gathered in this conversation.",
+        "Do NOT repeat a phase that has already been completed.",
+        "Progress forward through the phases — never go backward.",
         "",
-        "## Content Creation Flow",
-        "STEP 1: Trigger Requirement Gathering Workflow - This gathers: branding, target audience, platform, tone, and goals",
-        "STEP 2: After requirements are gathered, ask the user: 'What specifically do you want to create? Do you have any references or inspiration to share?'",
-        "STEP 3: Suggest 2-3 creative concepts or ideas based on the requirements and user input for them to choose from",
-        "STEP 4: Delegate to Content Writer to write captions",
-        "STEP 5: Generate images yourself using your OpenAI image generation tool - YOU must call the tool directly",
-        "STEP 6: Package everything and deliver the final content with captions and image URLs",
+        "## PHASE 1 — Intake (delegate to Content Strategist)",
+        "When a user wants to create content, delegate to the Content Strategist to gather requirements.",
+        "The Strategist will read what the user already provided, confirm it, and only ask about gaps.",
+        "SKIP this phase entirely if the user's first message already covers all 5 areas (branding, audience, platform, tone, goal).",
+        "If the Strategist asked gap questions, wait for the user to answer, then delegate to the Strategist ONE MORE TIME to compile the final brief.",
+        "Once the Strategist returns a structured brief, move to PHASE 2. Do NOT re-start intake after a brief has been produced.",
         "",
-        "## IMPORTANT: Image Generation",
-        "You have direct access to image generation tools. When creating final content:",
-        "- Use your generate_image tool directly to create images",
-        "- Include the returned image URLs in markdown format: ![description](url)",
+        "## PHASE 2 — Scope",
+        "Ask the user: 'What specifically do you want to create? Do you have any references or inspiration to share?'",
+        "Wait for the user's answer before continuing.",
+        "",
+        "## PHASE 3 — Visual Exploration",
+        "Call create_image 2-3 times with different visual styles using the brand colors and guidelines.",
+        "The generated images will be attached automatically — do NOT write markdown image links or invent URLs.",
+        "Ask the user which visual direction they prefer.",
+        "",
+        "## PHASE 4 — Style Template Lock",
+        "After the user picks a visual direction, write a detailed 'style template' — a reusable prompt prefix.",
+        "Include: color palette, mood, lighting style, composition approach, typography style, aspect ratio, and overall aesthetic.",
+        "Example: 'Clean minimalist Instagram story, dark green (#3F5A3A) background, light green (#E3EDE3) accents, soft natural lighting, elegant serif typography, botanical photography style, 9:16 vertical, professional B2B aesthetic.'",
+        "Share the style template with the user for confirmation.",
+        "Every image generated from this point forward MUST start with this style template.",
+        "",
+        "## PHASE 5 — Copy (delegate to Content Writer)",
+        "Delegate to the Content Writer to write captions/copy for each content piece.",
+        "The Writer has access to the conversation history including the brief and style template.",
+        "",
+        "## PHASE 6 — Copy Approval",
+        "Present the written copy/captions to the user for approval.",
+        "Do NOT proceed to image generation until the user explicitly confirms the copy is good.",
+        "If the user requests changes, delegate back to the Content Writer with the feedback.",
+        "",
+        "## PHASE 7 — Production (generate ALL images)",
+        "Generate one image for EVERY slide or content piece in the deliverable.",
+        "Prepend the style template to each image prompt to maintain visual consistency.",
+        "Do NOT use placeholder descriptions like '[Image: ...]' — actually call the image generation tool for every single visual.",
+        "If the project has 10 slides, generate 10 images. No exceptions.",
+        "",
+        "## PHASE 8 — Delivery",
+        "Package everything and deliver the final content with:",
+        "- All generated images (already attached from PHASE 7 — do NOT re-link or write markdown image syntax)",
+        "- Corresponding captions/copy next to each image",
+        "- Any additional notes or recommendations",
+        "",
+        "## Premature Image Generation Guardrail",
+        "If a user asks to 'just make an image' or 'generate an image' immediately without context:",
+        "1. Acknowledge their request warmly (e.g. 'I'd love to help create that!')",
+        "2. Briefly explain that aligning on direction first will make the result significantly better",
+        "3. Begin PHASE 1 intake",
+        "Do NOT generate final images until copy is approved in PHASE 6.",
+        "The ONLY exception is PHASE 3, where you generate exploratory sample images for style selection.",
+        "",
+        "## Image Generation",
+        "You have direct access to image generation tools via create_image.",
+        "- Whenever an image is returned (e.g., as an image reference ID), render it in Markdown image format using the image reference ID exactly as provided.",
+        "- Do NOT transform it into a URL, do NOT invent links, and do NOT wrap it in any external/invalid link.",
+        "- Use this format: ![image](<IMAGE_REFERENCE_ID>) where <IMAGE_REFERENCE_ID> is the exact id string you received (unchanged).",
+        "- ALWAYS prepend the style template to every image prompt after PHASE 4",
+        "- Generate an image for EVERY content piece — never skip any visual",
         "",
         "## Team Member Roles",
-        "- Content Strategist: For planning content strategy and creating content briefs",
-        "- Content Writer: For writing articles, blog posts, captions, and other written content",
+        "- Content Strategist: Gathers requirements and creates the content brief (PHASE 1 only)",
+        "- Content Writer: Writes captions, copy, and articles (PHASE 5)",
         "",
-        "Always synthesize results from all members into a cohesive final deliverable.",
+        "Use delegate_task_to_member to assign work to team members.",
     ],
     update_memory_on_run=False,
     add_history_to_context=True,
-    # num_history_runs=3,
-    # num_history_messages=10,
+    num_history_messages=10,
+    add_team_history_to_members=True,
     add_datetime_to_context=True,
     add_name_to_context=True,
     add_member_tools_to_context=True,
