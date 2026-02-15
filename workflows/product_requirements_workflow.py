@@ -11,7 +11,7 @@ Output: 2 Google Docs URLs (PRD/FS + Architecture/Tech Doc)
 
 import os
 import sys
-from typing import Union, List
+from typing import Union
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -399,10 +399,9 @@ def create_summary_executor(step_input: StepInput) -> StepOutput:
 # ============================================================================
 
 def get_project_context_executor(step_input: StepInput) -> StepOutput:
-    """Step 1 (Existing): Get project from DB and search knowledge base."""
+    """Step 1 (Existing): Get project from DB."""
     import re
     from tools.project_tools import get_project
-    from utils.knowledge_base import get_knowledge_base
 
     # Extract project_id from input
     project_id_match = re.search(r'PROJECT_ID:\s*(.+)', str(step_input.input), re.IGNORECASE)
@@ -425,29 +424,12 @@ def get_project_context_executor(step_input: StepInput) -> StepOutput:
 
     _log("📂", "GET-PROJECT", f"Found project: {project['project_name']}")
 
-    # Search knowledge base for context
-    kb = get_knowledge_base()
-    context_parts = [f"Project: {project['project_name']}"]
-
-    try:
-        # Search for project documents in knowledge base
-        results = kb.search(query=f"project {project['project_name']}", limit=3)
-        if results:
-            _log("🔍", "KNOWLEDGE-BASE", f"Found {len(results)} KB entries")
-            context_parts.append("\nKnowledge Base Context:")
-            for r in results:
-                context_parts.append(f"- {r.content[:200]}...")
-        else:
-            _log("⚠️", "KNOWLEDGE-BASE", "No KB entries found")
-
-            # Fallback: Mention PRD and Architecture docs if available
-            if project.get('prd_doc_url'):
-                context_parts.append(f"\nPRD URL: {project['prd_doc_url']}")
-            if project.get('architecture_doc_url'):
-                context_parts.append(f"\nArchitecture URL: {project['architecture_doc_url']}")
-
-    except Exception as e:
-        _log("⚠️", "KNOWLEDGE-BASE", f"KB search failed: {e}")
+    # Build context from project DB record
+    context_parts = []
+    if project.get('prd_doc_url'):
+        context_parts.append(f"PRD URL: {project['prd_doc_url']}")
+    if project.get('architecture_doc_url'):
+        context_parts.append(f"Architecture URL: {project['architecture_doc_url']}")
 
     # Build context output
     output = f"""
@@ -457,7 +439,6 @@ Project Name: {project['project_name']}
 Description: {project.get('project_description', 'N/A')}
 Status: {project.get('status', 'unknown')}
 GitHub Repo: {project.get('github_repo_url', 'Not set')}
-
 {chr(10).join(context_parts)}
 """
 
@@ -810,11 +791,11 @@ existing_project_steps = Steps(
 # ROUTER SELECTOR FUNCTION
 # ============================================================================
 
-def route_by_project_type(step_input: StepInput) -> List[Step]:
+def route_by_project_type(step_input: StepInput) -> str:
     """
     Route to new project or existing project path.
 
-    Returns a list of Step objects (Router expects List[Step], not Steps object).
+    Returns the choice name as a string so Router matches against choices.
 
     Checks for:
     - PROJECT_TYPE: new|existing
@@ -826,25 +807,25 @@ def route_by_project_type(step_input: StepInput) -> List[Step]:
     # Check for explicit PROJECT_TYPE
     if "project_type: existing" in content or "project_type:existing" in content:
         _log("🔀", "ROUTER", "Route: EXISTING PROJECT PATH")
-        return existing_project_steps.steps  # Return the list of steps, not the Steps wrapper
+        return "existing_project_path"
 
     if "project_type: new" in content or "project_type:new" in content:
         _log("🔀", "ROUTER", "Route: NEW PROJECT PATH")
-        return new_project_steps.steps  # Return the list of steps, not the Steps wrapper
+        return "new_project_path"
 
     # Check for PROJECT_ID (indicates existing project)
     if "project_id:" in content:
         _log("🔀", "ROUTER", "Route: EXISTING PROJECT PATH (project_id found)")
-        return existing_project_steps.steps
+        return "existing_project_path"
 
     # Check for keywords
     if any(kw in content for kw in ["add feature", "existing product", "enhance", "update", "modify"]):
         _log("🔀", "ROUTER", "Route: EXISTING PROJECT PATH (keywords)")
-        return existing_project_steps.steps
+        return "existing_project_path"
 
     # Default to new project
     _log("🔀", "ROUTER", "Route: NEW PROJECT PATH (default)")
-    return new_project_steps.steps  # Return the list of steps, not the Steps wrapper
+    return "new_project_path"
 
 
 # ============================================================================

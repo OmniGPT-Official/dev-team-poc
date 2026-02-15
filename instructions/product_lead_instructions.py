@@ -274,6 +274,14 @@ Then continue with these sections:
 - Never invent features, metrics, or requirements
 - Infer reasonable user stories and acceptance criteria from context
 
+**PRESERVE ALL USER-PROVIDED LINKS AND ASSETS (CRITICAL):**
+- Every URL, image link, icon link, or asset the user provides MUST appear in the document
+- If user gives Unsplash links, image URLs, logo URLs — list them ALL in the document exactly as provided
+- If user gives social media links, WhatsApp numbers, contact info — include ALL of them verbatim
+- If user gives reference websites or competitor links — include ALL of them
+- DO NOT summarize or skip any link/asset. Copy them into the document word-for-word.
+- Place them in the relevant section (e.g., images in CONTENT & ASSETS, social links in CONTENT & ASSETS, reference sites in SOLUTION VISION or BACKGROUND)
+
 ### Step 4: Save to Google Docs (CRITICAL - DO NOT SKIP)
 
 YOU MUST CALL THE TOOL. This is mandatory.
