@@ -47,6 +47,50 @@ def get_supervisor_agent():
     return supervisor_agent
 
 
+def _save_to_google_docs(user_id: str, method: str, step_label: str, **kwargs) -> str | None:
+    """Save content to Google Docs programmatically (no agent hallucination possible).
+
+    Args:
+        user_id: User ID for credential lookup.
+        method: GoogleDocsTools method name ('create_document', 'create_prd_document',
+                'create_feature_spec_document').
+        step_label: Label for log messages (e.g. 'PRD-SAVE').
+        **kwargs: Arguments to pass to the GoogleDocsTools method.
+
+    Returns:
+        Google Docs URL on success, None on failure.
+    """
+    import json
+    from services.tool_providers import resolve_tools
+
+    try:
+        google_docs_tools = resolve_tools(user_id, "google_docs")
+        if not google_docs_tools:
+            _log("⚠️", step_label, "No Google Docs tools available for this user")
+            return None
+
+        toolkit = google_docs_tools[0]
+        fn = getattr(toolkit, method, None)
+        if not fn:
+            _log("❌", step_label, f"Method {method} not found on GoogleDocsTools")
+            return None
+
+        _log("📄", step_label, f"Saving to Google Docs via {method}...")
+        save_result = fn(**kwargs)
+        save_data = json.loads(save_result)
+
+        if save_data.get("success"):
+            doc_url = save_data["document_url"]
+            _log("✅", step_label, f"Saved: {doc_url}")
+            return doc_url
+        else:
+            _log("❌", step_label, f"Save failed: {save_data.get('error', 'Unknown error')}")
+            return None
+    except Exception as e:
+        _log("❌", step_label, f"Error saving to Google Docs: {e}")
+        return None
+
+
 # NOTE: Router selector function will be defined AFTER the Steps objects
 # so it can return the actual Steps objects instead of strings
 
@@ -95,36 +139,31 @@ def create_project_entry_executor(step_input: StepInput) -> StepOutput:
 
 
 def create_prd_executor(step_input: StepInput) -> StepOutput:
-    """Simple wrapper to call product_lead with user_id from workflow."""
-    from tools.project_tools import get_project
+    """Create PRD: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
     import asyncio
 
-    # Get user_id from workflow session
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
         user_id = step_input.workflow_session.user_id
 
-    # Get project_id from context
     project_id = get_current_project_id()
 
-    # Extract project details
     project_name_match = re.search(r'PROJECT_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
     project_desc_match = re.search(r'DESCRIPTION:\s*(.+?)(?:PROJECT_TYPE:|$)', str(step_input.input), re.IGNORECASE | re.DOTALL)
 
     project_name = project_name_match.group(1).strip() if project_name_match else "Unknown Project"
     project_description = project_desc_match.group(1).strip() if project_desc_match else "No description provided"
-
-    # Format project_id for filename (first 8 chars)
     project_id_short = project_id[:8] if project_id else "00000000"
 
     _log("📝", "PRD-CREATE", f"Starting PRD creation for user_id={user_id}, project_id={project_id}")
 
-    description = f"""You MUST create a PRD and save it to Google Docs.
+    # ---- PHASE 1: Generate PRD content via Product Lead ----
+    description = f"""Create a Product Requirements Document (PRD).
 
 **CRITICAL: USE ONLY THE INFORMATION PROVIDED IN THE INPUT BELOW. DO NOT ADD EXAMPLES, DO NOT HALLUCINATE.**
 
-**STEP 1: Write the PRD content starting with the DOCUMENT HEADER:**
+Write the PRD content starting with the DOCUMENT HEADER:
 
 DOCUMENT TYPE: Product Requirements Document (PRD)
 PROJECT TYPE: New Project
@@ -136,72 +175,60 @@ PROJECT DESCRIPTION: {project_description}
 
 Then continue with all the PRD sections as per your instructions.
 
-**STEP 2: YOU MUST call the create_prd_document tool**
+**IMPORTANT: Do NOT call any tools. Just write the complete PRD content. The document will be saved to Google Docs automatically by the system.**
 
-CRITICAL - Document title format: PRD_{project_name.replace(' ', '')}_{project_id_short}
+Return ONLY the full PRD content starting with the DOCUMENT HEADER above. Do not include any URLs."""
 
-Call it with:
-- title: "PRD_{project_name.replace(' ', '')}_{project_id_short}"
-- content: (the PRD content with header)
-- project_name: "{project_name}"
-
-**STEP 3: Return the Google Docs URL AND the full PRD content**
-
-Return in this format:
-PRD Document URL: [URL]
-
-PRD CONTENT:
-[Full PRD text content]
-
-CRITICAL: Include BOTH the URL and the FULL content in your response."""
-
-    # Call agent with user_id
-    _log("🤖", "PRD-CREATE", "Calling Product Lead agent...")
+    _log("🤖", "PRD-CREATE", "Phase 1: Generating content via Product Lead...")
     result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nInput: {step_input.input}", user_id=user_id))
-    output = result.content if result and result.content else ""
-    _log("✅", "PRD-CREATE", f"Product Lead completed. Length: {len(output)}")
-    _log("📄", "PRD-OUTPUT", f"First 200 chars: {output[:200]}")
+    prd_content = result.content if result and result.content else ""
+    _log("✅", "PRD-CREATE", f"Phase 1 complete. Content length: {len(prd_content)}")
+    _log("📄", "PRD-OUTPUT", f"First 200 chars: {prd_content[:200]}")
+
+    # ---- PHASE 2: Save to Google Docs programmatically ----
+    doc_title = f"PRD_{project_name.replace(' ', '')}_{project_id_short}"
+    doc_url = _save_to_google_docs(
+        user_id, "create_prd_document", "PRD-SAVE",
+        title=doc_title, content=prd_content, project_name=project_name
+    )
+
+    # Build output
+    url_line = f"PRD Document URL: {doc_url}" if doc_url else "PRD Document URL: SAVE_FAILED"
+    output = f"{url_line}\n\nPRD CONTENT:\n{prd_content}"
 
     return StepOutput(content=output, success=True)
 
 
 def create_architecture_executor(step_input: StepInput) -> StepOutput:
-    """Simple wrapper to call lead_engineer with user_id from workflow."""
+    """Create Architecture: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
     import asyncio
 
-    # Get user_id from workflow session
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
         user_id = step_input.workflow_session.user_id
 
-    # Get project_id from context
     project_id = get_current_project_id()
-
-    # Extract PRD content from previous step
     prev_content = step_input.previous_step_content or ""
 
-    # Extract project name from PRD content (try both formats: "PROJECT NAME:" and "PROJECT_NAME:")
     project_name_match = re.search(r'PROJECT[_ ]NAME:\s*(.+)', prev_content, re.IGNORECASE)
     if not project_name_match:
-        # Fallback: extract from original input
         input_match = re.search(r'PROJECT_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
         project_name = input_match.group(1).strip() if input_match else "Unknown Project"
     else:
         project_name = project_name_match.group(1).strip()
 
-    # Format project_id for filename (first 8 chars)
     project_id_short = project_id[:8] if project_id else "00000000"
 
     _log("🏗️", "ARCH-CREATE", f"Starting architecture creation for user_id={user_id}, project_id={project_id}")
     _log("🏗️", "ARCH-CREATE", f"Previous PRD content length: {len(prev_content)}")
-    _log("🏗️", "ARCH-CREATE", f"Extracted project_name: {project_name}")
 
+    # ---- PHASE 1: Generate architecture content via Lead Engineer ----
     description = f"""Create a SIMPLE architecture document based on the PRD content below.
 
 **CRITICAL: READ THE PRD CONTENT BELOW. USE ONLY WHAT'S MENTIONED THERE.**
 
-**STEP 1: Write the Architecture starting with the DOCUMENT HEADER:**
+Write the Architecture starting with the DOCUMENT HEADER:
 
 DOCUMENT TYPE: Technical Architecture Document
 PROJECT TYPE: New Project
@@ -218,29 +245,26 @@ Then continue with all architecture sections as per your instructions.
 - Simple requirements = Simple architecture
 - Match tech stack to requirements (don't over-engineer)
 
-**Save to Google Docs:**
-CRITICAL - Document title format: Architecture_{project_name.replace(' ', '')}_{project_id_short}
+**IMPORTANT: Do NOT call any tools. Just write the complete architecture document content. The document will be saved to Google Docs automatically by the system.**
 
-Use create_document tool:
-- title: "Architecture_{project_name.replace(' ', '')}_{project_id_short}"
-- content: [your architecture with header]
+Return ONLY the full architecture content starting with the DOCUMENT HEADER above. Do not include any URLs."""
 
-**Return the Google Docs URL AND the full Architecture content**
-
-Return in this format:
-Architecture Document URL: [URL]
-
-ARCHITECTURE CONTENT:
-[Full architecture text content]
-
-CRITICAL: Include BOTH the URL and the FULL content in your response."""
-
-    # Call agent with user_id
-    _log("🤖", "ARCH-CREATE", "Calling Lead Engineer agent...")
+    _log("🤖", "ARCH-CREATE", "Phase 1: Generating content via Lead Engineer...")
     result = asyncio.run(get_lead_engineer_agent().arun(description + f"\n\nPRD CONTENT:\n{prev_content}", user_id=user_id))
-    output = result.content if result and result.content else ""
-    _log("✅", "ARCH-CREATE", f"Lead Engineer completed. Length: {len(output)}")
-    _log("📄", "ARCH-OUTPUT", f"First 200 chars: {output[:200]}")
+    arch_content = result.content if result and result.content else ""
+    _log("✅", "ARCH-CREATE", f"Phase 1 complete. Content length: {len(arch_content)}")
+    _log("📄", "ARCH-OUTPUT", f"First 200 chars: {arch_content[:200]}")
+
+    # ---- PHASE 2: Save to Google Docs programmatically ----
+    doc_title = f"Architecture_{project_name.replace(' ', '')}_{project_id_short}"
+    doc_url = _save_to_google_docs(
+        user_id, "create_document", "ARCH-SAVE",
+        title=doc_title, content=arch_content
+    )
+
+    # Build output
+    url_line = f"Architecture Document URL: {doc_url}" if doc_url else "Architecture Document URL: SAVE_FAILED"
+    output = f"{url_line}\n\nARCHITECTURE CONTENT:\n{arch_content}"
 
     return StepOutput(content=output, success=True)
 
@@ -511,19 +535,16 @@ Note: Repository may need to be created or permissions may need to be updated.
 
 
 def create_feature_spec_executor(step_input: StepInput) -> StepOutput:
-    """Step 3 (Existing): Product Lead creates Feature Specification."""
+    """Create Feature Spec: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
     import asyncio
 
-    # Get user_id from workflow session
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
         user_id = step_input.workflow_session.user_id
 
-    # Get project_id from context
     project_id = get_current_project_id()
 
-    # Extract project details
     project_name_match = re.search(r'PROJECT_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
     feature_name_match = re.search(r'FEATURE_NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
     feature_desc_match = re.search(r'DESCRIPTION:\s*(.+?)(?:PROJECT_TYPE:|$)', str(step_input.input), re.IGNORECASE | re.DOTALL)
@@ -532,14 +553,12 @@ def create_feature_spec_executor(step_input: StepInput) -> StepOutput:
     feature_name = feature_name_match.group(1).strip() if feature_name_match else "Unknown Feature"
     feature_description = feature_desc_match.group(1).strip() if feature_desc_match else "No description provided"
 
-    # Get project context from previous step
     prev_context = step_input.previous_step_content or ""
-
-    # Format project_id for filename (first 8 chars)
     project_id_short = project_id[:8] if project_id else "00000000"
 
     _log("📝", "FEATURE-SPEC-CREATE", f"Starting Feature Spec creation for user_id={user_id}, project_id={project_id}")
 
+    # ---- PHASE 1: Generate Feature Spec content via Product Lead ----
     description = f"""Create a Feature Specification for this existing product.
 
 **CRITICAL: USE THE CONTEXT AND INFORMATION PROVIDED BELOW.**
@@ -547,7 +566,7 @@ def create_feature_spec_executor(step_input: StepInput) -> StepOutput:
 **PROJECT CONTEXT:**
 {prev_context}
 
-**STEP 1: Write the Feature Spec starting with the DOCUMENT HEADER:**
+Write the Feature Spec starting with the DOCUMENT HEADER:
 
 DOCUMENT TYPE: Feature Specification
 PROJECT TYPE: Existing Project
@@ -560,42 +579,34 @@ FEATURE DESCRIPTION: {feature_description}
 
 Then continue with all Feature Spec sections as per your instructions.
 
-**Save to Google Docs:**
-CRITICAL - Document title format: FeatureSpec_{feature_name.replace(' ', '')}_{project_id_short}
+**IMPORTANT: Do NOT call any tools. Just write the complete Feature Specification content. The document will be saved to Google Docs automatically by the system.**
 
-Use create_feature_spec_document tool:
-- title: "FeatureSpec_{feature_name.replace(' ', '')}_{project_id_short}"
-- content: [your spec with header]
-- feature_name: "{feature_name}"
-- project_name: "{project_name}"
+Return ONLY the full Feature Spec content starting with the DOCUMENT HEADER above. Do not include any URLs."""
 
-**Return the Google Docs URL AND the full content**
-
-Return in this format:
-Feature Spec URL: [URL]
-
-FEATURE SPEC CONTENT:
-[Full content]"""
-
-    # Call agent with user_id
-    _log("🤖", "FEATURE-SPEC-CREATE", "Calling Product Lead agent...")
+    _log("🤖", "FEATURE-SPEC-CREATE", "Phase 1: Generating content via Product Lead...")
     result = asyncio.run(get_product_lead_agent().arun(description, user_id=user_id))
-    output = result.content if result and result.content else ""
-    _log("✅", "FEATURE-SPEC-CREATE", f"Product Lead completed. Length: {len(output)}")
-    _log("📄", "FEATURE-SPEC-OUTPUT", f"First 200 chars: {output[:200]}")
+    fs_content = result.content if result and result.content else ""
+    _log("✅", "FEATURE-SPEC-CREATE", f"Phase 1 complete. Content length: {len(fs_content)}")
+    _log("📄", "FEATURE-SPEC-OUTPUT", f"First 200 chars: {fs_content[:200]}")
+
+    # ---- PHASE 2: Save to Google Docs programmatically ----
+    doc_title = f"FeatureSpec_{feature_name.replace(' ', '')}_{project_id_short}"
+    doc_url = _save_to_google_docs(
+        user_id, "create_feature_spec_document", "FEATURE-SPEC-SAVE",
+        title=doc_title, content=fs_content,
+        feature_name=feature_name, project_name=project_name
+    )
+
+    # Build output
+    url_line = f"Feature Spec URL: {doc_url}" if doc_url else "Feature Spec URL: SAVE_FAILED"
+    output = f"{url_line}\n\nFEATURE SPEC CONTENT:\n{fs_content}"
 
     return StepOutput(content=output, success=True)
 
 
 def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
-    """Step 4 (Existing): Lead Engineer creates Feature Technical Document.
-
-    Two-phase approach to prevent URL hallucination:
-    Phase 1: Agent generates the technical document CONTENT (no tool calling needed).
-    Phase 2: Python code saves to Google Docs via resolve_tools (guaranteed real URL).
-    """
+    """Create Technical Doc: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
-    import json
     import asyncio
 
     user_id = None
@@ -661,39 +672,16 @@ Return ONLY the full technical document content starting with the DOCUMENT HEADE
     _log("✅", "TECH-DOC-CREATE", f"Phase 1 complete. Content length: {len(tech_doc_content)}")
     _log("📄", "TECH-DOC-OUTPUT", f"First 200 chars: {tech_doc_content[:200]}")
 
-    # ---- PHASE 2: Save to Google Docs programmatically (no hallucination possible) ----
+    # ---- PHASE 2: Save to Google Docs programmatically ----
     doc_title = f"TechDoc_{feature_name.replace(' ', '')}_{project_id_short}"
-    doc_url = None
+    doc_url = _save_to_google_docs(
+        user_id, "create_document", "TECH-DOC-SAVE",
+        title=doc_title, content=tech_doc_content
+    )
 
-    try:
-        from services.tool_providers import resolve_tools
-
-        google_docs_tools = resolve_tools(user_id, "google_docs")
-        if google_docs_tools:
-            _log("📄", "TECH-DOC-SAVE", f"Saving to Google Docs: {doc_title}")
-            save_result = google_docs_tools[0].create_document(title=doc_title, content=tech_doc_content)
-            save_data = json.loads(save_result)
-            if save_data.get("success"):
-                doc_url = save_data["document_url"]
-                _log("✅", "TECH-DOC-SAVE", f"Saved to Google Docs: {doc_url}")
-            else:
-                _log("❌", "TECH-DOC-SAVE", f"Google Docs save failed: {save_data.get('error', 'Unknown error')}")
-        else:
-            _log("⚠️", "TECH-DOC-SAVE", "No Google Docs tools available for this user")
-    except Exception as e:
-        _log("❌", "TECH-DOC-SAVE", f"Error saving to Google Docs: {e}")
-
-    # Build output with real URL and content
-    output_parts = []
-    if doc_url:
-        output_parts.append(f"Technical Document URL: {doc_url}")
-    else:
-        output_parts.append("Technical Document URL: SAVE_FAILED - No valid Google Docs URL generated")
-    output_parts.append("")
-    output_parts.append("TECHNICAL DOC CONTENT:")
-    output_parts.append(tech_doc_content)
-
-    output = "\n".join(output_parts)
+    # Build output
+    url_line = f"Technical Document URL: {doc_url}" if doc_url else "Technical Document URL: SAVE_FAILED"
+    output = f"{url_line}\n\nTECHNICAL DOC CONTENT:\n{tech_doc_content}"
 
     return StepOutput(content=output, success=True)
 
