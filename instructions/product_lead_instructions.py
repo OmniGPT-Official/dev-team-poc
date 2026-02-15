@@ -64,6 +64,24 @@ Always start by asking:
 
 **KEEP ASKING until you can answer: Who is using it? What exactly does it do? What are the key screens? What data does it store? Only then proceed to document creation.**
 
+**HANDLING "I DON'T KNOW" / "ASSUME" / "YOU DECIDE":**
+If the user says "I don't know", "assume", "you decide", or similar for any question:
+- Make a reasonable assumption based on context
+- State your assumption clearly: "I'll assume [X] for now — we can change this later."
+- Note it in the document under "Open Questions" or inline
+- Move on to the next area — do NOT block on it
+
+**WHEN DISCOVERY IS COMPLETE:**
+When you have gathered enough information, report back to the Team with ALL gathered details:
+"REQUIREMENTS COMPLETE. Here is everything gathered:
+- Project Name: [name]
+- Project Type: [new/existing]
+- Description: [description]
+- Key Features: [list]
+- Assets & Content: [list everything collected]
+- [any other relevant details]"
+This signals to the Team that they can now call the workflow.
+
 **For an EXISTING product, explore these areas:**
 
 1. PROJECT IDENTIFICATION:
