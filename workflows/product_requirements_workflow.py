@@ -11,7 +11,6 @@ Output: 2 Google Docs URLs (PRD/FS + Architecture/Tech Doc)
 
 import os
 import sys
-from typing import Union
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -908,11 +907,13 @@ existing_project_steps = Steps(
 # ROUTER SELECTOR FUNCTION
 # ============================================================================
 
-def route_by_project_type(step_input: StepInput) -> str:
+def route_by_project_type(step_input: StepInput):
     """
     Route to new project or existing project path.
 
-    Returns the choice name as a string so Router matches against choices.
+    Returns the actual Steps object (not a string) because Agno's Router
+    only accepts Step, list, or Steps — returning a string triggers
+    'Router function returned unexpected type: <class 'str'>'.
 
     Checks for:
     - PROJECT_TYPE: new|existing
@@ -924,25 +925,25 @@ def route_by_project_type(step_input: StepInput) -> str:
     # Check for explicit PROJECT_TYPE
     if "project_type: existing" in content or "project_type:existing" in content:
         _log("🔀", "ROUTER", "Route: EXISTING PROJECT PATH")
-        return "existing_project_path"
+        return [existing_project_steps]
 
     if "project_type: new" in content or "project_type:new" in content:
         _log("🔀", "ROUTER", "Route: NEW PROJECT PATH")
-        return "new_project_path"
+        return [new_project_steps]
 
     # Check for PROJECT_ID (indicates existing project)
     if "project_id:" in content:
         _log("🔀", "ROUTER", "Route: EXISTING PROJECT PATH (project_id found)")
-        return "existing_project_path"
+        return [existing_project_steps]
 
     # Check for keywords
     if any(kw in content for kw in ["add feature", "existing product", "enhance", "update", "modify"]):
         _log("🔀", "ROUTER", "Route: EXISTING PROJECT PATH (keywords)")
-        return "existing_project_path"
+        return [existing_project_steps]
 
     # Default to new project
     _log("🔀", "ROUTER", "Route: NEW PROJECT PATH (default)")
-    return "new_project_path"
+    return [new_project_steps]
 
 
 # ============================================================================
