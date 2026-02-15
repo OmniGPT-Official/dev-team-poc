@@ -11,7 +11,7 @@ Output: 2 Google Docs URLs (PRD/FS + Architecture/Tech Doc)
 
 import os
 import sys
-from typing import Union, List
+from typing import Union
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -792,11 +792,11 @@ existing_project_steps = Steps(
 # ROUTER SELECTOR FUNCTION
 # ============================================================================
 
-def route_by_project_type(step_input: StepInput) -> List[Step]:
+def route_by_project_type(step_input: StepInput) -> str:
     """
     Route to new project or existing project path.
 
-    Returns a list of Step objects (Router expects List[Step], not Steps object).
+    Returns the choice name as a string so Router matches against choices.
 
     Checks for:
     - PROJECT_TYPE: new|existing
@@ -808,25 +808,25 @@ def route_by_project_type(step_input: StepInput) -> List[Step]:
     # Check for explicit PROJECT_TYPE
     if "project_type: existing" in content or "project_type:existing" in content:
         _log("🔀", "ROUTER", "Route: EXISTING PROJECT PATH")
-        return existing_project_steps.steps  # Return the list of steps, not the Steps wrapper
+        return "existing_project_path"
 
     if "project_type: new" in content or "project_type:new" in content:
         _log("🔀", "ROUTER", "Route: NEW PROJECT PATH")
-        return new_project_steps.steps  # Return the list of steps, not the Steps wrapper
+        return "new_project_path"
 
     # Check for PROJECT_ID (indicates existing project)
     if "project_id:" in content:
         _log("🔀", "ROUTER", "Route: EXISTING PROJECT PATH (project_id found)")
-        return existing_project_steps.steps
+        return "existing_project_path"
 
     # Check for keywords
     if any(kw in content for kw in ["add feature", "existing product", "enhance", "update", "modify"]):
         _log("🔀", "ROUTER", "Route: EXISTING PROJECT PATH (keywords)")
-        return existing_project_steps.steps
+        return "existing_project_path"
 
     # Default to new project
     _log("🔀", "ROUTER", "Route: NEW PROJECT PATH (default)")
-    return new_project_steps.steps  # Return the list of steps, not the Steps wrapper
+    return "new_project_path"
 
 
 # ============================================================================

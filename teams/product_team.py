@@ -455,6 +455,8 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
    4. If NOT found → call `list_user_projects()` to show all projects, let user pick or import new
 
 7. **ALL FILES IN GITHUB** - Code and reviews stored in GitHub repository under .dev-team/
+
+8. **PRESERVE ALL USER LINKS AND ASSETS** - When the user provides ANY links (image URLs, Unsplash links, icon URLs, social media links, WhatsApp numbers, reference websites, etc.), ALL of them MUST be passed through to `run_product_requirements` in the DESCRIPTION field and appear in the final PRD/Feature Spec document. Never summarize or drop any user-provided link or asset. Include them verbatim.
 """,
     ],
     markdown=True,
