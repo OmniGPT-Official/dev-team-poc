@@ -614,9 +614,9 @@ def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
     _log("🏗️", "TECH-DOC-CREATE", f"Feature Spec input length: {len(feature_spec_content)}")
     _log("🏗️", "TECH-DOC-CREATE", f"Feature Spec first 200 chars: {feature_spec_content[:200]}")
 
-    description = f"""You MUST create a Technical Document and save it to Google Docs.
+    description = f"""Create a comprehensive Feature Technical Document based on the Feature Specification content below.
 
-**CRITICAL: YOU MUST CALL the create_document tool to save. DO NOT invent/hallucinate a URL.**
+**CRITICAL: READ THE ENTIRE FEATURE SPEC CONTENT BELOW. Your technical document MUST cover the technical implementation for EVERY single requirement, feature, user story, edge case, and detail mentioned in the Feature Spec. Do NOT skip or omit ANY item. Every functional requirement, non-functional requirement, affected component, dependency, and edge case in the Feature Spec must have a corresponding technical implementation detail in your document.**
 
 **STEP 1: Write the Technical Document starting with the DOCUMENT HEADER:**
 
@@ -628,9 +628,20 @@ FEATURE NAME: {feature_name}
 
 ====================================================================================================
 
-Then continue with technical architecture sections for this feature.
+Then continue with these technical architecture sections:
+- TECHNICAL OVERVIEW (how this feature will be implemented)
+- ARCHITECTURE CHANGES (what components/modules are affected)
+- DATA MODEL CHANGES (database schema changes, new tables/columns)
+- API DESIGN (new or modified endpoints, request/response formats)
+- COMPONENT DESIGN (frontend components, UI changes, state management)
+- IMPLEMENTATION DETAILS (for EACH functional requirement from the Feature Spec, describe the technical approach)
+- THIRD-PARTY INTEGRATIONS (any external services, APIs, SDKs needed)
+- ERROR HANDLING (for EACH edge case from the Feature Spec, describe technical handling)
+- SECURITY CONSIDERATIONS (auth, data protection, input validation)
+- TESTING STRATEGY (unit tests, integration tests, test cases for each requirement)
+- DEPLOYMENT & MIGRATION (deployment steps, database migrations, rollback plan)
 
-**STEP 2: YOU MUST call the create_document tool**
+**STEP 2: YOU MUST call the create_document tool to save to Google Docs**
 
 CRITICAL - Document title format: TechDoc_{feature_name.replace(' ', '')}_{project_id_short}
 
@@ -638,7 +649,7 @@ Call create_document with:
 - title: "TechDoc_{feature_name.replace(' ', '')}_{project_id_short}"
 - content: (your complete technical document with header)
 
-The tool will return a real Google Docs URL. USE THAT URL.
+The tool will return a real Google Docs URL. USE THAT URL. DO NOT invent or hallucinate a URL.
 
 **STEP 3: Return the Google Docs URL AND the full content**
 
@@ -646,16 +657,10 @@ Return in this format:
 Technical Document URL: [THE REAL URL FROM THE TOOL]
 
 TECHNICAL DOC CONTENT:
-[Full technical document content]
-
-CRITICAL: The URL must come from the create_document tool response. DO NOT make up a URL.
-
-FEATURE SPEC CONTENT (use this as input):
-{feature_spec_content}
-"""
+[Full technical document content]"""
 
     _log("🤖", "TECH-DOC-CREATE", "Calling Lead Engineer agent...")
-    result = asyncio.run(get_lead_engineer_agent().arun(description, user_id=user_id))
+    result = asyncio.run(get_lead_engineer_agent().arun(description + f"\n\nFEATURE SPECIFICATION CONTENT (you MUST address EVERY item below in your technical document):\n{feature_spec_content}", user_id=user_id))
     output = result.content if result and result.content else ""
     _log("✅", "TECH-DOC-CREATE", f"Lead Engineer completed. Length: {len(output)}")
     _log("📄", "TECH-DOC-OUTPUT", f"First 200 chars: {output[:200]}")
