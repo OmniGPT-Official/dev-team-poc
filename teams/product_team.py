@@ -456,7 +456,13 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 
 7. **ALL FILES IN GITHUB** - Code and reviews stored in GitHub repository under .dev-team/
 
-8. **PRESERVE ALL USER LINKS AND ASSETS** - When the user provides ANY links (image URLs, Unsplash links, icon URLs, social media links, WhatsApp numbers, reference websites, etc.), ALL of them MUST be passed through to `run_product_requirements` in the DESCRIPTION field and appear in the final PRD/Feature Spec document. Never summarize or drop any user-provided link or asset. Include them verbatim.
+8. **PRESERVE ALL USER LINKS AND ASSETS (ZERO TOLERANCE — NO LINK MAY BE LOST)** - When the user provides ANY links or URLs in ANY message during the conversation, ALL of them MUST be:
+   a) Collected by Product Lead during discovery
+   b) Passed through to `run_product_requirements` in the DESCRIPTION field VERBATIM
+   c) Appear in the final PRD/Feature Spec document
+   d) Carried forward into the Architecture/Technical Document by Lead Engineer
+   This applies to ALL link types: image URLs, font links (Google Fonts, etc.), icon CDN links, documentation URLs, API reference links, Unsplash/Pexels links, social media links, WhatsApp numbers, reference/inspiration websites, video URLs, embed URLs, CDN scripts, Figma links, or ANY other URL.
+   **Never summarize, paraphrase, shorten, or drop any user-provided link.** Copy every link exactly as the user provided it. If the user shared 10 links, all 10 must appear in the final documents. This is critical because these links are needed by the Software Engineer during implementation.
 """,
     ],
     markdown=True,

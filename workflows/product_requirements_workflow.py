@@ -162,6 +162,8 @@ def create_prd_executor(step_input: StepInput) -> StepOutput:
 
 **CRITICAL: USE ONLY THE INFORMATION PROVIDED IN THE INPUT BELOW. DO NOT ADD EXAMPLES, DO NOT HALLUCINATE.**
 
+**CRITICAL — LINK PRESERVATION: The input below may contain image URLs, font links, icon CDN links, documentation URLs, reference website links, social media links, video URLs, or any other URLs. You MUST include EVERY SINGLE link/URL from the input in the PRD document EXACTLY as provided. Do NOT skip, summarize, or omit any link. Place them in CONTENT & ASSETS section AND in the relevant feature sections.**
+
 Write the PRD content starting with the DOCUMENT HEADER:
 
 DOCUMENT TYPE: Product Requirements Document (PRD)
@@ -227,6 +229,8 @@ def create_architecture_executor(step_input: StepInput) -> StepOutput:
 
 **CRITICAL: READ THE PRD CONTENT BELOW. USE ONLY WHAT'S MENTIONED THERE.**
 
+**CRITICAL — LINK PRESERVATION: The PRD content below contains image URLs, font links, icon links, documentation links, social media links, and other URLs provided by the user. You MUST carry forward EVERY SINGLE link/URL from the PRD into this architecture document. Place them in the Assets section AND reference them in the relevant component/page sections. No link from the PRD may be dropped.**
+
 Write the Architecture starting with the DOCUMENT HEADER:
 
 DOCUMENT TYPE: Technical Architecture Document
@@ -243,6 +247,7 @@ Then continue with all architecture sections as per your instructions.
 - RESPECT THE PRD SCOPE - don't add features not mentioned
 - Simple requirements = Simple architecture
 - Match tech stack to requirements (don't over-engineer)
+- INCLUDE ALL LINKS from the PRD in Assets and relevant sections
 
 **IMPORTANT: Do NOT call any tools. Just write the complete architecture document content. The document will be saved to Google Docs automatically by the system.**
 
@@ -626,6 +631,8 @@ def create_feature_spec_executor(step_input: StepInput) -> StepOutput:
 
 **CRITICAL: USE THE CONTEXT AND INFORMATION PROVIDED BELOW.**
 
+**CRITICAL — LINK PRESERVATION: The input and context below may contain image URLs, font links, icon CDN links, documentation URLs, API reference links, reference website links, social media links, video URLs, or any other URLs the user provided. You MUST include EVERY SINGLE link/URL in the Feature Spec document EXACTLY as provided. Place them in the USER-PROVIDED LINKS AND ASSETS section AND in the relevant FUNCTIONAL REQUIREMENTS sections. No link may be dropped.**
+
 **PROJECT CONTEXT:**
 {prev_context}
 
@@ -702,6 +709,8 @@ def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
     description = f"""Create a comprehensive Feature Technical Document based on the Feature Specification AND the existing GitHub repository structure below.
 
 **CRITICAL: READ THE ENTIRE FEATURE SPEC CONTENT AND REPO STRUCTURE BELOW. Your technical document MUST cover the technical implementation for EVERY single requirement, feature, user story, edge case, and detail mentioned in the Feature Spec. Do NOT skip or omit ANY item. Every functional requirement, non-functional requirement, affected component, dependency, and edge case in the Feature Spec must have a corresponding technical implementation detail in your document.**
+
+**CRITICAL — LINK PRESERVATION: The Feature Spec below contains image URLs, font links, icon CDN links, documentation URLs, API reference links, reference website links, social media links, video URLs, and other user-provided URLs. You MUST carry forward EVERY SINGLE link/URL from the Feature Spec into this technical document. Place them in the relevant component/implementation sections where they will be used by the Software Engineer. No link from the Feature Spec may be dropped, summarized, or omitted. The Software Engineer must have every link needed to implement the feature without going back to the Feature Spec.**
 
 **IMPORTANT: Use the EXISTING REPO STRUCTURE to inform your technical decisions. Reference actual files, folders, and tech stack from the repo. Your architecture changes should fit into the existing codebase structure.**
 

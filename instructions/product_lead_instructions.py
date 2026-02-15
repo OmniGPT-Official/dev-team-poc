@@ -316,11 +316,12 @@ Then continue with these sections:
 3. USER STORY - As a [user], I want [capability], so that [benefit]
 4. FUNCTIONAL REQUIREMENTS - Detailed requirements with priorities and acceptance criteria
 5. NON-FUNCTIONAL REQUIREMENTS - Performance, security, scalability
-6. AFFECTED COMPONENTS - Which parts of the existing system this touches
-7. DEPENDENCIES - What this feature depends on
-8. EDGE CASES - Scenarios to handle
-9. OUT OF SCOPE - What this feature won't do
-10. OPEN QUESTIONS - Any unknowns
+6. USER-PROVIDED LINKS AND ASSETS - ALL links, images, fonts, documentation URLs, reference links, and any other resources the user provided (MUST be listed verbatim, see PRESERVE ALL LINKS rule below)
+7. AFFECTED COMPONENTS - Which parts of the existing system this touches
+8. DEPENDENCIES - What this feature depends on
+9. EDGE CASES - Scenarios to handle
+10. OUT OF SCOPE - What this feature won't do
+11. OPEN QUESTIONS - Any unknowns
 
 **FORMATTING RULES (CRITICAL):**
 - Use PLAIN TEXT only (no markdown symbols like **, __, ##, `, [])
@@ -335,13 +336,26 @@ Then continue with these sections:
 - Never invent features, metrics, or requirements
 - Infer reasonable user stories and acceptance criteria from context
 
-**PRESERVE ALL USER-PROVIDED LINKS AND ASSETS (CRITICAL):**
-- Every URL, image link, icon link, or asset the user provides MUST appear in the document
-- If user gives Unsplash links, image URLs, logo URLs — list them ALL in the document exactly as provided
-- If user gives social media links, WhatsApp numbers, contact info — include ALL of them verbatim
-- If user gives reference websites or competitor links — include ALL of them
-- DO NOT summarize or skip any link/asset. Copy them into the document word-for-word.
-- Place them in the relevant section (e.g., images in CONTENT & ASSETS, social links in CONTENT & ASSETS, reference sites in SOLUTION VISION or BACKGROUND)
+**PRESERVE ALL USER-PROVIDED LINKS AND ASSETS (CRITICAL — ZERO TOLERANCE FOR MISSING LINKS):**
+- EVERY URL, link, or resource the user provides MUST appear in the document EXACTLY as provided
+- This includes but is not limited to:
+  * Image URLs (Unsplash, Pexels, S3, Cloudinary, any hosted image)
+  * Font links (Google Fonts, Adobe Fonts, custom font CDNs)
+  * Icon links (FontAwesome, Material Icons, Heroicons CDNs)
+  * Documentation links (API docs, design systems, Figma, Notion)
+  * Reference/inspiration website URLs
+  * Logo URLs or hosted brand assets
+  * Social media links (WhatsApp, Instagram, Facebook, Twitter/X, LinkedIn, TikTok, YouTube)
+  * WhatsApp numbers or WhatsApp Business links
+  * Google Maps links, embed URLs, or physical addresses
+  * Video URLs (YouTube, Vimeo, Loom)
+  * CDN links, library links, or external script URLs
+  * Any other URL or link the user mentions in any message
+- DO NOT summarize, paraphrase, or skip ANY link. Copy every link word-for-word.
+- For PRDs: Place links in CONTENT & ASSETS section AND in the relevant feature section that uses them
+- For Feature Specs: Place links in USER-PROVIDED LINKS AND ASSETS section AND in the relevant FUNCTIONAL REQUIREMENTS that reference them
+- If a link is relevant to multiple sections, include it in EACH relevant section
+- When in doubt, INCLUDE the link. It is always better to include a link twice than to miss it once.
 
 ### Step 4: Save to Google Docs (CRITICAL - DO NOT SKIP)
 

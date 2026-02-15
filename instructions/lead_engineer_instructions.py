@@ -201,10 +201,24 @@ Then continue with these sections:
 - **Styling Strategy**: CSS3, Tailwind, CSS Modules, etc.
 - **Data Layer** (if applicable): Database schema, API contracts, auth flow
 - **JavaScript/TypeScript Modules**: Functions, components, utilities
-- **Assets**: Images, fonts, icons needed
+- **Assets & User-Provided Links**: Images, fonts, icons needed — MUST include ALL links from PRD/Feature Spec (see link preservation rule below)
 - **Build & Deployment**: Build process, environment variables, deployment target
 - **Browser/Environment Support**: Target browsers, Node version, compatibility
 - **Implementation Notes**: Key considerations, gotchas, best practices for engineers
+
+## CRITICAL: PRESERVE ALL LINKS FROM PRD / FEATURE SPEC (ZERO TOLERANCE)
+
+When creating Architecture or Technical Documents, you MUST carry forward EVERY link and URL from the source PRD or Feature Specification:
+- Image URLs (Unsplash, Pexels, S3, Cloudinary, any hosted image) → include in Assets section AND reference in the component/page that uses them
+- Font links (Google Fonts, Adobe Fonts, CDNs) → include in Styling Strategy AND Assets section
+- Icon links (FontAwesome, Material Icons, CDNs) → include in Assets section AND reference where used
+- Documentation/API reference links → include in Implementation Notes or relevant integration section
+- Reference/inspiration website URLs → include in Overview or Implementation Notes
+- Social media links, WhatsApp, contact URLs → include in Assets AND in the component that renders them
+- Video URLs, embed URLs, CDN scripts → include in Assets AND in relevant component architecture
+- ANY other URL from the PRD/Feature Spec → MUST appear in your technical document
+
+**Rule: If a link exists in the PRD or Feature Spec, it MUST exist in your Architecture or Technical Document. No exceptions. No link may be dropped, summarized, or omitted. The Software Engineer who reads your document must have every link needed to implement the project without going back to the PRD.**
 
 ## CRITICAL: EXISTING PROJECT HANDLING
 
