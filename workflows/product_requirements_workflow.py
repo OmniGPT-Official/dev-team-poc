@@ -588,8 +588,14 @@ FEATURE SPEC CONTENT:
 
 
 def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
-    """Step 4 (Existing): Lead Engineer creates Feature Technical Document."""
+    """Step 4 (Existing): Lead Engineer creates Feature Technical Document.
+
+    Two-phase approach to prevent URL hallucination:
+    Phase 1: Agent generates the technical document CONTENT (no tool calling needed).
+    Phase 2: Python code saves to Google Docs via resolve_tools (guaranteed real URL).
+    """
     import re
+    import json
     import asyncio
 
     user_id = None
@@ -614,11 +620,12 @@ def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
     _log("🏗️", "TECH-DOC-CREATE", f"Feature Spec input length: {len(feature_spec_content)}")
     _log("🏗️", "TECH-DOC-CREATE", f"Feature Spec first 200 chars: {feature_spec_content[:200]}")
 
-    description = f"""You MUST create a Technical Document and save it to Google Docs.
+    # ---- PHASE 1: Generate technical document CONTENT via Lead Engineer ----
+    description = f"""Create a comprehensive Feature Technical Document based on the Feature Specification content below.
 
-**CRITICAL: YOU MUST CALL the create_document tool to save. DO NOT invent/hallucinate a URL.**
+**CRITICAL: READ THE ENTIRE FEATURE SPEC CONTENT BELOW. Your technical document MUST cover the technical implementation for EVERY single requirement, feature, user story, edge case, and detail mentioned in the Feature Spec. Do NOT skip or omit ANY item. Every functional requirement, non-functional requirement, affected component, dependency, and edge case in the Feature Spec must have a corresponding technical implementation detail in your document.**
 
-**STEP 1: Write the Technical Document starting with the DOCUMENT HEADER:**
+Write the Technical Document starting with the DOCUMENT HEADER:
 
 DOCUMENT TYPE: Feature Technical Document
 PROJECT TYPE: Existing Project
@@ -628,37 +635,65 @@ FEATURE NAME: {feature_name}
 
 ====================================================================================================
 
-Then continue with technical architecture sections for this feature.
+Then continue with these technical architecture sections:
+- TECHNICAL OVERVIEW (how this feature will be implemented)
+- ARCHITECTURE CHANGES (what components/modules are affected)
+- DATA MODEL CHANGES (database schema changes, new tables/columns)
+- API DESIGN (new or modified endpoints, request/response formats)
+- COMPONENT DESIGN (frontend components, UI changes, state management)
+- IMPLEMENTATION DETAILS (for EACH functional requirement from the Feature Spec, describe the technical approach)
+- THIRD-PARTY INTEGRATIONS (any external services, APIs, SDKs needed)
+- ERROR HANDLING (for EACH edge case from the Feature Spec, describe technical handling)
+- SECURITY CONSIDERATIONS (auth, data protection, input validation)
+- TESTING STRATEGY (unit tests, integration tests, test cases for each requirement)
+- DEPLOYMENT & MIGRATION (deployment steps, database migrations, rollback plan)
 
-**STEP 2: YOU MUST call the create_document tool**
+**IMPORTANT: Do NOT call any tools. Just write the complete technical document content. The document will be saved to Google Docs automatically by the system.**
 
-CRITICAL - Document title format: TechDoc_{feature_name.replace(' ', '')}_{project_id_short}
+Return ONLY the full technical document content starting with the DOCUMENT HEADER above. Do not include any URLs."""
 
-Call create_document with:
-- title: "TechDoc_{feature_name.replace(' ', '')}_{project_id_short}"
-- content: (your complete technical document with header)
+    _log("🤖", "TECH-DOC-CREATE", "Phase 1: Generating content via Lead Engineer...")
+    result = asyncio.run(get_lead_engineer_agent().arun(
+        description + f"\n\nFEATURE SPECIFICATION CONTENT (you MUST address EVERY item below):\n{feature_spec_content}",
+        user_id=user_id
+    ))
+    tech_doc_content = result.content if result and result.content else ""
+    _log("✅", "TECH-DOC-CREATE", f"Phase 1 complete. Content length: {len(tech_doc_content)}")
+    _log("📄", "TECH-DOC-OUTPUT", f"First 200 chars: {tech_doc_content[:200]}")
 
-The tool will return a real Google Docs URL. USE THAT URL.
+    # ---- PHASE 2: Save to Google Docs programmatically (no hallucination possible) ----
+    doc_title = f"TechDoc_{feature_name.replace(' ', '')}_{project_id_short}"
+    doc_url = None
 
-**STEP 3: Return the Google Docs URL AND the full content**
+    try:
+        from services.tool_providers import resolve_tools
 
-Return in this format:
-Technical Document URL: [THE REAL URL FROM THE TOOL]
+        google_docs_tools = resolve_tools(user_id, "google_docs")
+        if google_docs_tools:
+            _log("📄", "TECH-DOC-SAVE", f"Saving to Google Docs: {doc_title}")
+            save_result = google_docs_tools[0].create_document(title=doc_title, content=tech_doc_content)
+            save_data = json.loads(save_result)
+            if save_data.get("success"):
+                doc_url = save_data["document_url"]
+                _log("✅", "TECH-DOC-SAVE", f"Saved to Google Docs: {doc_url}")
+            else:
+                _log("❌", "TECH-DOC-SAVE", f"Google Docs save failed: {save_data.get('error', 'Unknown error')}")
+        else:
+            _log("⚠️", "TECH-DOC-SAVE", "No Google Docs tools available for this user")
+    except Exception as e:
+        _log("❌", "TECH-DOC-SAVE", f"Error saving to Google Docs: {e}")
 
-TECHNICAL DOC CONTENT:
-[Full technical document content]
+    # Build output with real URL and content
+    output_parts = []
+    if doc_url:
+        output_parts.append(f"Technical Document URL: {doc_url}")
+    else:
+        output_parts.append("Technical Document URL: SAVE_FAILED - No valid Google Docs URL generated")
+    output_parts.append("")
+    output_parts.append("TECHNICAL DOC CONTENT:")
+    output_parts.append(tech_doc_content)
 
-CRITICAL: The URL must come from the create_document tool response. DO NOT make up a URL.
-
-FEATURE SPEC CONTENT (use this as input):
-{feature_spec_content}
-"""
-
-    _log("🤖", "TECH-DOC-CREATE", "Calling Lead Engineer agent...")
-    result = asyncio.run(get_lead_engineer_agent().arun(description, user_id=user_id))
-    output = result.content if result and result.content else ""
-    _log("✅", "TECH-DOC-CREATE", f"Lead Engineer completed. Length: {len(output)}")
-    _log("📄", "TECH-DOC-OUTPUT", f"First 200 chars: {output[:200]}")
+    output = "\n".join(output_parts)
 
     return StepOutput(content=output, success=True)
 
