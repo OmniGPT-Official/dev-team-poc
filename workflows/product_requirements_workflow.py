@@ -477,10 +477,15 @@ GitHub Repo: {project.get('github_repo_url', 'Not set')}
 
 
 def validate_github_repo_executor(step_input: StepInput) -> StepOutput:
-    """Step 2 (Existing): Validate GitHub repo exists and is accessible."""
+    """Step 2 (Existing): Validate GitHub repo and read repo structure programmatically.
+
+    Reads the repo file tree, README, and key config files (package.json, etc.)
+    so subsequent steps (Feature Spec, Tech Doc) have real codebase context.
+    """
     import re
-    import asyncio
+    import json
     from tools.project_tools import get_project
+    from services.tool_providers import resolve_tools
 
     project_id = get_current_project_id()
     project = get_project(project_id)
@@ -488,50 +493,109 @@ def validate_github_repo_executor(step_input: StepInput) -> StepOutput:
     github_repo_url = project.get('github_repo_url')
     if not github_repo_url:
         return StepOutput(
-            content="⚠️ No GitHub repo URL found for this project. Skipping validation.",
-            success=True  # Don't fail, just warn
+            content="⚠️ No GitHub repo URL found for this project. Skipping repo analysis.",
+            success=True
         )
 
-    # Extract owner/repo from URL
     match = re.search(r'github\.com/([^/]+)/([^/]+)', github_repo_url)
     if not match:
         return StepOutput(
-            content=f"⚠️ Invalid GitHub URL format: {github_repo_url}. Skipping validation.",
-            success=True  # Don't fail, just warn
+            content=f"⚠️ Invalid GitHub URL format: {github_repo_url}. Skipping repo analysis.",
+            success=True
         )
 
     owner, repo = match.groups()
-    repo = repo.replace('.git', '')  # Remove .git suffix if present
+    repo = repo.replace('.git', '')
 
-    _log("🔍", "GITHUB-VALIDATE", f"Validating repo: {owner}/{repo}")
-
-    # Get user_id for API call
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
         user_id = step_input.workflow_session.user_id
 
-    # Call Lead Engineer agent to validate repo using GitHub tools
-    description = f"""
-You have access to GitHub tools. Please validate that the repository exists and is accessible.
+    _log("🔍", "GITHUB-READ", f"Reading repo structure: {owner}/{repo}")
 
-Repository: {owner}/{repo}
-GitHub URL: {github_repo_url}
+    # Resolve GitHub tools for this user
+    github_tools_list = resolve_tools(user_id, "github")
+    if not github_tools_list:
+        _log("⚠️", "GITHUB-READ", "No GitHub tools available for this user")
+        return StepOutput(
+            content=f"⚠️ No GitHub credentials found. Repo: {github_repo_url}",
+            success=True
+        )
 
-Use get_repository("{owner}", "{repo}") to check if it exists.
+    gh = github_tools_list[0]
+    context_parts = [f"GITHUB REPOSITORY: {github_repo_url}", f"Owner: {owner}, Repo: {repo}", ""]
 
-If it exists, return:
-✅ GitHub Repo Valid: {owner}/{repo}
-Repo URL: {github_repo_url}
+    # 1. Validate repo exists
+    try:
+        repo_info = json.loads(gh.get_repository(owner, repo))
+        if repo_info.get("error"):
+            _log("⚠️", "GITHUB-READ", f"Repo not accessible: {repo_info.get('message', '')}")
+            return StepOutput(
+                content=f"⚠️ GitHub repo not accessible: {github_repo_url}\nError: {repo_info.get('message', 'Unknown')}",
+                success=True
+            )
+        context_parts.append(f"Description: {repo_info.get('description', 'N/A')}")
+        context_parts.append(f"Default Branch: {repo_info.get('default_branch', 'main')}")
+        context_parts.append(f"Language: {repo_info.get('language', 'N/A')}")
+        _log("✅", "GITHUB-READ", f"Repo exists. Language: {repo_info.get('language', 'N/A')}")
+    except Exception as e:
+        _log("⚠️", "GITHUB-READ", f"Error getting repo info: {e}")
 
-If it doesn't exist or is inaccessible, return:
-⚠️ GitHub Repo Not Found: {owner}/{repo}
-Note: Repository may need to be created or permissions may need to be updated.
-"""
+    default_branch = repo_info.get('default_branch', 'main') if 'repo_info' in dir() else 'main'
 
-    result = asyncio.run(get_lead_engineer_agent().arun(description, user_id=user_id))
+    # 2. List root directory files
+    try:
+        files_json = gh.list_repository_files(owner, repo, path="", ref=default_branch)
+        files = json.loads(files_json)
+        if isinstance(files, list):
+            context_parts.append("")
+            context_parts.append("FILE STRUCTURE (root):")
+            for f in files:
+                icon = "📁" if f.get("type") == "dir" else "📄"
+                context_parts.append(f"  {icon} {f['path']}")
+            _log("📁", "GITHUB-READ", f"Found {len(files)} items in root")
 
-    _log("✅", "GITHUB-VALIDATE", f"Validation complete")
-    return StepOutput(content=result.content, success=True)  # Always succeed, validation is informational
+            # List contents of common subdirectories (src/, app/, pages/, components/)
+            subdirs = [f['path'] for f in files if f.get("type") == "dir" and f['path'] in
+                       ("src", "app", "pages", "components", "lib", "public", "api", "styles")]
+            for subdir in subdirs[:3]:  # Limit to 3 subdirs to avoid too many API calls
+                try:
+                    sub_json = gh.list_repository_files(owner, repo, path=subdir, ref=default_branch)
+                    sub_files = json.loads(sub_json)
+                    if isinstance(sub_files, list):
+                        context_parts.append(f"\n  {subdir}/:")
+                        for sf in sub_files[:20]:  # Limit to 20 files per subdir
+                            icon = "📁" if sf.get("type") == "dir" else "📄"
+                            context_parts.append(f"    {icon} {sf['path']}")
+                except Exception:
+                    pass
+    except Exception as e:
+        _log("⚠️", "GITHUB-READ", f"Error listing files: {e}")
+
+    # 3. Read key files for tech stack context
+    key_files = ["README.md", "package.json", "requirements.txt", "pyproject.toml",
+                 "Cargo.toml", "go.mod", "tsconfig.json", "next.config.js", "next.config.ts",
+                 "vite.config.ts", "vite.config.js", ".env.example"]
+
+    for key_file in key_files:
+        try:
+            content = gh.get_file_contents(owner, repo, key_file, ref=default_branch)
+            # Skip if it returned an error JSON
+            if content.startswith("{") and "error" in content:
+                continue
+            # Truncate large files
+            if len(content) > 2000:
+                content = content[:2000] + "\n... (truncated)"
+            context_parts.append(f"\n--- {key_file} ---")
+            context_parts.append(content)
+            _log("📄", "GITHUB-READ", f"Read {key_file} ({len(content)} chars)")
+        except Exception:
+            pass  # File doesn't exist, skip silently
+
+    output = "\n".join(context_parts)
+    _log("✅", "GITHUB-READ", f"Repo analysis complete. Context length: {len(output)}")
+
+    return StepOutput(content=output, success=True)
 
 
 def create_feature_spec_executor(step_input: StepInput) -> StepOutput:
@@ -618,6 +682,9 @@ def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
     # Get feature spec content from previous step
     feature_spec_content = step_input.previous_step_content or ""
 
+    # Get GitHub repo context from validate_github_repo step
+    repo_context = step_input.get_step_content("validate_github_repo") or ""
+
     # Extract feature name and project name
     feature_name_match = re.search(r'FEATURE[_ ]NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
     project_name_match = re.search(r'PROJECT[_ ]NAME:\s*(.+)', str(step_input.input), re.IGNORECASE)
@@ -629,12 +696,15 @@ def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
 
     _log("🏗️", "TECH-DOC-CREATE", f"Creating technical doc for feature: {feature_name}")
     _log("🏗️", "TECH-DOC-CREATE", f"Feature Spec input length: {len(feature_spec_content)}")
+    _log("🏗️", "TECH-DOC-CREATE", f"Repo context length: {len(repo_context)}")
     _log("🏗️", "TECH-DOC-CREATE", f"Feature Spec first 200 chars: {feature_spec_content[:200]}")
 
     # ---- PHASE 1: Generate technical document CONTENT via Lead Engineer ----
-    description = f"""Create a comprehensive Feature Technical Document based on the Feature Specification content below.
+    description = f"""Create a comprehensive Feature Technical Document based on the Feature Specification AND the existing GitHub repository structure below.
 
-**CRITICAL: READ THE ENTIRE FEATURE SPEC CONTENT BELOW. Your technical document MUST cover the technical implementation for EVERY single requirement, feature, user story, edge case, and detail mentioned in the Feature Spec. Do NOT skip or omit ANY item. Every functional requirement, non-functional requirement, affected component, dependency, and edge case in the Feature Spec must have a corresponding technical implementation detail in your document.**
+**CRITICAL: READ THE ENTIRE FEATURE SPEC CONTENT AND REPO STRUCTURE BELOW. Your technical document MUST cover the technical implementation for EVERY single requirement, feature, user story, edge case, and detail mentioned in the Feature Spec. Do NOT skip or omit ANY item. Every functional requirement, non-functional requirement, affected component, dependency, and edge case in the Feature Spec must have a corresponding technical implementation detail in your document.**
+
+**IMPORTANT: Use the EXISTING REPO STRUCTURE to inform your technical decisions. Reference actual files, folders, and tech stack from the repo. Your architecture changes should fit into the existing codebase structure.**
 
 Write the Technical Document starting with the DOCUMENT HEADER:
 
@@ -663,11 +733,14 @@ Then continue with these technical architecture sections:
 
 Return ONLY the full technical document content starting with the DOCUMENT HEADER above. Do not include any URLs."""
 
+    # Build the full input with repo context + feature spec
+    full_input = description
+    if repo_context:
+        full_input += f"\n\nEXISTING REPOSITORY STRUCTURE (use this to inform your technical decisions):\n{repo_context}"
+    full_input += f"\n\nFEATURE SPECIFICATION CONTENT (you MUST address EVERY item below):\n{feature_spec_content}"
+
     _log("🤖", "TECH-DOC-CREATE", "Phase 1: Generating content via Lead Engineer...")
-    result = asyncio.run(get_lead_engineer_agent().arun(
-        description + f"\n\nFEATURE SPECIFICATION CONTENT (you MUST address EVERY item below):\n{feature_spec_content}",
-        user_id=user_id
-    ))
+    result = asyncio.run(get_lead_engineer_agent().arun(full_input, user_id=user_id))
     tech_doc_content = result.content if result and result.content else ""
     _log("✅", "TECH-DOC-CREATE", f"Phase 1 complete. Content length: {len(tech_doc_content)}")
     _log("📄", "TECH-DOC-OUTPUT", f"First 200 chars: {tech_doc_content[:200]}")
