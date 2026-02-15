@@ -158,9 +158,11 @@ CRITICAL: Include BOTH the URL and the FULL content in your response."""
     # Call agent with user_id
     _log("🤖", "PRD-CREATE", "Calling Product Lead agent...")
     result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nInput: {step_input.input}", user_id=user_id))
-    _log("✅", "PRD-CREATE", f"Product Lead completed. Result length: {len(result.content) if result and result.content else 0}")
+    output = result.content if result and result.content else ""
+    _log("✅", "PRD-CREATE", f"Product Lead completed. Length: {len(output)}")
+    _log("📄", "PRD-OUTPUT", f"First 200 chars: {output[:200]}")
 
-    return StepOutput(content=result.content, success=True)
+    return StepOutput(content=output, success=True)
 
 
 def create_architecture_executor(step_input: StepInput) -> StepOutput:
@@ -236,9 +238,11 @@ CRITICAL: Include BOTH the URL and the FULL content in your response."""
     # Call agent with user_id
     _log("🤖", "ARCH-CREATE", "Calling Lead Engineer agent...")
     result = asyncio.run(get_lead_engineer_agent().arun(description + f"\n\nPRD CONTENT:\n{prev_content}", user_id=user_id))
-    _log("✅", "ARCH-CREATE", f"Lead Engineer completed. Result length: {len(result.content) if result and result.content else 0}")
+    output = result.content if result and result.content else ""
+    _log("✅", "ARCH-CREATE", f"Lead Engineer completed. Length: {len(output)}")
+    _log("📄", "ARCH-OUTPUT", f"First 200 chars: {output[:200]}")
 
-    return StepOutput(content=result.content, success=True)
+    return StepOutput(content=output, success=True)
 
 
 def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
@@ -313,9 +317,11 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
 
     _log("🤖", "SUPERVISOR", "Calling Supervisor agent...")
     result = asyncio.run(get_supervisor_agent().arun(description, user_id=user_id))
-    _log("✅", "SUPERVISOR", f"Supervisor completed. Result length: {len(result.content) if result and result.content else 0}")
+    output = result.content if result and result.content else ""
+    _log("✅", "SUPERVISOR", f"Supervisor completed. Length: {len(output)}")
+    _log("📄", "SUPERVISOR-OUTPUT", f"First 200 chars: {output[:200]}")
 
-    return StepOutput(content=result.content, success=True)
+    return StepOutput(content=output, success=True)
 
 
 def create_summary_executor(step_input: StepInput) -> StepOutput:
@@ -592,9 +598,11 @@ FEATURE SPEC CONTENT:
     # Call agent with user_id
     _log("🤖", "FEATURE-SPEC-CREATE", "Calling Product Lead agent...")
     result = asyncio.run(get_product_lead_agent().arun(description, user_id=user_id))
-    _log("✅", "FEATURE-SPEC-CREATE", f"Product Lead completed. Result length: {len(result.content) if result and result.content else 0}")
+    output = result.content if result and result.content else ""
+    _log("✅", "FEATURE-SPEC-CREATE", f"Product Lead completed. Length: {len(output)}")
+    _log("📄", "FEATURE-SPEC-OUTPUT", f"First 200 chars: {output[:200]}")
 
-    return StepOutput(content=result.content, success=True)
+    return StepOutput(content=output, success=True)
 
 
 def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
@@ -621,11 +629,14 @@ def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
     project_id_short = project_id[:8] if project_id else "00000000"
 
     _log("🏗️", "TECH-DOC-CREATE", f"Creating technical doc for feature: {feature_name}")
+    _log("🏗️", "TECH-DOC-CREATE", f"Feature Spec input length: {len(feature_spec_content)}")
+    _log("🏗️", "TECH-DOC-CREATE", f"Feature Spec first 200 chars: {feature_spec_content[:200]}")
 
-    description = f"""
-Create a Feature Technical Document based on the Feature Specification below.
+    description = f"""You MUST create a Technical Document and save it to Google Docs.
 
-**DOCUMENT HEADER:**
+**CRITICAL: YOU MUST CALL the create_document tool to save. DO NOT invent/hallucinate a URL.**
+
+**STEP 1: Write the Technical Document starting with the DOCUMENT HEADER:**
 
 DOCUMENT TYPE: Feature Technical Document
 PROJECT TYPE: Existing Project
@@ -635,32 +646,39 @@ FEATURE NAME: {feature_name}
 
 ====================================================================================================
 
-Then continue with technical architecture for this feature.
+Then continue with technical architecture sections for this feature.
 
-**CRITICAL:** Read the Feature Spec below and design the technical implementation.
+**STEP 2: YOU MUST call the create_document tool**
 
-**Save to Google Docs:**
-Document title format: TechDoc_{feature_name.replace(' ', '')}_{project_id_short}
+CRITICAL - Document title format: TechDoc_{feature_name.replace(' ', '')}_{project_id_short}
 
-Use create_document tool:
+Call create_document with:
 - title: "TechDoc_{feature_name.replace(' ', '')}_{project_id_short}"
-- content: [your technical document with header]
+- content: (your complete technical document with header)
 
-**Return format:**
-Technical Document URL: [URL]
+The tool will return a real Google Docs URL. USE THAT URL.
+
+**STEP 3: Return the Google Docs URL AND the full content**
+
+Return in this format:
+Technical Document URL: [THE REAL URL FROM THE TOOL]
 
 TECHNICAL DOC CONTENT:
-[Full content]
+[Full technical document content]
 
-FEATURE SPEC CONTENT:
+CRITICAL: The URL must come from the create_document tool response. DO NOT make up a URL.
+
+FEATURE SPEC CONTENT (use this as input):
 {feature_spec_content}
 """
 
     _log("🤖", "TECH-DOC-CREATE", "Calling Lead Engineer agent...")
     result = asyncio.run(get_lead_engineer_agent().arun(description, user_id=user_id))
-    _log("✅", "TECH-DOC-CREATE", f"Lead Engineer completed. Result length: {len(result.content) if result and result.content else 0}")
+    output = result.content if result and result.content else ""
+    _log("✅", "TECH-DOC-CREATE", f"Lead Engineer completed. Length: {len(output)}")
+    _log("📄", "TECH-DOC-OUTPUT", f"First 200 chars: {output[:200]}")
 
-    return StepOutput(content=result.content, success=True)
+    return StepOutput(content=output, success=True)
 
 
 def supervisor_validation_existing_executor(step_input: StepInput) -> StepOutput:
@@ -720,11 +738,13 @@ You are the Supervisor. Validate Feature Spec and Technical Doc, then store them
 - The project_id is: {project_id}
 """
 
-    _log("🤖", "SUPERVISOR", "Calling Supervisor agent...")
+    _log("🤖", "SUPERVISOR", "Calling Supervisor agent (existing)...")
     result = asyncio.run(get_supervisor_agent().arun(description, user_id=user_id))
-    _log("✅", "SUPERVISOR", f"Supervisor completed")
+    output = result.content if result and result.content else ""
+    _log("✅", "SUPERVISOR", f"Supervisor completed. Length: {len(output)}")
+    _log("📄", "SUPERVISOR-EXISTING-OUTPUT", f"First 200 chars: {output[:200]}")
 
-    return StepOutput(content=result.content, success=True)
+    return StepOutput(content=output, success=True)
 
 
 # ============================================================================
