@@ -319,39 +319,38 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
 
 
 def create_summary_executor(step_input: StepInput) -> StepOutput:
-    """Build summary directly from previous step outputs (no agent call needed)."""
+    """Build summary using the raw content strings from previous steps directly."""
     import re
 
     project_id = get_current_project_id()
 
     _log("📊", "SUMMARY", f"Creating summary - project_id={project_id}")
 
-    # Collect all previous step content
-    prev_content = step_input.get_all_previous_content()
+    # Get content from specific previous steps by name
+    # New project path: create_prd, create_architecture
+    # Existing project path: create_feature_spec, create_technical_doc
+    doc1_step_content = step_input.get_step_content("create_prd") or step_input.get_step_content("create_feature_spec") or ""
+    doc2_step_content = step_input.get_step_content("create_architecture") or step_input.get_step_content("create_technical_doc") or ""
 
-    # Extract all Google Docs URLs from previous steps
-    doc_urls = re.findall(r'https://docs\.google\.com/document/d/[a-zA-Z0-9_-]+(?:/edit)?', prev_content)
-    # Deduplicate while preserving order
-    seen = set()
-    unique_urls = []
-    for url in doc_urls:
-        normalized = url.rstrip('/edit').rstrip('/')
-        if normalized not in seen:
-            seen.add(normalized)
-            unique_urls.append(url)
-
-    # Extract project name from previous content
-    project_name_match = re.search(r'PROJECT[_ ]NAME:\s*(.+)', prev_content, re.IGNORECASE)
+    # Extract project name
+    all_content = doc1_step_content + "\n" + doc2_step_content
+    project_name_match = re.search(r'PROJECT[_ ]NAME:\s*(.+)', all_content, re.IGNORECASE)
     project_name = project_name_match.group(1).strip() if project_name_match else "Project"
 
     # Extract feature name (for existing projects)
-    feature_name_match = re.search(r'FEATURE[_ ]NAME:\s*(.+)', prev_content, re.IGNORECASE)
+    feature_name_match = re.search(r'FEATURE[_ ]NAME:\s*(.+)', all_content, re.IGNORECASE)
     feature_name = feature_name_match.group(1).strip() if feature_name_match else None
 
-    # Detect project type from content
-    is_existing = "existing" in prev_content.lower()[:500] or feature_name is not None
+    # Detect project type
+    is_existing = feature_name is not None or bool(step_input.get_step_content("create_feature_spec"))
 
-    # Build summary from previous step outputs
+    # Extract Google Docs URLs from each step
+    doc1_urls = re.findall(r'https://docs\.google\.com/document/d/[a-zA-Z0-9_-]+(?:/edit)?', doc1_step_content)
+    doc2_urls = re.findall(r'https://docs\.google\.com/document/d/[a-zA-Z0-9_-]+(?:/edit)?', doc2_step_content)
+
+    doc1_url = doc1_urls[0] if doc1_urls else "Not found"
+    doc2_url = doc2_urls[0] if doc2_urls else "Not found"
+
     if is_existing:
         doc1_label = "Feature Specification"
         doc2_label = "Technical Document"
@@ -359,9 +358,7 @@ def create_summary_executor(step_input: StepInput) -> StepOutput:
         doc1_label = "Product Requirements Document (PRD)"
         doc2_label = "Architecture Document"
 
-    doc1_url = unique_urls[0] if len(unique_urls) > 0 else "Not found in previous steps"
-    doc2_url = unique_urls[1] if len(unique_urls) > 1 else "Not found in previous steps"
-
+    # Build summary — include the raw step output content directly
     summary_parts = [
         "Documents Created Successfully!",
         f"Project: {project_name}",
@@ -371,11 +368,15 @@ def create_summary_executor(step_input: StepInput) -> StepOutput:
 
     summary_parts.extend([
         "",
-        f"Document 1: {doc1_label}",
+        f"--- {doc1_label} ---",
         f"URL: {doc1_url}",
         "",
-        f"Document 2: {doc2_label}",
+        doc1_step_content,
+        "",
+        f"--- {doc2_label} ---",
         f"URL: {doc2_url}",
+        "",
+        doc2_step_content,
         "",
         "Next step: Would you like me to implement this? Just say 'yes' or 'implement this'.",
     ])
