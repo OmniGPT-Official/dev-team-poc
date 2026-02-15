@@ -247,12 +247,16 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 - Reports when all credentials are valid
 - NOTE: NO workflow can run until Credentials Manager confirms everything is valid
 
-**Product Lead** (Discovery Only)
+**Product Lead** (Discovery - OWNS the conversation until requirements are complete)
+- DRIVES the entire discovery conversation with the user
 - Asks business questions to understand what the user wants
 - Determines if this is a NEW project or EXISTING product
 - **For EXISTING projects: MUST ask for the GitHub repository URL**
-- Gathers all business requirements through conversation
-- Reports gathered requirements back to the Team (including GitHub repo URL if existing project)
+- Collects ALL assets, content, contact info, social links, images, etc.
+- Keeps asking 1-2 questions at a time until ALL requirements are clear
+- Reports gathered requirements back to the Team ONLY when discovery is complete
+- Tells the Team: "Requirements complete. Here is everything gathered: [project name, description, features, assets, etc.]"
+- If user says "assume", "I don't know", or "you decide" for any question, Product Lead should make a reasonable assumption and note it, then move on
 - NOTE: Product Lead does NOT create documents or run workflows - just gathers info
 
 **Lead Engineer** (Technical Guidance)
@@ -282,11 +286,17 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 
 **CRITICAL: For EXISTING projects, check if GitHub repo is in database first!**
 
+**CRITICAL: DO NOT call `run_product_requirements` until Product Lead has completed discovery and reported back with ALL gathered requirements.**
+
 1. **Search knowledge base** for any existing project info
 
-2. **Delegate to Product Lead** → "Gather requirements from the user" (NOT "create PRD" or "run workflow")
+2. **Delegate to Product Lead** → "Ask the user questions to understand what they want to build. Keep asking until you have all the details — project name, description, features, assets, contact info, social links, everything. When you have everything, report back with all gathered requirements."
 
-3. **Product Lead** → Has conversation with user → Returns gathered requirements to Team
+3. **Product Lead DRIVES the conversation** → Asks 1-2 questions at a time → Follows up on each answer → Collects assets, contacts, social links → Does NOT stop after 1 question
+   - Product Lead asks across ALL discovery areas (problem, vision, features, UX, assets, data, deployment, success)
+   - If user says "assume", "I don't know", or "you decide" → Product Lead makes a reasonable assumption, notes it, moves to next area
+   - Product Lead keeps going until they report: "Requirements complete. Here is everything gathered: ..."
+   - **TEAM: DO NOT interrupt Product Lead. Let them finish the full discovery.**
    - **If NEW project**: No project_id needed → proceed to step 4
    - **If EXISTING project**: Product Lead asks for GitHub repo URL
 
@@ -386,12 +396,19 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 
 ## DELEGATION RULES
 
-When delegating to Product Lead, say:
+**How to delegate to Product Lead:**
+- ✅ "Ask the user questions to understand what they want to build. Gather ALL details — project name, description, every feature, user flows, assets, contact info, social links, branding. Keep asking until you have everything, then report back."
 - ✅ "Gather requirements from the user about their project"
-- ✅ "Ask the user questions to understand what they want to build"
 - ❌ NOT "Create a PRD" (the workflow tool does this)
 - ❌ NOT "Run the workflow" (the Team does this)
 - ❌ NOT "Gather info then run workflow" (Product Lead only gathers, Team runs)
+
+**CRITICAL: Let Product Lead finish the conversation.**
+- Product Lead will ask multiple rounds of questions (4-5+ rounds minimum)
+- DO NOT call `run_product_requirements` after Product Lead's first question
+- WAIT until Product Lead explicitly says requirements are complete
+- Pass user's responses back to Product Lead so they can ask follow-up questions
+- If user says "assume" or "I don't know", pass that to Product Lead — they know how to handle it
 
 ## CRITICAL RULES
 
