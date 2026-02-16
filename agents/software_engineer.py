@@ -10,14 +10,14 @@ Default tool instances here serve as fallbacks for local/dev usage.
 
 from agno.agent import Agent
 from db import db
-from agno.models.openrouter import OpenRouter
+from agno.models.anthropic import Claude
 from instructions.software_engineer_instructions import SOFTWARE_ENGINEER_INSTRUCTIONS
 from services.tool_injector import inject_user_tools
 
 software_engineer_agent = Agent(
     name="Software Engineer Agent",
     role="Implements code, fixes bugs, writes tests, and creates code documentation. Handles version control and follows coding best practices.",
-    model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=16384),
+    model=Claude(id="claude-sonnet-4-5-20250929", max_tokens=16384),
     db=db,
     add_history_to_context=True,
     num_history_messages=20,

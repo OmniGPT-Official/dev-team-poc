@@ -270,6 +270,151 @@ def validate_and_store_vercel_token(vercel_token: str, user_id: Optional[str] = 
 
 
 # ============================================================================
+# SUPABASE CREDENTIAL TOOLS
+# ============================================================================
+
+def check_supabase_token(user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Check if Supabase token exists for user.
+
+    Args:
+        user_id: User UUID (optional - will auto-fetch from context if not provided)
+
+    Returns:
+        {
+            "exists": bool,
+            "valid": bool (if exists),
+            "project_ref": str (if valid),
+            "message": str
+        }
+    """
+    try:
+        # Auto-fetch user_id from context if not provided
+        if not user_id:
+            user_id = get_current_user_id()
+
+        if not user_id:
+            return {
+                "exists": False,
+                "valid": False,
+                "project_ref": None,
+                "message": "No user_id available in context. Please authenticate first."
+            }
+
+        token = get_api_key(user_id, "supabase")
+
+        if not token:
+            return {
+                "exists": False,
+                "valid": False,
+                "project_ref": None,
+                "message": "No Supabase token found for this user"
+            }
+
+        # Validate token by calling Supabase Management API
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        response = requests.get("https://api.supabase.com/v1/projects", headers=headers, timeout=10)
+
+        if response.status_code == 200:
+            projects = response.json()
+            if projects and len(projects) > 0:
+                # Get first project ref as example
+                project_ref = projects[0].get("ref", "unknown")
+                return {
+                    "exists": True,
+                    "valid": True,
+                    "project_ref": project_ref,
+                    "message": f"Supabase token is valid. Found {len(projects)} project(s)"
+                }
+            else:
+                return {
+                    "exists": True,
+                    "valid": True,
+                    "project_ref": None,
+                    "message": "Supabase token is valid but no projects found"
+                }
+        else:
+            return {
+                "exists": True,
+                "valid": False,
+                "project_ref": None,
+                "message": f"Supabase token exists but is invalid (status: {response.status_code})"
+            }
+
+    except Exception as e:
+        return {
+            "exists": False,
+            "valid": False,
+            "project_ref": None,
+            "message": f"Error checking Supabase token: {str(e)}"
+        }
+
+
+def validate_and_store_supabase_token(supabase_token: str, user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Validate a Supabase token and store it if valid.
+
+    Args:
+        supabase_token: Supabase Personal Access Token to validate
+        user_id: User UUID (optional - will auto-fetch from context if not provided)
+
+    Returns:
+        {
+            "success": bool,
+            "project_count": int (if successful),
+            "message": str
+        }
+    """
+    try:
+        # Auto-fetch user_id from context if not provided
+        if not user_id:
+            user_id = get_current_user_id()
+
+        if not user_id:
+            return {
+                "success": False,
+                "project_count": 0,
+                "message": "No user_id available in context. Please authenticate first."
+            }
+
+        # Validate token by calling Supabase Management API
+        headers = {
+            "Authorization": f"Bearer {supabase_token}",
+            "Content-Type": "application/json"
+        }
+
+        response = requests.get("https://api.supabase.com/v1/projects", headers=headers, timeout=10)
+
+        if response.status_code != 200:
+            return {
+                "success": False,
+                "project_count": 0,
+                "message": f"Invalid Supabase token. Supabase API returned status {response.status_code}"
+            }
+
+        projects = response.json()
+        project_count = len(projects) if projects else 0
+
+        # Store the token
+        store_api_key(user_id, "supabase", supabase_token)
+
+        return {
+            "success": True,
+            "project_count": project_count,
+            "message": f"Supabase token validated and stored successfully. Found {project_count} project(s)"
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "project_count": 0,
+            "message": f"Error validating Supabase token: {str(e)}"
+        }
+
+
+# ============================================================================
 # GOOGLE CREDENTIALS TOOLS
 # ============================================================================
 
@@ -352,6 +497,7 @@ def validate_all_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
         {
             "github": {...},
             "vercel": {...},
+            "supabase": {...},
             "google": {...},
             "all_valid": bool,
             "missing": list of missing providers
@@ -365,15 +511,17 @@ def validate_all_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
         return {
             "github": {"exists": False, "valid": False, "message": "No user_id in context"},
             "vercel": {"exists": False, "valid": False, "message": "No user_id in context"},
+            "supabase": {"exists": False, "valid": False, "message": "No user_id in context"},
             "google": {"exists": False, "providers": [], "message": "No user_id in context"},
             "all_valid": False,
-            "missing": ["github", "vercel", "google"],
+            "missing": ["github", "vercel", "supabase", "google"],
             "error": "No user_id available in context. Please authenticate first.",
-            "summary": "❌ Missing: github, vercel, google"
+            "summary": "❌ Missing: github, vercel, supabase, google"
         }
 
     github = check_github_token(user_id)
     vercel = check_vercel_token(user_id)
+    supabase = check_supabase_token(user_id)
     google = check_google_credentials(user_id)
 
     missing = []
@@ -381,6 +529,8 @@ def validate_all_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
         missing.append("github")
     if not vercel.get("valid"):
         missing.append("vercel")
+    if not supabase.get("valid"):
+        missing.append("supabase")
     if not google.get("exists"):
         missing.append("google")
 
@@ -395,6 +545,7 @@ def validate_all_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
     return {
         "github": github,
         "vercel": vercel,
+        "supabase": supabase,
         "google": google,
         "all_valid": all_valid,
         "missing": missing,
