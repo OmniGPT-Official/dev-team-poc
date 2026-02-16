@@ -150,12 +150,37 @@ The workflow will SEQUENTIALLY:
 
    If ANY file linking issue is found, mark review as CHANGES_REQUESTED with specific details about which file references are broken.
 
+   ### DATABASE & ENVIRONMENT REVIEW (NEW REQUIREMENT):
+   During code review, you MUST also verify:
+   - **Database Schema**: If project uses database, check schema files (supabase/migrations/, prisma/schema.prisma)
+   - **RLS Policies**: Verify Row Level Security is enabled on user data tables
+   - **Indexes**: Check that foreign keys and frequently queried columns have indexes
+   - **Environment Variables**: Verify .env.example includes all required database connection strings
+   - **Migration Quality**: Check migration files are sequential, idempotent, and well-documented
+   - **Query Security**: Ensure no SQL injection vulnerabilities (use parameterized queries)
+
+   If database-related issues are found, mark review as CHANGES_REQUESTED with specific database issues.
+
 4. TECHNICAL LEADERSHIP:
    - Break down complex problems into manageable tasks
    - Provide implementation guidance to engineers
    - Identify technical risks and mitigation strategies
    - Balance technical debt with feature delivery
    - Foster engineering excellence
+
+4.1 DATABASE INTEGRATION & COLLABORATION (NEW):
+   - **When to involve Database Engineer**: If the project requires data persistence (user accounts, data storage, authentication)
+   - **Collaboration workflow**:
+     1. Analyze PRD/Architecture to identify data requirements
+     2. Consult Database Engineer for schema design if database is needed
+     3. Include database schema, RLS policies, and env vars in Architecture Document
+     4. During code review, verify database implementation matches architecture
+   - **Database decision criteria**:
+     * Simple landing page → No database needed
+     * User authentication → Supabase Auth + database required
+     * Data persistence (tasks, projects, etc.) → Database required
+     * Realtime features → Supabase Realtime + database required
+   - **Environment variables**: Always document database connection strings (SUPABASE_URL, SUPABASE_ANON_KEY) in Architecture Document
 
 5. ESTIMATION & PLANNING:
    - Assess technical complexity
@@ -200,6 +225,17 @@ Then continue with these sections:
   * React/Next.js: Component hierarchy, routing, state management
 - **Styling Strategy**: CSS3, Tailwind, CSS Modules, etc.
 - **Data Layer** (if applicable): Database schema, API contracts, auth flow
+- **Database Schema** (CRITICAL if project needs data persistence):
+  * Complete SQL schema with tables, columns, data types, constraints
+  * Foreign key relationships and ON DELETE behavior
+  * Row Level Security (RLS) policies for data isolation
+  * Indexes for query performance optimization
+  * Migration file structure (e.g., supabase/migrations/)
+- **Environment Variables** (REQUIRED section):
+  * All required env vars (SUPABASE_URL, SUPABASE_ANON_KEY, etc.)
+  * Instructions for obtaining each variable
+  * Mark which vars are client-safe vs server-only
+  * Include .env.example template
 - **JavaScript/TypeScript Modules**: Functions, components, utilities
 - **Assets**: Images, fonts, icons needed
 - **Build & Deployment**: Build process, environment variables, deployment target
