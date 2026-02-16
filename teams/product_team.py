@@ -283,9 +283,9 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 
 1. **Search knowledge base** for any existing project info
 
-2. **Delegate to Product Lead** → "Ask the user questions to understand what they want to build. Follow your 5-phase progressive discovery workflow (Set Expectations → Core Questions → Dig Deeper → Market Research → Summary + Confirmation). When you complete Phase 5 and user confirms, report back with all gathered requirements."
+2. **Delegate to Product Lead** → "Conduct full progressive discovery following your 5-phase workflow: Phase 1 (Set Expectations) → Phase 2 (Core Strategic Questions about problem, target audience, business model, key features, success metrics) → Phase 3 (Dig Deeper if user opts in) → Phase 4 (Market Research if user opts in) → Phase 5 (Summary + Confirmation). Start with strategic questions FIRST. Only ask about implementation details (branding, assets, contact info) AFTER completing strategic assessment. When you complete Phase 5 and user confirms, report back."
 
-3. **Product Lead DRIVES the conversation** → Asks 1-2 questions at a time → Follows up on each answer → Collects assets, contacts, social links → Follows ALL 5 phases before reporting back
+3. **Product Lead DRIVES the conversation** → Asks 1-2 questions at a time → Follows up on each answer → Follows ALL 5 phases in order before collecting assets
    - **Phase 1**: Set Expectations (explain process, get buy-in)
    - **Phase 2**: Core Strategic Questions (5-7 questions with "dig deeper" options)
    - **Phase 3**: Dig Deeper (if user opts in)
