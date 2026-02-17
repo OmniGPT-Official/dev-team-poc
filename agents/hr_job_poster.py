@@ -1,14 +1,14 @@
 """HR Job Poster Agent — posts job listings to Indeed."""
 
 from agno.agent import Agent
-from agno.models.google import Gemini
+from agno.models.moonshot import MoonShot
 
 from services.tool_injector import make_tool_hook
 from db import db
 
 hr_job_poster_agent = Agent(
     name="HR Job Poster Agent",
-    model=Gemini(id="gemini-3-flash-preview"),
+    model=MoonShot(id="kimi-k2.5"),
     description="You are an HR operations specialist who posts job listings to Indeed Thailand and LinkedIn Jobs via XML feeds.",
     instructions=[
         "You are an HR Job Poster Agent. Your job is to add job listings to the job feed.",
