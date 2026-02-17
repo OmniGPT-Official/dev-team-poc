@@ -1,7 +1,9 @@
 """Supabase PostgreSQL Database Configuration
 
 Shared database setup for all agents, teams, and workflows.
-Uses the same pattern as agent_os/main.py.
+
+Set SUPABASE_DB_URL to a transaction-mode pooler connection string
+(port 6543 with ?pgbouncer=true) to avoid pool exhaustion on the free plan.
 """
 
 from os import getenv
