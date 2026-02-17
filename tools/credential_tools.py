@@ -606,3 +606,111 @@ def get_platform_session(
     except Exception as e:
         print(f"[credential_tools] get_platform_session error: {e}")
         return None
+
+
+# ============================================================================
+# INDEED / HR CREDENTIAL TOOLS
+# ============================================================================
+
+def check_indeed_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Check if Indeed credentials are saved for this user.
+
+    Returns:
+        {
+            "exists": bool,
+            "email": str (masked),
+            "has_gmail_app_password": bool,
+            "message": str
+        }
+    """
+    if not user_id:
+        user_id = get_current_user_id()
+
+    if not user_id:
+        return {"exists": False, "message": "No user session found."}
+
+    email = get_api_key(user_id, "indeed_email")
+    gmail_pw = get_api_key(user_id, "gmail_app_password")
+
+    if email and gmail_pw:
+        masked = f"{email[:3]}***@{email.split('@')[-1]}" if "@" in email else f"{email[:3]}***"
+        return {
+            "exists": True,
+            "email": masked,
+            "has_gmail_app_password": True,
+            "message": f"✅ Indeed credentials saved. Email: {masked}",
+        }
+
+    missing = []
+    if not email:
+        missing.append("Indeed email")
+    if not gmail_pw:
+        missing.append("Gmail App Password")
+
+    return {
+        "exists": False,
+        "email": None,
+        "has_gmail_app_password": False,
+        "message": f"❌ Missing: {', '.join(missing)}. Use save_indeed_credentials() to set them up.",
+    }
+
+
+def save_indeed_credentials(
+    indeed_email: str,
+    gmail_app_password: str,
+    user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Save Indeed credentials for this user.
+
+    Stores:
+      - indeed_email       → the employer account email
+      - gmail_app_password → Google App Password used to read OTP emails from Indeed
+
+    How to get a Gmail App Password:
+      1. Go to myaccount.google.com/apppasswords (logged in as the Indeed email)
+      2. Create an app password (name it anything, e.g. 'Railway Indeed Bot')
+      3. Copy the 16-character password and pass it here
+
+    Args:
+        indeed_email: The email address used to log into Indeed employer portal.
+        gmail_app_password: The 16-character Google App Password (no spaces).
+
+    Returns:
+        {"success": bool, "message": str}
+    """
+    if not user_id:
+        user_id = get_current_user_id()
+
+    if not user_id:
+        return {"success": False, "message": "No user session found."}
+
+    if not indeed_email or "@" not in indeed_email:
+        return {"success": False, "message": "Invalid email address."}
+
+    if not gmail_app_password or len(gmail_app_password.replace(" ", "")) < 16:
+        return {
+            "success": False,
+            "message": (
+                "Gmail App Password looks too short. "
+                "It should be 16 characters. "
+                "Generate one at myaccount.google.com/apppasswords."
+            ),
+        }
+
+    # Strip spaces (Google shows it as 'xxxx xxxx xxxx xxxx' but it works without spaces)
+    gmail_app_password = gmail_app_password.replace(" ", "")
+
+    ok1 = store_api_key(user_id, "indeed_email", indeed_email)
+    ok2 = store_api_key(user_id, "gmail_app_password", gmail_app_password)
+
+    if ok1 and ok2:
+        masked = f"{indeed_email[:3]}***@{indeed_email.split('@')[-1]}"
+        return {
+            "success": True,
+            "message": (
+                f"✅ Indeed credentials saved for {masked}. "
+                "The HR agent can now post jobs to Indeed on your behalf."
+            ),
+        }
+
+    return {"success": False, "message": "Failed to save credentials. Please try again."}
