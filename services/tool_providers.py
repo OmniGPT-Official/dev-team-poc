@@ -168,22 +168,23 @@ def _google_docs(user_id: str):
     return GoogleDocsTools(creds=creds)
 
 
-@register("indeed_browser")
-def _indeed_browser(user_id: str):
-    """Post jobs to Indeed employer portal via headless Playwright automation.
+@register("job_boards")
+def _job_boards(user_id: str):
+    """Multi-platform job board tools — post to any registered board.
 
-    No API key required — uses employer credentials from env vars:
-      INDEED_EMAIL     - employer account email
-      INDEED_PASSWORD  - employer account password
+    Auto-discovers plugins from tools/job_boards/*.py.
+    No credentials stored here — each plugin checks its own env vars.
+
+    Currently installed boards:
+      indeed_th  — Indeed Thailand (INDEED_EMAIL + GMAIL_APP_PASSWORD)
+
+    To add a new board: create tools/job_boards/<board_id>.py with @register_board.
+    No other files need to change.
     """
-    import os
-    from tools.browser_posting_tools import IndeedBrowserPosterTools
+    from tools.generic_job_board_tools import GenericJobBoardTools
 
-    email = os.getenv("INDEED_EMAIL", "")
-    password = os.getenv("INDEED_PASSWORD", "")
-
-    print(f"[tool_providers] IndeedBrowserPosterTools for user {user_id!r}")
-    return IndeedBrowserPosterTools(email=email, password=password)
+    print(f"[tool_providers] GenericJobBoardTools for user {user_id!r}")
+    return GenericJobBoardTools()
 
 
 @register("job_feeds")
