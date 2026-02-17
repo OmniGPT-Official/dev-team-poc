@@ -1,8 +1,18 @@
 """Indeed Browser Posting Tools — posts jobs directly on Indeed via headless Playwright.
 
-No API key required. Uses employer email + password stored as env vars:
-  INDEED_EMAIL     — employer account email
-  INDEED_PASSWORD  — employer account password
+Supports two login methods automatically:
+
+1. Traditional email + password (INDEED_EMAIL + INDEED_PASSWORD env vars)
+2. Google SSO + OTP (when the email is a Google Workspace / Gmail account):
+     - Clicks "Sign in with a code instead" on Indeed
+     - Reads the 6-digit OTP from Gmail via IMAP
+     - Requires INDEED_EMAIL + GMAIL_APP_PASSWORD env vars
+
+Required env vars (Railway):
+  INDEED_EMAIL          — employer account email
+  INDEED_PASSWORD       — employer password (only needed for non-Google accounts)
+  GMAIL_APP_PASSWORD    — Google App Password for IMAP (for Google-SSO accounts)
+                          Generate at: myaccount.google.com/apppasswords
 
 The job is posted to Indeed Thailand (th.indeed.com) using a headless
 Chromium browser that simulates the employer portal flow.
@@ -14,8 +24,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import email as emaillib
+import imaplib
 import json
 import os
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import Optional
 
 from agno.tools import Toolkit
@@ -49,10 +65,20 @@ class IndeedBrowserPosterTools(Toolkit):
         Returns:
             JSON with login status and any debug info.
         """
-        if not self.email or not self.password:
+        if not self.email:
             return json.dumps({
                 "success": False,
-                "error": "INDEED_EMAIL or INDEED_PASSWORD env var not set.",
+                "error": "INDEED_EMAIL env var not set.",
+            })
+        gmail_app_pw = os.getenv("GMAIL_APP_PASSWORD", "")
+        if not gmail_app_pw and not self.password:
+            return json.dumps({
+                "success": False,
+                "error": (
+                    "Neither INDEED_PASSWORD nor GMAIL_APP_PASSWORD is set. "
+                    "For Google Workspace accounts (e.g. @omnigpt.co), set GMAIL_APP_PASSWORD. "
+                    "Generate one at myaccount.google.com/apppasswords."
+                ),
             })
         return asyncio.run(self._check_login_async())
 
@@ -82,10 +108,10 @@ class IndeedBrowserPosterTools(Toolkit):
         Returns:
             JSON with success status and job URL or error details.
         """
-        if not self.email or not self.password:
+        if not self.email:
             return json.dumps({
                 "success": False,
-                "error": "INDEED_EMAIL and INDEED_PASSWORD must be set in Railway env vars.",
+                "error": "INDEED_EMAIL must be set in Railway env vars.",
             })
 
         return asyncio.run(self._post_job_async(
@@ -133,7 +159,7 @@ class IndeedBrowserPosterTools(Toolkit):
             browser, context = await self._new_stealth_context(p)
             page = await context.new_page()
             try:
-                result = await _indeed_login(page, self.email, self.password)
+                await _indeed_login(page, self.email, self.password)
                 return json.dumps({"success": True, "message": "Login successful.", "url": page.url})
             except Exception as e:
                 screenshot_b64 = await _screenshot_b64(page)
@@ -170,7 +196,7 @@ class IndeedBrowserPosterTools(Toolkit):
             browser, context = await self._new_stealth_context(p)
             page = await context.new_page()
             try:
-                # Step 1: Login
+                # Step 1: Login (handles both password and Google SSO + OTP)
                 await _indeed_login(page, self.email, self.password)
 
                 # Step 2: Navigate to post job
@@ -356,7 +382,12 @@ class IndeedBrowserPosterTools(Toolkit):
 # ------------------------------------------------------------------
 
 async def _indeed_login(page, email: str, password: str) -> None:
-    """Log in to Indeed employer portal with stealth browser."""
+    """Log in to Indeed employer portal.
+
+    Handles two flows automatically:
+    - Traditional: email + password
+    - Google SSO: email → 'Sign in with a code instead' → Gmail IMAP OTP
+    """
     await page.goto(
         "https://secure.indeed.com/auth?hl=en&co=TH&continue=https%3A%2F%2Femployers.indeed.com%2F",
         wait_until="domcontentloaded",
@@ -367,7 +398,7 @@ async def _indeed_login(page, email: str, password: str) -> None:
     page_title = await page.title()
     page_url = page.url
 
-    # Step 1: email — confirmed selector from page inspection
+    # Step 1: Fill email
     email_input = await _wait_for_any(page, [
         'input[name="__email"]',
         'input[type="email"]',
@@ -383,40 +414,177 @@ async def _indeed_login(page, email: str, password: str) -> None:
 
     await email_input.fill(email)
     await page.wait_for_timeout(500)
-
-    # Click Continue (confirmed: button[type="submit"] with text "Continue")
     await page.click('button[type="submit"]')
-    await page.wait_for_timeout(2000)
+    await page.wait_for_timeout(2500)
 
-    # Step 2: password — confirmed: input[type="password"] (no name/id)
+    # Step 2: Detect login method
     pwd_input = await _wait_for_any(page, [
         'input[type="password"]',
         'input[name="__password"]',
         'input[name="password"]',
-    ], timeout=10000)
+    ], timeout=4000)
 
-    if not pwd_input:
-        page_title = await page.title()
-        raise Exception(
-            f"Password input not found after email submission. "
-            f"Page: '{page_title}' at {page.url}. "
-            "Check if email is correct or if 2FA appeared."
-        )
+    if pwd_input:
+        # Traditional password login
+        await pwd_input.fill(password)
+        await page.wait_for_timeout(500)
+        await page.click('button[type="submit"]')
+    else:
+        # Google SSO detected — click "Sign in with a code instead"
+        code_link = await _wait_for_any(page, [
+            'a:has-text("Sign in with a code")',
+            'button:has-text("Sign in with a code")',
+            '[data-testid*="signin-code"]',
+            'a:has-text("code instead")',
+        ], timeout=6000)
 
-    await pwd_input.fill(password)
-    await page.wait_for_timeout(500)
-    await page.click('button[type="submit"]')
+        if not code_link:
+            raise Exception(
+                f"Google SSO detected but 'Sign in with a code instead' not found. "
+                f"Page: '{await page.title()}' at {page.url}."
+            )
+
+        await code_link.click()
+        await page.wait_for_timeout(2000)
+
+        # Read OTP from Gmail via IMAP
+        gmail_app_pw = os.getenv("GMAIL_APP_PASSWORD", "")
+        if not gmail_app_pw:
+            raise Exception(
+                "Google SSO detected. GMAIL_APP_PASSWORD env var is not set. "
+                "Create a Google App Password at myaccount.google.com/apppasswords "
+                "and set GMAIL_APP_PASSWORD in Railway."
+            )
+
+        otp = await _get_indeed_otp_via_imap(email, gmail_app_pw, timeout=90)
+        if not otp:
+            raise Exception(
+                "Timed out waiting for Indeed OTP email (90s). "
+                "Check that GMAIL_APP_PASSWORD is correct and IMAP is enabled for the account."
+            )
+
+        if otp.startswith("http"):
+            # Magic link — navigate directly
+            await page.goto(otp, wait_until="domcontentloaded", timeout=20000)
+        else:
+            # 6-digit code — find input and submit
+            otp_input = await _wait_for_any(page, [
+                'input[name="otp"]',
+                'input[name="code"]',
+                'input[name="verificationCode"]',
+                'input[placeholder*="code" i]',
+                'input[inputmode="numeric"]',
+                'input[maxlength="6"]',
+                'input[type="text"]',
+            ], timeout=10000)
+
+            if not otp_input:
+                raise Exception(
+                    f"OTP input field not found after clicking 'Sign in with a code instead'. "
+                    f"OTP received: {otp}"
+                )
+
+            await otp_input.fill(otp)
+            await page.wait_for_timeout(500)
+            await page.click('button[type="submit"]')
 
     # Wait for employer dashboard
     try:
-        await page.wait_for_url("**/employers.indeed.com/**", timeout=15000)
+        await page.wait_for_url("**/employers.indeed.com/**", timeout=20000)
     except Exception:
         page_title = await page.title()
         raise Exception(
             f"Login did not redirect to employer dashboard. "
             f"Page: '{page_title}' at {page.url}. "
-            "Credentials may be wrong or additional verification required."
+            "Credentials may be wrong or OTP may have expired."
         )
+
+
+async def _get_indeed_otp_via_imap(
+    email: str,
+    app_password: str,
+    timeout: int = 90,
+) -> Optional[str]:
+    """Poll Gmail via IMAP for an Indeed verification code or magic link.
+
+    Polls every 5 seconds until *timeout* seconds elapse.
+    Returns the 6-digit OTP string, a magic link URL, or None on timeout.
+    """
+    today_imap = datetime.now().strftime("%d-%b-%Y")
+    seen_uids: set = set()
+    deadline = time.time() + timeout
+    loop = asyncio.get_event_loop()
+
+    def _fetch() -> Optional[str]:
+        try:
+            mail = imaplib.IMAP4_SSL("imap.gmail.com", timeout=10)
+            mail.login(email, app_password)
+            mail.select("INBOX")
+
+            # All emails from Indeed today
+            _, messages = mail.search(
+                None, f'(FROM "indeed.com" SINCE "{today_imap}")'
+            )
+            if not messages[0]:
+                mail.logout()
+                return None
+
+            msg_ids = messages[0].split()
+            # Check newest first, skip already-seen
+            for uid in reversed(msg_ids):
+                if uid in seen_uids:
+                    continue
+                seen_uids.add(uid)
+
+                _, data = mail.fetch(uid, "(RFC822)")
+                if not data or not data[0]:
+                    continue
+                raw = data[0][1]
+                msg = emaillib.message_from_bytes(raw)
+
+                body = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        ct = part.get_content_type()
+                        if ct in ("text/plain", "text/html"):
+                            body = part.get_payload(decode=True).decode(
+                                "utf-8", errors="ignore"
+                            )
+                            break
+                else:
+                    body = msg.get_payload(decode=True).decode(
+                        "utf-8", errors="ignore"
+                    )
+
+                # 6-digit OTP (standalone, not part of longer number)
+                otp_match = re.search(r"(?<!\d)(\d{6})(?!\d)", body)
+                if otp_match:
+                    mail.logout()
+                    return otp_match.group(1)
+
+                # Magic link
+                link_match = re.search(
+                    r"https?://[^\s\"<>']*(?:indeed\.com|indeedmail\.com)"
+                    r"[^\s\"<>']*(?:verify|confirm|auth|signin|login|token)[^\s\"<>']*",
+                    body,
+                )
+                if link_match:
+                    mail.logout()
+                    return link_match.group(0)
+
+            mail.logout()
+            return None
+        except Exception:
+            return None
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        while time.time() < deadline:
+            result = await loop.run_in_executor(executor, _fetch)
+            if result:
+                return result
+            await asyncio.sleep(5)
+
+    return None
 
 
 async def _wait_for_any(page, selectors: list[str], timeout: int = 8000):
