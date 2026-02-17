@@ -21,3 +21,4 @@ psycopg2-binary
 pgvector
 supabase
 elevenlabs
+slack-sdk
