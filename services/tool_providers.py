@@ -209,7 +209,20 @@ def _job_boards(user_id: str):
     from tools.generic_job_board_tools import GenericJobBoardTools
 
     print(f"[tool_providers] GenericJobBoardTools for user {user_id!r}")
-    return GenericJobBoardTools()
+    return GenericJobBoardTools(user_id=user_id)
+
+
+@register("smart_browser")
+def _smart_browser(user_id: str):
+    """AI-vision browser — navigates any website on behalf of the user.
+
+    No credentials required to register this provider; the browser loads
+    per-user session cookies from Supabase automatically at runtime.
+    """
+    from tools.smart_browser_tools import SmartBrowserTools
+
+    print(f"[tool_providers] SmartBrowserTools for user {user_id!r}")
+    return SmartBrowserTools(user_id=user_id)
 
 
 @register("job_feeds")
