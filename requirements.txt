@@ -21,4 +21,4 @@ psycopg2-binary
 pgvector
 supabase
 elevenlabs
-slack-sdk
+slack-sdk  # Slack interface for AgentOS
