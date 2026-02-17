@@ -1,7 +1,7 @@
 """Per-user OAuth credential storage backed by Supabase."""
 
 from os import getenv
-from typing import Optional
+from typing import Any, Optional
 
 from google.oauth2.credentials import Credentials
 from supabase import Client, create_client
@@ -67,6 +67,32 @@ def get_google_credentials(user_id: str, provider: str) -> Optional[Credentials]
         scopes=scopes,
         expiry=expiry,
     )
+
+
+def get_instagram_credentials(user_id: str) -> Optional[dict[str, Any]]:
+    """Fetch stored Instagram OAuth connection and return credentials dict, or None."""
+    result = (
+        get_supabase_client()
+        .table("user_oauth_connections")
+        .select("access_token, metadata")
+        .eq("user_id", user_id)
+        .eq("provider", "instagram")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return None
+
+    row = result.data[0]
+    metadata = row.get("metadata") or {}
+    ig_user_id = metadata.get("ig_user_id")
+    if not ig_user_id:
+        print(f"[oauth_store] Instagram credentials found but missing ig_user_id in metadata")
+        return None
+
+    print(f"[oauth_store] Retrieved Instagram credentials for user {user_id}")
+    return {"access_token": row["access_token"], "ig_user_id": ig_user_id}
 
 
 def update_google_credentials(user_id: str, provider: str, creds: Credentials) -> bool:
