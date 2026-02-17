@@ -7,37 +7,37 @@ Clean architecture with multiple specialized agents, teams, and workflows.
 
 import os
 from agno.os import AgentOS
-# from agno.os.interfaces.slack import Slack
-# from agents.product_lead import product_lead_agent
-# from agents.lead_engineer import lead_engineer_agent
-# from agents.software_engineer import software_engineer_agent
-# from agents.security_engineer import security_engineer_agent
-# from agents.devops_engineer import devops_engineer_agent
-# from agents.database_engineer import database_engineer_agent
-# from agents.credentials_manager import credentials_manager_agent
-# from teams.product_team import product_team
-# from workflows.product_requirements_workflow import product_requirements_workflow
-# from workflows.software_development_workflow import software_development_workflow
-# from content_creation import (
-#     content_strategist,
-#     content_writer,
-#     content_creation_team,
-# )
-# from email_followup import email_followup_agent
-# from gmail_sheets_agent import gmail_sheets_agent
-# from supabase_manager import supabase_manager_agent
-# from workflows.email_followup_workflow_working import email_followup_workflow
-# from workflows.outbound_calling_workflow import outbound_calling_workflow, simple_calling_workflow
-# from workflows.outbound_calling_test_workflow import outbound_calling_test_workflow
-# from agents.calling_agents import (
-#     lead_reader_agent,
-#     calling_coordinator_agent,
-#     results_logger_agent,
-#     campaign_coordinator_agent
-# )
-# from campaign_manager import campaign_manager  # Pattern 1: Single Agent + Workflow
-# from agno_pai.factory import factory_agent  # Agno PAI Factory (meta-agent)
-# from teams.hr_team import hr_team  # HR Team (internal agents not exposed standalone)
+from agno.os.interfaces.slack import Slack
+from agents.product_lead import product_lead_agent
+from agents.lead_engineer import lead_engineer_agent
+from agents.software_engineer import software_engineer_agent
+from agents.security_engineer import security_engineer_agent
+from agents.devops_engineer import devops_engineer_agent
+from agents.database_engineer import database_engineer_agent
+from agents.credentials_manager import credentials_manager_agent
+from teams.product_team import product_team
+from workflows.product_requirements_workflow import product_requirements_workflow
+from workflows.software_development_workflow import software_development_workflow
+from content_creation import (
+    content_strategist,
+    content_writer,
+    content_creation_team,
+)
+from email_followup import email_followup_agent
+from gmail_sheets_agent import gmail_sheets_agent
+from supabase_manager import supabase_manager_agent
+from workflows.email_followup_workflow_working import email_followup_workflow
+from workflows.outbound_calling_workflow import outbound_calling_workflow, simple_calling_workflow
+from workflows.outbound_calling_test_workflow import outbound_calling_test_workflow
+from agents.calling_agents import (
+    lead_reader_agent,
+    calling_coordinator_agent,
+    results_logger_agent,
+    campaign_coordinator_agent
+)
+from campaign_manager import campaign_manager  # Pattern 1: Single Agent + Workflow
+from agno_pai.factory import factory_agent  # Agno PAI Factory (meta-agent)
+from teams.hr_team import hr_team  # HR Team (internal agents not exposed standalone)
 from instagram_agent import instagram_agent  # Instagram Agent (OAuth-enabled)
 
 # Initialize Agent OS with Enhanced Tracing
@@ -53,42 +53,42 @@ from instagram_agent import instagram_agent  # Instagram Agent (OAuth-enabled)
 # Learn more: https://docs.agno.com/agent-os/tracing/overview
 agent_os = AgentOS(
     name="Agent OS",
-    # interfaces=[
-    #     Slack(team=product_team),
-    # ],
+    interfaces=[
+        Slack(team=product_team),
+    ],
     agents=[
-        # credentials_manager_agent,  # Credentials Manager (validates tokens before workflows)
-        # product_lead_agent,
-        # lead_engineer_agent,
-        # software_engineer_agent,
-        # security_engineer_agent,
-        # devops_engineer_agent,  # DevOps Engineer (repo creation + Vercel deployment)
-        # database_engineer_agent,  # Database Engineer (schema design + Supabase operations)
-        # content_strategist,  # Content Creation Team
-        # content_writer,  # Content Creation Team
-        # email_followup_agent,  # Email Follow-Up Agent (OAuth-enabled)
-        # gmail_sheets_agent,  # Gmail & Sheets Agent (OAuth-enabled, Claude)
-        # supabase_manager_agent,  # Supabase Manager (MCP-enabled)
-        # lead_reader_agent,  # Outbound Calling: Lead Reader
-        # calling_coordinator_agent,  # Outbound Calling: Calling Coordinator
-        # results_logger_agent,  # Outbound Calling: Results Logger
-        # campaign_coordinator_agent,  # Outbound Calling: Campaign Coordinator
-        # campaign_manager,  # Campaign Manager (Pattern 1: Single Agent + Internal Workflow)
-        # factory_agent,  # Agno PAI Factory — generates agents on demand
+        credentials_manager_agent,  # Credentials Manager (validates tokens before workflows)
+        product_lead_agent,
+        lead_engineer_agent,
+        software_engineer_agent,
+        security_engineer_agent,
+        devops_engineer_agent,  # DevOps Engineer (repo creation + Vercel deployment)
+        database_engineer_agent,  # Database Engineer (schema design + Supabase operations)
+        content_strategist,  # Content Creation Team
+        content_writer,  # Content Creation Team
+        email_followup_agent,  # Email Follow-Up Agent (OAuth-enabled)
+        gmail_sheets_agent,  # Gmail & Sheets Agent (OAuth-enabled, Claude)
+        supabase_manager_agent,  # Supabase Manager (MCP-enabled)
+        lead_reader_agent,  # Outbound Calling: Lead Reader
+        calling_coordinator_agent,  # Outbound Calling: Calling Coordinator
+        results_logger_agent,  # Outbound Calling: Results Logger
+        campaign_coordinator_agent,  # Outbound Calling: Campaign Coordinator
+        campaign_manager,  # Campaign Manager (Pattern 1: Single Agent + Internal Workflow)
+        factory_agent,  # Agno PAI Factory — generates agents on demand
         instagram_agent,  # Instagram Agent (OAuth-enabled, image posting)
     ],
     teams=[
-        # product_team,         # Product Development Team
-        # content_creation_team,  # Content Creation Team
-        # hr_team,              # HR Team (JD writing + Indeed posting)
+        product_team,         # Product Development Team
+        content_creation_team,  # Content Creation Team
+        hr_team,              # HR Team (JD writing + Indeed posting)
     ],
     workflows=[
-        # product_requirements_workflow,
-        # software_development_workflow,
-        # email_followup_workflow,  # Email Follow-Up Manager (3-step, OAuth-enabled) ✅
-        # outbound_calling_workflow,  # Outbound Calling Campaign (full with ElevenLabs)
-        # simple_calling_workflow,  # Outbound Calling Campaign (simple test version)
-        # outbound_calling_test_workflow,  # Outbound Calling Test (OAuth, first iteration)
+        product_requirements_workflow,
+        software_development_workflow,
+        email_followup_workflow,  # Email Follow-Up Manager (3-step, OAuth-enabled) ✅
+        outbound_calling_workflow,  # Outbound Calling Campaign (full with ElevenLabs)
+        simple_calling_workflow,  # Outbound Calling Campaign (simple test version)
+        outbound_calling_test_workflow,  # Outbound Calling Test (OAuth, first iteration)
     ],
     tracing=True,  # Enable built-in OpenTelemetry tracing
 )
