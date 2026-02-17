@@ -1,7 +1,7 @@
 """HR Team — orchestrates job description creation and posting to Indeed Thailand."""
 
 from agno.team import Team
-from agno.models.openrouter import OpenRouter
+from agno.models.moonshot import MoonShot
 
 from agents.hr_lead import hr_lead_agent
 from agents.hr_jd_writer import hr_jd_writer_agent
@@ -10,8 +10,7 @@ from db import db
 
 hr_team = Team(
     name="HR Team",
-    model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=8192),
-    mode="coordinate",
+    model=MoonShot(id="kimi-k2.5"),
     db=db,
     members=[
         hr_lead_agent,
@@ -73,7 +72,6 @@ Help companies post jobs to Indeed Thailand by:
 - Keep the conversation natural and professional
 """,
     ],
-    success_criteria="Job posted to Indeed Thailand with a live URL returned to the user.",
     markdown=True,
     show_members_responses=True,
     add_history_to_context=True,

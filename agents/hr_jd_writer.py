@@ -1,13 +1,13 @@
 """HR JD Writer Agent — writes bilingual job descriptions (English + Thai)."""
 
 from agno.agent import Agent
-from agno.models.google import Gemini
+from agno.models.moonshot import MoonShot
 
 from db import db
 
 hr_jd_writer_agent = Agent(
     name="HR JD Writer Agent",
-    model=Gemini(id="gemini-3-flash-preview"),
+    model=MoonShot(id="kimi-k2.5"),
     description="You are a professional HR copywriter who specializes in bilingual (English and Thai) job descriptions for the Thai market.",
     instructions=[
         "You are an expert HR copywriter for the Thai job market.",
