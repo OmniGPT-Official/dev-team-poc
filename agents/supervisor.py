@@ -2,7 +2,7 @@
 Supervisor Agent
 
 Validates PRD and Architecture documents after creation.
-Ensures document quality, logs validation results, and creates knowledge base entries.
+Ensures document quality and logs validation results.
 Acts as quality gatekeeper before proceeding to implementation.
 """
 
@@ -15,7 +15,6 @@ from tools.supervisor_tools import (
     validate_architecture_document,
     validate_feature_spec_document,
     validate_technical_doc_document,
-    create_project_knowledge_base,
     validate_workflow_phase_completion,
 )
 from tools.project_tools import (
@@ -34,8 +33,7 @@ You act as a quality gatekeeper after PRD and Architecture documents are created
 1. Validate that documents were created successfully
 2. Check that documents contain relevant project content
 3. Log all validation results for future reference
-4. Create knowledge base entries for RAG search
-5. Report any issues found
+4. Report any issues found
 
 ## YOUR TOOLS
 
@@ -51,15 +49,7 @@ You act as a quality gatekeeper after PRD and Architecture documents are created
    - Returns document preview (first 3-5 lines)
    - Logs validation result automatically with keyword check results
 
-3. **create_project_knowledge_base()** - ⭐ CRITICAL: Store documents in Agno Knowledge Base
-   - Reads FULL PRD and Architecture document content from Google Docs
-   - Stores in Agno Knowledge Base with PgVector embeddings for RAG/semantic search
-   - Uses OpenAI embeddings for vector storage (configured automatically)
-   - Enables future semantic search across all projects
-   - MUST be called after document validation
-   - Logs knowledge base creation with confirmation
-
-4. **validate_workflow_phase_completion(phase: str)** - Validate phase completion
+3. **validate_workflow_phase_completion(phase: str)** - Validate phase completion
    - Checks that all required artifacts for a phase exist
    - Returns list of issues if any
    - Logs validation result
@@ -109,17 +99,7 @@ After validation succeeds:
 2. This stores the validated document URLs in the database
 3. **CRITICAL**: Only use valid status values: 'planning', 'in_development', 'deployed', 'archived'
 
-### Step 5: Store in Agno Knowledge Base (CRITICAL!)
-
-After project is updated:
-1. ⭐ MUST call `create_project_knowledge_base()` to store documents in Agno Knowledge Base
-2. This reads FULL document content from Google Docs
-3. Stores with OpenAI embeddings in PgVector for RAG semantic search
-4. Confirm knowledge base entry was created successfully
-5. This enables semantic search across all user projects
-6. Knowledge base storage is REQUIRED for project completion
-
-### Step 6: Report Results
+### Step 5: Report Results
 
 Provide a clear summary:
 
@@ -137,11 +117,6 @@ Architecture Document: ✓ Valid (Accessible)
 - Keywords found: Yes ✓
 - Preview: [first few lines]
 
-⭐ Knowledge Base: ✓ Created
-- Full PRD and Architecture content stored in Agno Knowledge Base
-- Stored with OpenAI embeddings in PgVector for RAG semantic search
-- Project is now searchable across all user projects
-
 All validation checks passed. Ready to proceed to implementation.
 ```
 
@@ -158,9 +133,6 @@ Architecture Document: ✓ Valid (Accessible)
 - Document is readable and accessible
 - Keywords found: Yes ✓
 - Preview: [first few lines]
-
-⭐ Knowledge Base: ✓ Created
-- Full content stored in Agno Knowledge Base with RAG embeddings
 
 Note: PRD doesn't contain expected keywords but is accessible. Validation passes.
 ```
@@ -184,18 +156,11 @@ Please verify document permissions and re-authenticate Google Docs if needed.
    - Keywords are checked but DON'T block validation
    - Only fail if document is inaccessible (credentials/permission errors)
 
-3. **⭐ MUST CREATE KNOWLEDGE BASE** - After validation, ALWAYS call `create_project_knowledge_base()`
-   - This stores PRD/Architecture in Agno Knowledge Base with RAG embeddings
-   - Uses OpenAI embeddings + PgVector for semantic search
-   - Required for project to be searchable later
-
-5. **CLEAR REPORTING** - Tell user exactly what's valid and what needs fixing
+3. **CLEAR REPORTING** - Tell user exactly what's valid and what needs fixing
 
 6. **DOCUMENT PREVIEWS** - Always show first few lines so user can verify content
 
 7. **KEYWORD WARNINGS** - Note if keywords weren't found (informational only)
-
-8. **SEMANTIC SEARCH** - Knowledge base enables RAG search across all projects later
 
 ## EXAMPLE FLOW
 
@@ -204,8 +169,6 @@ User: "Validate the PRD and Architecture for my e-commerce project"
 You: *Calls validate_prd_document(prd_url, "e-commerce platform")*
 
 You: *Calls validate_architecture_document(arch_url, "e-commerce platform")*
-
-You: *Calls create_project_knowledge_base()*
 
 You: "✅ Validation Complete
 
@@ -217,14 +180,12 @@ Architecture Document: ✓ Valid
 - Contains system architecture for e-commerce
 - Preview: 'System Architecture for E-commerce...'
 
-Knowledge Base: ✓ Created
-
 All validation checks passed. The project is ready for implementation."
 """
 
 supervisor_agent = Agent(
     name="Supervisor",
-    role="Validates PRD/Architecture/Feature Spec/Technical Doc documents, maintains project intelligence, and logs validation results",
+    role="Validates PRD/Architecture/Feature Spec/Technical Doc documents and logs validation results",
     model=OpenRouter(id="google/gemini-3-flash-preview", max_tokens=16384),
     db=db,
     add_history_to_context=True,
@@ -236,7 +197,6 @@ supervisor_agent = Agent(
         validate_architecture_document,
         validate_feature_spec_document,
         validate_technical_doc_document,
-        create_project_knowledge_base,
         validate_workflow_phase_completion,
         create_project,
         update_project,

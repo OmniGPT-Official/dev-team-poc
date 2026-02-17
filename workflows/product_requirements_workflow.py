@@ -332,9 +332,7 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
 3. **Update Project**: Get the project_id from context, then call:
    update_project(project_id, prd_doc_url="{prd_url}", architecture_doc_url="{arch_url}", status="in_development")
 
-4. **Create Knowledge Base**: Call create_project_knowledge_base()
-
-5. **Report**: Summarize validation results
+4. **Report**: Summarize validation results
 
 **CRITICAL:**
 - USE THE URLs PROVIDED ABOVE - DO NOT extract or hallucinate URLs
@@ -859,7 +857,7 @@ new_project_steps = Steps(
         Step(
             name="supervisor_validation",
             executor=supervisor_validation_executor,
-            description="Validate PRD and Architecture, create knowledge base"
+            description="Validate PRD and Architecture"
         ),
         Step(
             name="summary",
@@ -881,7 +879,7 @@ existing_project_steps = Steps(
         Step(
             name="get_project_context",
             executor=get_project_context_executor,
-            description="Get project from DB and search knowledge base"
+            description="Get project from DB"
         ),
         Step(
             name="validate_github_repo",

@@ -8,7 +8,7 @@ Used by the Supervisor agent after PRD/Architecture creation to validate outputs
 from typing import Dict, Any, Optional
 from services.project_context import get_current_project_id
 from services.user_context import get_current_user_id
-from tools.project_tools import update_project, add_project_to_knowledge_base, get_project
+from tools.project_tools import update_project, get_project
 
 
 # ============================================================================
@@ -197,121 +197,6 @@ def validate_architecture_document(architecture_url: str, project_name: str) -> 
         "preview": validation.get("preview"),
         "message": validation["message"]
     }
-
-
-# ============================================================================
-# KNOWLEDGE BASE CREATION
-# ============================================================================
-
-def create_project_knowledge_base() -> Dict[str, Any]:
-    """Create knowledge base entry for current project using PRD and Architecture docs.
-
-    Returns:
-        {
-            "success": bool,
-            "knowledge_base_id": str (if successful),
-            "message": str
-        }
-    """
-    project_id = get_current_project_id()
-    if not project_id:
-        print(f"[supervisor_tools] ERROR: No project_id in context for knowledge base creation")
-        return {
-            "success": False,
-            "knowledge_base_id": None,
-            "message": "No project_id in context"
-        }
-
-    print(f"[supervisor_tools] Creating knowledge base for project {project_id}")
-
-    try:
-        # Get project details
-        project = get_project(project_id)
-        if not project:
-            print(f"[supervisor_tools] ERROR: Project {project_id} not found in database")
-            return {
-                "success": False,
-                "knowledge_base_id": None,
-                "message": "Project not found"
-            }
-
-        project_name = project.get("project_name", "Unknown")
-        project_description = project.get("project_description", "")
-        prd_url = project.get("prd_doc_url")
-        arch_url = project.get("architecture_doc_url")
-
-        print(f"[supervisor_tools] Project: {project_name}")
-        print(f"[supervisor_tools] PRD URL: {prd_url}")
-        print(f"[supervisor_tools] Architecture URL: {arch_url}")
-
-        # Read PRD content
-        prd_content = None
-        if prd_url:
-            user_id = get_current_user_id()
-            doc_id = prd_url.split("/document/d/")[1].split("/")[0]
-
-            from services.oauth_store import get_google_credentials
-            from googleapiclient.discovery import build
-
-            creds = get_google_credentials(user_id, "google_docs")
-            if creds:
-                service = build('docs', 'v1', credentials=creds)
-                document = service.documents().get(documentId=doc_id).execute()
-
-                content = document.get('body', {}).get('content', [])
-                text_content = ""
-                for element in content:
-                    if 'paragraph' in element:
-                        for text_element in element['paragraph'].get('elements', []):
-                            if 'textRun' in text_element:
-                                text_content += text_element['textRun'].get('content', '')
-                prd_content = text_content
-
-        # Read Architecture content (similar to PRD)
-        arch_content = None
-        if arch_url:
-            user_id = get_current_user_id()
-            doc_id = arch_url.split("/document/d/")[1].split("/")[0]
-
-            from services.oauth_store import get_google_credentials
-            from googleapiclient.discovery import build
-
-            creds = get_google_credentials(user_id, "google_docs")
-            if creds:
-                service = build('docs', 'v1', credentials=creds)
-                document = service.documents().get(documentId=doc_id).execute()
-
-                content = document.get('body', {}).get('content', [])
-                text_content = ""
-                for element in content:
-                    if 'paragraph' in element:
-                        for text_element in element['paragraph'].get('elements', []):
-                            if 'textRun' in text_element:
-                                text_content += text_element['textRun'].get('content', '')
-                arch_content = text_content
-
-        # Add to knowledge base
-        print(f"[supervisor_tools] Adding project to knowledge base with PRD content ({len(prd_content) if prd_content else 0} chars) and Architecture content ({len(arch_content) if arch_content else 0} chars)")
-
-        result = add_project_to_knowledge_base(
-            project_id=project_id,
-            project_name=project_name,
-            project_description=project_description,
-            prd_content=prd_content,
-            architecture_content=arch_content
-        )
-
-        print(f"[supervisor_tools] Knowledge base creation result: success={result.get('success')}, kb_id={result.get('knowledge_base_id')}")
-
-        return result
-
-    except Exception as e:
-        print(f"[supervisor_tools] ERROR creating knowledge base: {e}")
-        return {
-            "success": False,
-            "knowledge_base_id": None,
-            "message": f"Failed to create knowledge base: {str(e)}"
-        }
 
 
 # ============================================================================
