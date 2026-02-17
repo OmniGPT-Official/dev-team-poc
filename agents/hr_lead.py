@@ -1,13 +1,13 @@
 """HR Lead Agent — gathers hiring requirements from the user."""
 
 from agno.agent import Agent
-from agno.models.google import Gemini
+from agno.models.moonshot import MoonShot
 
 from db import db
 
 hr_lead_agent = Agent(
     name="HR Lead Agent",
-    model=Gemini(id="gemini-3-flash-preview"),
+    model=MoonShot(id="kimi-k2.5"),
     description="You are an HR Lead who gathers all necessary information to create a job posting for a company in Thailand.",
     instructions=[
         "You are an HR Lead Agent for companies hiring in Thailand.",
