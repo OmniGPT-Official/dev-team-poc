@@ -78,11 +78,7 @@ FORMAT_TO_MIME = {
 
 
 class InstagramConnectTools(Toolkit):
-    """Fallback toolkit injected when the user has no Instagram credentials.
-
-    Exposes a single ``connect_instagram`` tool that returns a clickable
-    OAuth authorization link so the user can connect their account.
-    """
+    """Provides an OAuth URL for connecting an Instagram account."""
 
     def __init__(self, auth_url: str):
         super().__init__(name="instagram_connect_tools")
@@ -90,15 +86,12 @@ class InstagramConnectTools(Toolkit):
         self.register(self.connect_instagram)
 
     def connect_instagram(self) -> str:
-        """Get the Instagram authorization link for connecting your account.
-
-        Returns:
-            A message with the clickable OAuth link.
-        """
+        """Get the link to connect your Instagram account. The user must open this link to authorize."""
         return (
-            "To connect your Instagram account, please click the link below:\n\n"
+            "Instagram is not connected yet. "
+            "Please open this link to connect your account:\n\n"
             f"{self._auth_url}\n\n"
-            "After authorizing, your Instagram tools will be available on the next message."
+            "After authorizing, come back and try again."
         )
 
 
@@ -180,6 +173,9 @@ class InstagramTools(Toolkit):
         if not data:
             raise ValueError("Attached image is empty")
 
+        # TODO(edge-case-3): Validate image dimensions/format before uploading.
+        # Instagram requires min 320px, max 1080px shortest side, JPEG/PNG only.
+        # Currently we upload first and get a cryptic 400 from Instagram later.
         content_type = img.mime_type or FORMAT_TO_MIME.get(img.format or "", "image/jpeg")
         return self._upload_to_storage(data, content_type)
 

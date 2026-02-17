@@ -31,9 +31,9 @@ def _sign_state(payload: dict, secret: str) -> str:
 
 
 def generate_instagram_auth_url(user_id: str) -> str | None:
-    """Build an Instagram OAuth authorization URL for the given user.
+    """Generate an Instagram OAuth authorization URL for a given user.
 
-    Returns ``None`` when Meta OAuth environment variables are not configured.
+    Returns None if Meta OAuth is not configured.
     """
     meta = _get_meta_config()
     if not meta["app_id"] or not meta["app_secret"] or not meta["redirect_uri"]:
@@ -43,7 +43,6 @@ def generate_instagram_auth_url(user_id: str) -> str | None:
         {"user_id": user_id, "nonce": secrets.token_hex(16)},
         meta["app_secret"],
     )
-
     params = {
         "enable_fb_login": "0",
         "force_authentication": "1",
