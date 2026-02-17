@@ -15,9 +15,48 @@ agent init time are preserved across runs.
 
 from __future__ import annotations
 
+import re
+
 from agno.agent import Agent
 
 from services.tool_providers import resolve_tools
+
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+
+
+def _resolve_user_id(raw_id: str) -> str | None:
+    """Return a UUID user_id for *raw_id*.
+
+    If *raw_id* is already a UUID, return it as-is.
+    Otherwise treat it as a Slack user ID and look up the UUID in
+    user_oauth_connections.slack_id — take the first match.
+    Returns None if no match is found.
+    """
+    if _UUID_RE.match(raw_id):
+        return raw_id
+
+    # Not a UUID — assume it's a Slack user ID
+    print(f"[pre-hook] {raw_id!r} is not a UUID, looking up via slack_id...")
+    try:
+        from services.oauth_store import get_supabase_client
+        supabase = get_supabase_client()
+        result = (
+            supabase.table("user_oauth_connections")
+            .select("user_id")
+            .eq("slack_id", raw_id)
+            .limit(1)
+            .execute()
+        )
+        if result.data and len(result.data) > 0:
+            uuid = result.data[0]["user_id"]
+            print(f"[pre-hook] Resolved slack_id {raw_id!r} → user_id {uuid!r}")
+            return uuid
+        else:
+            print(f"[pre-hook] No user found for slack_id {raw_id!r}, skipping tool injection")
+            return None
+    except Exception as e:
+        print(f"[pre-hook] slack_id lookup failed: {e}")
+        return None
 
 
 def make_tool_hook(*provider_names: str):
@@ -31,6 +70,11 @@ def make_tool_hook(*provider_names: str):
         print(f"[pre-hook] make_tool_hook({provider_names}) called for {agent.name} — user_id={user_id!r}")
         if not user_id:
             print("[pre-hook] No user_id, skipping tool injection")
+            return
+
+        # Resolve Slack user IDs to UUIDs
+        user_id = _resolve_user_id(user_id)
+        if not user_id:
             return
 
         # Snapshot static tools on first invocation.
