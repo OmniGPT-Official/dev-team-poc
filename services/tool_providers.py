@@ -170,11 +170,14 @@ def _google_docs(user_id: str):
 
 @register("indeed")
 def _indeed(user_id: str):
-    from tools.indeed_tools import IndeedTools
-    from services.api_key_store import get_api_key
+    """Indeed XML Feed tools — no API key required for direct employers.
 
-    key = get_api_key(user_id, "indeed")
-    if not key:
-        return None
-    print(f"[tool_providers] Indeed API key found for user {user_id!r}")
-    return IndeedTools(api_key=key)
+    The feed is served at /indeed-feed.xml and registered once with Indeed.
+    APP_BASE_URL env var sets the public URL prefix (e.g. https://your-app.railway.app).
+    """
+    import os
+    from tools.indeed_tools import IndeedXMLFeedTools
+
+    base_url = os.getenv("APP_BASE_URL", "")
+    print(f"[tool_providers] IndeedXMLFeedTools initialized for user {user_id!r} (base_url={base_url!r})")
+    return IndeedXMLFeedTools(base_url=base_url)
