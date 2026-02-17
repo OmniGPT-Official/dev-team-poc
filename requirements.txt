@@ -22,4 +22,3 @@ pgvector
 supabase
 elevenlabs
 playwright>=1.40.0
-slack-sdk  # Slack interface for AgentOS

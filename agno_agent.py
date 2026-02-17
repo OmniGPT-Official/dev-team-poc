@@ -7,7 +7,6 @@ Clean architecture with multiple specialized agents, teams, and workflows.
 
 import os
 from agno.os import AgentOS
-from agno.os.interfaces.slack import Slack
 from agents.product_lead import product_lead_agent
 from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
@@ -51,9 +50,6 @@ from teams.hr_team import hr_team  # HR Team (internal agents not exposed standa
 # Learn more: https://docs.agno.com/agent-os/tracing/overview
 agent_os = AgentOS(
     name="Agent OS",
-    interfaces=[
-        Slack(agent=software_engineer_agent),
-    ],
     agents=[
         credentials_manager_agent,  # Credentials Manager (validates tokens before workflows)
         product_lead_agent,
