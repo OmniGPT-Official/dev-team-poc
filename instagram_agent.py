@@ -19,7 +19,7 @@ instagram_agent = Agent(
         "You can also generate images using the create_image tool when the user asks.",
         "When the user attaches an image, use it directly — do NOT ask them to provide a URL.",
         "When asked to post, confirm the caption before publishing.",
-        "If Instagram tools are not available, inform the user to connect their Instagram account first.",
+        "If Instagram is not connected, use the connect_instagram tool to get the authorization link for the user.",
         "",
         "## Image Selection for Carousels",
         "When posting a carousel, ALL session images are included by default.",

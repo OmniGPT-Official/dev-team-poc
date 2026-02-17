@@ -30,18 +30,14 @@ def _sign_state(payload: dict, secret: str) -> str:
     return f"{data}.{sig}"
 
 
-@oauth_router.get("/instagram/authorize")
-async def instagram_authorize(request: Request):
-    """Generate an Instagram OAuth URL for authorization (Instagram Login flow)."""
-    user_id = getattr(request.state, "user_id", None)
-    if not user_id:
-        return JSONResponse({"error": "Authentication required"}, status_code=401)
+def generate_instagram_auth_url(user_id: str) -> str | None:
+    """Build an Instagram OAuth authorization URL for the given user.
 
+    Returns ``None`` when Meta OAuth environment variables are not configured.
+    """
     meta = _get_meta_config()
     if not meta["app_id"] or not meta["app_secret"] or not meta["redirect_uri"]:
-        return JSONResponse(
-            {"error": "Instagram OAuth is not configured"}, status_code=500
-        )
+        return None
 
     state = _sign_state(
         {"user_id": user_id, "nonce": secrets.token_hex(16)},
@@ -58,6 +54,20 @@ async def instagram_authorize(request: Request):
         "state": state,
     }
     qs = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
-    url = f"https://www.instagram.com/oauth/authorize?{qs}"
+    return f"https://www.instagram.com/oauth/authorize?{qs}"
+
+
+@oauth_router.get("/instagram/authorize")
+async def instagram_authorize(request: Request):
+    """Generate an Instagram OAuth URL for authorization (Instagram Login flow)."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        return JSONResponse({"error": "Authentication required"}, status_code=401)
+
+    url = generate_instagram_auth_url(user_id)
+    if not url:
+        return JSONResponse(
+            {"error": "Instagram OAuth is not configured"}, status_code=500
+        )
 
     return JSONResponse({"url": url})

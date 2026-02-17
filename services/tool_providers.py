@@ -171,19 +171,26 @@ def _google_docs(user_id: str):
 @register("instagram")
 def _instagram(user_id: str):
     from os import getenv
-    from tools.instagram import InstagramTools
+    from tools.instagram import InstagramTools, InstagramConnectTools
     from services.oauth_store import get_instagram_credentials
 
     ig_creds = get_instagram_credentials(user_id)
-    if not ig_creds:
+    if ig_creds:
+        print(f"[tool_providers] Instagram credentials found for user {user_id!r}")
+        return InstagramTools(
+            access_token=ig_creds["access_token"],
+            ig_user_id=ig_creds["ig_user_id"],
+            supabase_url=getenv("SUPABASE_STORAGE_URL", ""),
+            supabase_key=getenv("SUPABASE_STORAGE_KEY", ""),
+        )
+
+    # No credentials — offer a connect flow if Meta OAuth is configured
+    from routes.oauth import generate_instagram_auth_url
+
+    auth_url = generate_instagram_auth_url(user_id)
+    if not auth_url:
         return None
-    print(f"[tool_providers] Instagram credentials found for user {user_id!r}")
-    return InstagramTools(
-        access_token=ig_creds["access_token"],
-        ig_user_id=ig_creds["ig_user_id"],
-        supabase_url=getenv("SUPABASE_STORAGE_URL", ""),
-        supabase_key=getenv("SUPABASE_STORAGE_KEY", ""),
-    )
+    return InstagramConnectTools(auth_url=auth_url)
 
 
 @register("indeed_browser")

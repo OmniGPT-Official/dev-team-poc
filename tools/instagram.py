@@ -77,6 +77,31 @@ FORMAT_TO_MIME = {
 }
 
 
+class InstagramConnectTools(Toolkit):
+    """Fallback toolkit injected when the user has no Instagram credentials.
+
+    Exposes a single ``connect_instagram`` tool that returns a clickable
+    OAuth authorization link so the user can connect their account.
+    """
+
+    def __init__(self, auth_url: str):
+        super().__init__(name="instagram_connect_tools")
+        self._auth_url = auth_url
+        self.register(self.connect_instagram)
+
+    def connect_instagram(self) -> str:
+        """Get the Instagram authorization link for connecting your account.
+
+        Returns:
+            A message with the clickable OAuth link.
+        """
+        return (
+            "To connect your Instagram account, please click the link below:\n\n"
+            f"{self._auth_url}\n\n"
+            "After authorizing, your Instagram tools will be available on the next message."
+        )
+
+
 class InstagramTools(Toolkit):
     """Post images and carousels to Instagram via the Graph API.
 
