@@ -36,6 +36,7 @@ from agents.calling_agents import (
     campaign_coordinator_agent
 )
 from campaign_manager import campaign_manager  # Pattern 1: Single Agent + Workflow
+from agno_pai.factory import factory_agent  # Agno PAI Factory (meta-agent)
 from teams.hr_team import hr_team  # HR Team (internal agents not exposed standalone)
 from instagram_agent import instagram_agent  # Instagram Agent (OAuth-enabled)
 
@@ -73,6 +74,7 @@ agent_os = AgentOS(
         results_logger_agent,  # Outbound Calling: Results Logger
         campaign_coordinator_agent,  # Outbound Calling: Campaign Coordinator
         campaign_manager,  # Campaign Manager (Pattern 1: Single Agent + Internal Workflow)
+        factory_agent,  # Agno PAI Factory — generates agents on demand
         instagram_agent,  # Instagram Agent (OAuth-enabled, image posting)
     ],
     teams=[

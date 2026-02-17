@@ -12,6 +12,18 @@ RUN apt-get update && apt-get install -y curl && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Chromium system dependencies (pre-install so Playwright doesn't need --with-deps)
+RUN apt-get update && apt-get install -y \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
+    libcups2 libdrm2 libdbus-1-3 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+    libgbm1 libasound2 libpangocairo-1.0-0 libcairo2 \
+    libatspi2.0-0 libgtk-3-0 fonts-liberation \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Download Playwright Chromium binary (no --with-deps since deps installed above)
+RUN playwright install chromium
+
 # Copy app
 COPY . .
 
