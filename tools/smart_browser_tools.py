@@ -143,29 +143,53 @@ async def _save_cookies(context, user_id: str | None, domain: str) -> None:
 
 
 async def _new_browser_context(playwright):
-    browser = await playwright.chromium.launch(
-        headless=True,
-        args=[
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--disable-blink-features=AutomationControlled",
-        ],
-    )
-    context = await browser.new_context(
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/121.0.0.0 Safari/537.36"
-        ),
-        viewport={"width": 1280, "height": 800},
-        locale="en-US",
-    )
-    await context.add_init_script(
-        "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
-        "Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3]});"
-        "window.chrome={runtime:{}};"
-    )
+    """Launch a browser context.
+
+    If the BRIGHTDATA_SBR_WS environment variable is set, connects to
+    BrightData's Scraping Browser via CDP — this routes traffic through
+    residential IPs and bypasses Cloudflare / CAPTCHA automatically.
+
+    Falls back to a local headless Chromium when the env var is not set
+    (useful for local development).
+
+    Set in Railway:
+      BRIGHTDATA_SBR_WS = wss://brd-customer-XXXXX:PASSWORD@brd.superproxy.io:9222
+    Get it from: https://brightdata.com/products/scraping-browser
+    """
+    sbr_ws = os.getenv("BRIGHTDATA_SBR_WS", "")
+
+    if sbr_ws:
+        # BrightData Scraping Browser — residential IP, built-in Cloudflare bypass
+        print("[smart_browser] Using BrightData Scraping Browser (residential IP)")
+        browser = await playwright.chromium.connect_over_cdp(sbr_ws)
+        context = browser.contexts[0] if browser.contexts else await browser.new_context()
+    else:
+        # Local fallback — works for dev, gets blocked by Cloudflare on Railway
+        print("[smart_browser] Using local Chromium (no BRIGHTDATA_SBR_WS set)")
+        browser = await playwright.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+        context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/121.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 800},
+            locale="en-US",
+        )
+        await context.add_init_script(
+            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+            "Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3]});"
+            "window.chrome={runtime:{}};"
+        )
+
     return browser, context
 
 
