@@ -17,7 +17,6 @@ from agents.lead_engineer import lead_engineer_agent
 from agents.software_engineer import software_engineer_agent
 from agents.security_engineer import security_engineer_agent
 from agents.credentials_manager import credentials_manager_agent
-from utils.knowledge_base import get_knowledge_base
 from workflows.product_requirements_workflow import product_requirements_workflow
 from workflows.software_development_workflow import software_development_workflow
 from tools.project_tools import list_user_projects, get_project, search_projects_by_name, find_project_by_github_url
@@ -91,9 +90,6 @@ product_team = Team(
         security_engineer_agent,
     ],
     tools=[run_product_requirements, run_software_development, list_user_projects, get_project, search_projects_by_name, find_project_by_github_url],
-    knowledge=get_knowledge_base(),
-    search_knowledge=True,
-    add_knowledge_to_context=True,
     instructions=[
         """You are the Product Development Team.
 
