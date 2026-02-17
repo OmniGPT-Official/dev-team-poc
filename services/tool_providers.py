@@ -166,3 +166,28 @@ def _google_docs(user_id: str):
     if not creds:
         return None
     return GoogleDocsTools(creds=creds)
+
+
+@register("job_feeds")
+def _job_feeds(user_id: str):
+    """Unified job feed tools — generates Indeed XML + LinkedIn XML from one store.
+
+    No API keys required. Register each feed URL once with the platform.
+    Env vars:
+      APP_BASE_URL          - public URL of this app (e.g. https://your-app.railway.app)
+      HR_POSTER_EMAIL       - email shown on LinkedIn job postings (required by LinkedIn)
+      LINKEDIN_COMPANY_ID   - numeric LinkedIn Page ID (optional, improves LinkedIn matching)
+    """
+    import os
+    from tools.job_feed_tools import get_feed_instance
+
+    base_url = os.getenv("APP_BASE_URL", "")
+    poster_email = os.getenv("HR_POSTER_EMAIL", "")
+    linkedin_company_id = os.getenv("LINKEDIN_COMPANY_ID", "")
+
+    print(f"[tool_providers] JobFeedTools for user {user_id!r} (base_url={base_url!r})")
+    return get_feed_instance(
+        base_url=base_url,
+        poster_email=poster_email,
+        linkedin_company_id=linkedin_company_id,
+    )

@@ -35,6 +35,7 @@ from agents.calling_agents import (
     campaign_coordinator_agent
 )
 from campaign_manager import campaign_manager  # Pattern 1: Single Agent + Workflow
+from teams.hr_team import hr_team  # HR Team (internal agents not exposed standalone)
 
 # Initialize Agent OS with Enhanced Tracing
 # Tracing provides visibility into:
@@ -69,8 +70,9 @@ agent_os = AgentOS(
         campaign_manager,  # Campaign Manager (Pattern 1: Single Agent + Internal Workflow)
     ],
     teams=[
-        product_team,  # Product Development Team
+        product_team,         # Product Development Team
         content_creation_team,  # Content Creation Team
+        hr_team,              # HR Team (JD writing + Indeed posting)
     ],
     workflows=[
         product_requirements_workflow,
@@ -277,6 +279,44 @@ app.add_middleware(SupabaseUserMiddleware)
 async def health_check():
     """Health check endpoint for Railway and monitoring."""
     return {"status": "healthy", "service": "agent-os"}
+
+
+# ---------------------------------------------------------------------------
+# HR Job Feeds — Indeed XML + LinkedIn XML
+# ---------------------------------------------------------------------------
+from fastapi.responses import Response as FastAPIResponse
+
+
+@app.get("/indeed-feed.xml", response_class=FastAPIResponse)
+async def indeed_feed():
+    """Serve the Indeed XML job feed. Register this URL once at employers.indeed.com/jobs/feed-submit."""
+    import os
+    from tools.job_feed_tools import get_feed_instance
+
+    feed = get_feed_instance(
+        base_url=os.getenv("APP_BASE_URL", ""),
+        poster_email=os.getenv("HR_POSTER_EMAIL", ""),
+        linkedin_company_id=os.getenv("LINKEDIN_COMPANY_ID", ""),
+    )
+    xml_content = feed.build_indeed_xml()
+    return FastAPIResponse(content=xml_content, media_type="application/xml")
+
+
+@app.get("/linkedin-feed.xml", response_class=FastAPIResponse)
+async def linkedin_feed():
+    """Serve the LinkedIn XML job feed. Register this URL once at linkedin.com/talent/job-wrapping."""
+    import os
+    from tools.job_feed_tools import get_feed_instance
+
+    feed = get_feed_instance(
+        base_url=os.getenv("APP_BASE_URL", ""),
+        poster_email=os.getenv("HR_POSTER_EMAIL", ""),
+        linkedin_company_id=os.getenv("LINKEDIN_COMPANY_ID", ""),
+    )
+    xml_content = feed.build_linkedin_xml()
+    # Post-process CDATA markers (ElementTree doesn't support CDATA natively)
+    xml_content = xml_content.replace("__CDATA__", "<![CDATA[").replace("__ENDCDATA__", "]]>")
+    return FastAPIResponse(content=xml_content, media_type="application/xml")
 
 
 # ---------------------------------------------------------------------------
