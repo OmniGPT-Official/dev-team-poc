@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const META_APP_ID = Deno.env.get("META_APP_ID")!;
 const META_APP_SECRET = Deno.env.get("META_APP_SECRET")!;
@@ -67,23 +68,16 @@ function errorHtml(title: string, message: string): Response {
   );
 }
 
-function successHtml(userId: string, igUserId: string, accessToken: string): Response {
+function successHtml(): Response {
   return new Response(
     `<!DOCTYPE html>
 <html>
 <head><title>Instagram Connected</title></head>
 <body style="font-family:system-ui,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f9fafb;">
-  <div style="text-align:left;max-width:600px;padding:2rem;">
-    <div style="text-align:center;font-size:3rem;color:#22c55e;">&#10003;</div>
-    <h2 style="text-align:center;">Instagram Connected!</h2>
-    <p style="color:#6b7280;text-align:center;">Copy these values and provide them to store in the database.</p>
-    <hr style="margin:1.5rem 0;border:none;border-top:1px solid #e5e7eb;">
-    <div style="background:#f3f4f6;padding:1rem;border-radius:8px;word-break:break-all;">
-      <p><strong>User ID:</strong><br><code>${userId}</code></p>
-      <p><strong>Instagram User ID:</strong><br><code>${igUserId}</code></p>
-      <p><strong>Long-Lived Access Token:</strong><br><code style="font-size:0.75rem;">${accessToken}</code></p>
-    </div>
-    <p style="margin-top:1.5rem;text-align:center;"><small>You can close this window after copying.</small></p>
+  <div style="text-align:center;max-width:600px;padding:2rem;">
+    <div style="font-size:3rem;color:#22c55e;">&#10003;</div>
+    <h2>Instagram Connected!</h2>
+    <p style="color:#6b7280;">Your account has been linked successfully. You can close this tab and go back to the chat.</p>
   </div>
 </body>
 </html>`,
@@ -111,7 +105,6 @@ Deno.serve(async (req: Request) => {
 
   // Step 1: Exchange code for short-lived token (Instagram API)
   let shortToken: string;
-  let igUserId: string;
   try {
     const resp = await fetch("https://api.instagram.com/oauth/access_token", {
       method: "POST",
@@ -130,7 +123,6 @@ Deno.serve(async (req: Request) => {
       throw new Error(JSON.stringify(body));
     }
     shortToken = body.access_token;
-    igUserId = String(body.user_id);
   } catch (e) {
     return errorHtml("Connection Failed", `Could not exchange authorization code: ${e}`);
   }
@@ -155,6 +147,44 @@ Deno.serve(async (req: Request) => {
     return errorHtml("Connection Failed", `Could not obtain long-lived token: ${e}`);
   }
 
-  // Display the results for manual storage
-  return successHtml(userId, igUserId, longToken);
+  // Step 3: Fetch the real Instagram user ID from /me
+  let igUserId: string;
+  try {
+    const resp = await fetch(
+      `https://graph.instagram.com/v22.0/me?fields=id&access_token=${longToken}`,
+      { signal: AbortSignal.timeout(30_000) }
+    );
+    const body = await resp.json();
+    if (!resp.ok || body.error) {
+      throw new Error(JSON.stringify(body));
+    }
+    igUserId = body.id;
+  } catch (e) {
+    return errorHtml("Connection Failed", `Could not fetch Instagram account info: ${e}`);
+  }
+
+  // Step 4: Save token to database
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+
+  const { error } = await supabase
+    .from("user_oauth_connections")
+    .upsert(
+      {
+        user_id: userId,
+        provider: "instagram",
+        provider_account_id: igUserId,
+        access_token: longToken,
+        metadata: { ig_user_id: igUserId },
+      },
+      { onConflict: "user_id,provider,provider_account_id" }
+    );
+
+  if (error) {
+    return errorHtml("Connection Failed", `Could not save credentials: ${error.message}`);
+  }
+
+  return successHtml();
 });
