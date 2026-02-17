@@ -166,3 +166,15 @@ def _google_docs(user_id: str):
     if not creds:
         return None
     return GoogleDocsTools(creds=creds)
+
+
+@register("indeed")
+def _indeed(user_id: str):
+    from tools.indeed_tools import IndeedTools
+    from services.api_key_store import get_api_key
+
+    key = get_api_key(user_id, "indeed")
+    if not key:
+        return None
+    print(f"[tool_providers] Indeed API key found for user {user_id!r}")
+    return IndeedTools(api_key=key)

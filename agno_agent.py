@@ -35,6 +35,10 @@ from agents.calling_agents import (
     campaign_coordinator_agent
 )
 from campaign_manager import campaign_manager  # Pattern 1: Single Agent + Workflow
+from agents.hr_lead import hr_lead_agent
+from agents.hr_jd_writer import hr_jd_writer_agent
+from agents.hr_job_poster import hr_job_poster_agent
+from teams.hr_team import hr_team
 
 # Initialize Agent OS with Enhanced Tracing
 # Tracing provides visibility into:
@@ -67,10 +71,14 @@ agent_os = AgentOS(
         results_logger_agent,  # Outbound Calling: Results Logger
         campaign_coordinator_agent,  # Outbound Calling: Campaign Coordinator
         campaign_manager,  # Campaign Manager (Pattern 1: Single Agent + Internal Workflow)
+        hr_lead_agent,        # HR Team: Requirements gathering
+        hr_jd_writer_agent,   # HR Team: Bilingual JD writer
+        hr_job_poster_agent,  # HR Team: Indeed job poster
     ],
     teams=[
-        product_team,  # Product Development Team
+        product_team,         # Product Development Team
         content_creation_team,  # Content Creation Team
+        hr_team,              # HR Team (JD writing + Indeed posting)
     ],
     workflows=[
         product_requirements_workflow,
