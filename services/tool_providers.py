@@ -168,6 +168,24 @@ def _google_docs(user_id: str):
     return GoogleDocsTools(creds=creds)
 
 
+@register("instagram")
+def _instagram(user_id: str):
+    from os import getenv
+    from tools.instagram import InstagramTools
+    from services.oauth_store import get_instagram_credentials
+
+    ig_creds = get_instagram_credentials(user_id)
+    if not ig_creds:
+        return None
+    print(f"[tool_providers] Instagram credentials found for user {user_id!r}")
+    return InstagramTools(
+        access_token=ig_creds["access_token"],
+        ig_user_id=ig_creds["ig_user_id"],
+        supabase_url=getenv("SUPABASE_STORAGE_URL", ""),
+        supabase_key=getenv("SUPABASE_STORAGE_KEY", ""),
+    )
+
+
 @register("indeed_browser")
 def _indeed_browser(user_id: str):
     """Post jobs to Indeed employer portal via headless Playwright automation.
