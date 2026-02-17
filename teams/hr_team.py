@@ -10,7 +10,7 @@ from db import db
 
 hr_team = Team(
     name="HR Team",
-    model=MoonShot(id="kimi-k2.5"),
+    model=MoonShot(id="moonshot-v1-128k"),
     db=db,
     members=[
         hr_lead_agent,

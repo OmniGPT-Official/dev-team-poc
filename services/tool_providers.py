@@ -168,6 +168,24 @@ def _google_docs(user_id: str):
     return GoogleDocsTools(creds=creds)
 
 
+@register("indeed_browser")
+def _indeed_browser(user_id: str):
+    """Post jobs to Indeed employer portal via headless Playwright automation.
+
+    No API key required — uses employer credentials from env vars:
+      INDEED_EMAIL     - employer account email
+      INDEED_PASSWORD  - employer account password
+    """
+    import os
+    from tools.browser_posting_tools import IndeedBrowserPosterTools
+
+    email = os.getenv("INDEED_EMAIL", "")
+    password = os.getenv("INDEED_PASSWORD", "")
+
+    print(f"[tool_providers] IndeedBrowserPosterTools for user {user_id!r}")
+    return IndeedBrowserPosterTools(email=email, password=password)
+
+
 @register("job_feeds")
 def _job_feeds(user_id: str):
     """Unified job feed tools — generates Indeed XML + LinkedIn XML from one store.
