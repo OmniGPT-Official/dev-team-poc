@@ -145,51 +145,57 @@ async def _save_cookies(context, user_id: str | None, domain: str) -> None:
 async def _new_browser_context(playwright):
     """Launch a browser context.
 
-    If the BRIGHTDATA_SBR_WS environment variable is set, connects to
-    BrightData's Scraping Browser via CDP — this routes traffic through
-    residential IPs and bypasses Cloudflare / CAPTCHA automatically.
+    If BRIGHTDATA_PROXY is set, routes all traffic through BrightData's
+    residential proxy — bypasses Cloudflare and datacenter IP blocks on
+    Indeed, JobDB, and any other site.
 
-    Falls back to a local headless Chromium when the env var is not set
+    Falls back to local headless Chromium when the env var is not set
     (useful for local development).
 
     Set in Railway:
-      BRIGHTDATA_SBR_WS = wss://brd-customer-XXXXX:PASSWORD@brd.superproxy.io:9222
-    Get it from: https://brightdata.com/products/scraping-browser
+      BRIGHTDATA_PROXY = http://USERNAME:PASSWORD@brd.superproxy.io:33335
+    Get credentials from: brightdata.com → Proxies → your residential zone
     """
-    sbr_ws = os.getenv("BRIGHTDATA_SBR_WS", "")
+    proxy_url = os.getenv("BRIGHTDATA_PROXY", "")
 
-    if sbr_ws:
-        # BrightData Scraping Browser — residential IP, built-in Cloudflare bypass
-        print("[smart_browser] Using BrightData Scraping Browser (residential IP)")
-        browser = await playwright.chromium.connect_over_cdp(sbr_ws)
-        context = browser.contexts[0] if browser.contexts else await browser.new_context()
+    proxy_config = None
+    if proxy_url:
+        print("[smart_browser] Using BrightData residential proxy")
+        # Parse http://user:pass@host:port into Playwright proxy dict
+        from urllib.parse import urlparse
+        parsed = urlparse(proxy_url)
+        proxy_config = {
+            "server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}",
+            "username": parsed.username or "",
+            "password": parsed.password or "",
+        }
     else:
-        # Local fallback — works for dev, gets blocked by Cloudflare on Railway
-        print("[smart_browser] Using local Chromium (no BRIGHTDATA_SBR_WS set)")
-        browser = await playwright.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--disable-blink-features=AutomationControlled",
-            ],
-        )
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/121.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 800},
-            locale="en-US",
-        )
-        await context.add_init_script(
-            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
-            "Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3]});"
-            "window.chrome={runtime:{}};"
-        )
+        print("[smart_browser] Using local Chromium (no BRIGHTDATA_PROXY set)")
 
+    browser = await playwright.chromium.launch(
+        headless=True,
+        args=[
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-blink-features=AutomationControlled",
+        ],
+        proxy=proxy_config,
+    )
+    context = await browser.new_context(
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/121.0.0.0 Safari/537.36"
+        ),
+        viewport={"width": 1280, "height": 800},
+        locale="en-US",
+    )
+    await context.add_init_script(
+        "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+        "Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3]});"
+        "window.chrome={runtime:{}};"
+    )
     return browser, context
 
 
