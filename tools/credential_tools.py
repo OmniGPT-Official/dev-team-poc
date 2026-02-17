@@ -551,3 +551,58 @@ def validate_all_credentials(user_id: Optional[str] = None) -> Dict[str, Any]:
         "missing": missing,
         "summary": summary
     }
+
+
+# ============================================================================
+# SMART BROWSER SESSION STORAGE
+# Stores browser session cookies per user per domain so the AI browser
+# can skip login on repeat visits.
+# ============================================================================
+
+def save_platform_session(
+    user_id: str,
+    domain: str,
+    cookies: list,
+) -> bool:
+    """Save browser session cookies for a platform domain.
+
+    Args:
+        user_id: The authenticated user's UUID.
+        domain:  The domain the cookies belong to (e.g. 'th.indeed.com').
+        cookies: List of cookie dicts from Playwright context.cookies().
+
+    Returns:
+        True on success, False on failure.
+    """
+    import json as _json
+    provider = f"session_{domain}"
+    try:
+        return bool(store_api_key(user_id, provider, _json.dumps(cookies)))
+    except Exception as e:
+        print(f"[credential_tools] save_platform_session error: {e}")
+        return False
+
+
+def get_platform_session(
+    user_id: str,
+    domain: str,
+) -> Optional[list]:
+    """Retrieve saved browser session cookies for a platform domain.
+
+    Args:
+        user_id: The authenticated user's UUID.
+        domain:  The domain (e.g. 'th.indeed.com').
+
+    Returns:
+        List of cookie dicts if found, or None.
+    """
+    import json as _json
+    provider = f"session_{domain}"
+    try:
+        raw = get_api_key(user_id, provider)
+        if not raw:
+            return None
+        return _json.loads(raw)
+    except Exception as e:
+        print(f"[credential_tools] get_platform_session error: {e}")
+        return None
