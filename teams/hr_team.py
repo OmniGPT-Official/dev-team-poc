@@ -1,7 +1,7 @@
 """HR Team — orchestrates job description creation and posting to Indeed Thailand."""
 
 from agno.team import Team
-from agno.models.moonshot import MoonShot
+from agno.models.openrouter import OpenRouter
 
 from agents.hr_lead import hr_lead_agent
 from agents.hr_jd_writer import hr_jd_writer_agent
@@ -10,7 +10,7 @@ from db import db
 
 hr_team = Team(
     name="HR Team",
-    model=MoonShot(id="moonshot-v1-128k"),
+    model=OpenRouter(id="moonshotai/kimi-k2.5", max_tokens=8192),
     db=db,
     members=[
         hr_lead_agent,
