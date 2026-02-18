@@ -56,6 +56,7 @@ Known edge cases / TODOs
    post_image doesn't. Should add an image_id param for parity.
 """
 
+import time
 import uuid
 from mimetypes import guess_extension
 from typing import Optional, Sequence
@@ -66,6 +67,10 @@ from agno.tools import Toolkit
 
 GRAPH_API_BASE = "https://graph.instagram.com/v22.0"
 TIMEOUT = 30
+# Delay in seconds after creating a media container before publishing.
+# Instagram needs time to process the container (fetch image, validate, etc.).
+# Without this delay, media_publish may fail with 400 errors.
+PUBLISH_DELAY = 5
 
 # Map image formats to MIME types for attached images
 FORMAT_TO_MIME = {
@@ -147,8 +152,6 @@ class InstagramTools(Toolkit):
         self._storage.storage.from_(self._bucket).upload(
             path, data, file_options={"content-type": content_type},
         )
-        # TODO(edge-case-6): If there's CDN propagation delay, Instagram might
-        # get a 404 when fetching this URL. Consider adding a small delay or retry.
         public_url = self._storage.storage.from_(self._bucket).get_public_url(path)
         return public_url, path
 
@@ -263,6 +266,7 @@ class InstagramTools(Toolkit):
                 return "No image provided. Please attach an image or provide a public image URL."
 
             creation_id = self._create_media_container(url, caption=caption)
+            time.sleep(PUBLISH_DELAY)
             media_id = self._publish_media(creation_id)
 
             if storage_path:
@@ -350,6 +354,7 @@ class InstagramTools(Toolkit):
             carousel_id = resp.json()["id"]
 
             # Publish the carousel
+            time.sleep(PUBLISH_DELAY)
             media_id = self._publish_media(carousel_id)
 
             if storage_paths:
