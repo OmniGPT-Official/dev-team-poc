@@ -15,9 +15,64 @@ agent init time are preserved across runs.
 
 from __future__ import annotations
 
+import re
+
 from agno.agent import Agent
 
 from services.tool_providers import resolve_tools
+
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+# In-memory cache: slack_id → user_uuid (persists for process lifetime)
+_slack_id_cache: dict[str, str | None] = {}
+
+
+def _resolve_user_id(raw_id: str) -> str | None:
+    """Return a UUID user_id for *raw_id*.
+
+    If *raw_id* is already a UUID, return it as-is.
+    Otherwise treat it as a Slack user ID, look up the UUID from
+    user_oauth_connections.slack_id (one-time), and cache the result
+    so subsequent calls for the same Slack ID never hit the DB again.
+    """
+    if _UUID_RE.match(raw_id):
+        return raw_id
+
+    # Check cache first
+    if raw_id in _slack_id_cache:
+        cached = _slack_id_cache[raw_id]
+        if cached:
+            print(f"[pre-hook] Slack ID {raw_id!r} → cached UUID {cached!r}")
+        return cached
+
+    # One-time DB lookup
+    print(f"[pre-hook] {raw_id!r} is not a UUID, looking up via slack_id...")
+    try:
+        from services.oauth_store import get_supabase_client
+
+        result = (
+            get_supabase_client()
+            .table("user_oauth_connections")
+            .select("user_id")
+            .eq("slack_id", raw_id)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            uuid = result.data[0]["user_id"]
+            _slack_id_cache[raw_id] = uuid
+            print(f"[pre-hook] Resolved slack_id {raw_id!r} → {uuid!r} (cached)")
+            return uuid
+        else:
+            _slack_id_cache[raw_id] = None
+            print(f"[pre-hook] No user found for slack_id {raw_id!r}, skipping tool injection")
+            return None
+    except Exception as e:
+        print(f"[pre-hook] slack_id lookup failed: {e}")
+        return None
 
 
 def make_tool_hook(*provider_names: str):
@@ -31,6 +86,11 @@ def make_tool_hook(*provider_names: str):
         print(f"[pre-hook] make_tool_hook({provider_names}) called for {agent.name} — user_id={user_id!r}")
         if not user_id:
             print("[pre-hook] No user_id, skipping tool injection")
+            return
+
+        # Resolve Slack IDs to UUIDs (cached after first lookup)
+        user_id = _resolve_user_id(user_id)
+        if not user_id:
             return
 
         # Snapshot static tools on first invocation.

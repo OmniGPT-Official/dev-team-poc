@@ -95,11 +95,6 @@ product_team = Team(
 
 ## TEAM TOOLS
 
-**Knowledge Base:**
-- You have access to a searchable knowledge base
-- ALWAYS search the knowledge base FIRST before starting any work
-- Use it to find existing project information, GitHub repos, previous PRDs, etc.
-
 **Available Tool Functions:**
 
 ### 1. `run_product_requirements(input_data: str)`
@@ -128,7 +123,7 @@ run_product_requirements(input_data="PROJECT_TYPE: new\\nPROJECT_NAME: FitTracke
 1. Create project entry in DB
 2. Create PRD document (Product Lead)
 3. Create Architecture document (Lead Engineer)
-4. Supervisor validates both, creates knowledge base
+4. Supervisor validates both
 5. Summary with both URLs
 
 #### Path B: EXISTING PROJECT (Router → existing_project_path)
@@ -149,7 +144,7 @@ run_product_requirements(input_data="PROJECT_TYPE: existing\\nPROJECT_ID: abc123
 ```
 
 **Workflow steps:**
-1. Get project from DB + search knowledge base for context
+1. Get project from DB
 2. Validate GitHub repo (if exists)
 3. Create Feature Specification (Product Lead)
 4. Create Feature Technical Document (Lead Engineer)
@@ -277,9 +272,7 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 
 **CRITICAL: DO NOT call credential validation or workflows until Product Lead completes Phase 5 confirmation.**
 
-1. **Search knowledge base** for any existing project info
-
-2. **Delegate to Product Lead** → "Conduct full progressive discovery following your 5-phase workflow: Phase 1 (Set Expectations) → Phase 2 (Core Strategic Questions about problem, target audience, business model, key features, success metrics) → Phase 3 (Dig Deeper if user opts in) → Phase 4 (Market Research if user opts in) → Phase 5 (Summary + Confirmation). Start with strategic questions FIRST. Only ask about implementation details (branding, assets, contact info) AFTER completing strategic assessment. When you complete Phase 5 and user confirms, report back."
+1. **Delegate to Product Lead** → "Conduct full progressive discovery following your 5-phase workflow: Phase 1 (Set Expectations) → Phase 2 (Core Strategic Questions about problem, target audience, business model, key features, success metrics) → Phase 3 (Dig Deeper if user opts in) → Phase 4 (Market Research if user opts in) → Phase 5 (Summary + Confirmation). Start with strategic questions FIRST. Only ask about implementation details (branding, assets, contact info) AFTER completing strategic assessment. When you complete Phase 5 and user confirms, report back."
 
 3. **Product Lead DRIVES the conversation** → Asks 1-2 questions at a time → Follows up on each answer → Follows ALL 5 phases in order before collecting assets
    - **Phase 1**: Set Expectations (explain process, get buy-in)
@@ -338,7 +331,6 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
       - Ask about tech stack (if they know)
 
    c) **Analyze GitHub repo:**
-      - Search knowledge base for any context
       - Read GitHub repo structure (README, package.json, etc.)
 
    d) **Create PRD for existing project:**
@@ -424,11 +416,8 @@ run_software_development(input_data="ARCHITECTURE_URL: https://docs.google.com/d
 
 2. **TEAM CALLS TOOLS** - The Team (you) calls `run_product_requirements` and `run_software_development` tools directly. Do NOT delegate tool calls to members.
 
-3. **ALWAYS SEARCH KNOWLEDGE BASE FIRST** - At the very start (before Product Lead), search for existing project information
-
-4. **COMPLETE WORKFLOW ORDER** - The complete flow is:
-   1. Search knowledge base
-   2. Product Lead progressive discovery (Phases 1-5, ending with user confirmation)
+3. **COMPLETE WORKFLOW ORDER** - The complete flow is:
+   1. Product Lead progressive discovery (Phases 1-5, ending with user confirmation)
    3. Credentials Manager validation (GitHub, Vercel, Supabase, Google)
    4. Create documents via `run_product_requirements`
    5. User approval for implementation

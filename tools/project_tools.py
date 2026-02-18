@@ -2,7 +2,7 @@
 Project Management Tools
 
 Tools for creating, updating, listing, and searching user projects.
-Integrates with Supabase projects table and knowledge base for RAG search.
+Integrates with Supabase projects table.
 """
 
 import uuid
@@ -11,7 +11,6 @@ from datetime import datetime
 from services.oauth_store import get_supabase_client
 from services.project_context import set_current_project_id, get_current_project_id
 from services.user_context import get_current_user_id
-from utils.knowledge_base import get_knowledge_base
 
 
 # ============================================================================
@@ -99,7 +98,6 @@ def update_project(
     vercel_project_id: Optional[str] = None,
     status: Optional[str] = None,
     tech_stack: Optional[Dict] = None,
-    knowledge_base_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Update project with new information as workflow progresses.
 
@@ -146,9 +144,6 @@ def update_project(
 
         if tech_stack:
             update_data["tech_stack"] = tech_stack
-
-        if knowledge_base_id:
-            update_data["knowledge_base_id"] = knowledge_base_id
 
         if not update_data:
             return {
@@ -348,125 +343,6 @@ def find_project_by_github_url(github_url: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         print(f"[project_tools] ERROR finding project by GitHub URL: {e}")
         return None
-
-
-# ============================================================================
-# KNOWLEDGE BASE INTEGRATION
-# ============================================================================
-
-def add_project_to_knowledge_base(
-    project_id: str,
-    project_name: str,
-    project_description: str,
-    prd_content: Optional[str] = None,
-    architecture_content: Optional[str] = None
-) -> Dict[str, Any]:
-    """Add project to knowledge base for RAG search.
-
-    Args:
-        project_id: Project UUID
-        project_name: Project name
-        project_description: Project description
-        prd_content: Optional PRD content
-        architecture_content: Optional architecture content
-
-    Returns:
-        {
-            "success": bool,
-            "knowledge_base_id": str (if successful),
-            "message": str
-        }
-    """
-    try:
-        # Combine all text for knowledge base
-        content_parts = [
-            f"Project: {project_name}",
-            f"Description: {project_description}"
-        ]
-
-        if prd_content:
-            content_parts.append(f"PRD:\n{prd_content}")
-
-        if architecture_content:
-            content_parts.append(f"Architecture:\n{architecture_content}")
-
-        full_content = "\n\n".join(content_parts)
-
-        # Add to knowledge base
-        kb = get_knowledge_base()
-        kb_id = f"project_{project_id}"
-
-        # Store in knowledge base
-        kb.load_text(
-            text=full_content,
-            name=f"Project: {project_name}",
-            id=kb_id
-        )
-
-        # Update project with knowledge base reference
-        update_project(project_id, knowledge_base_id=kb_id)
-
-        print(f"[project_tools] Added project {project_id} to knowledge base")
-
-        return {
-            "success": True,
-            "knowledge_base_id": kb_id,
-            "message": "Project added to knowledge base successfully"
-        }
-
-    except Exception as e:
-        print(f"[project_tools] ERROR adding to knowledge base: {e}")
-        return {
-            "success": False,
-            "knowledge_base_id": None,
-            "message": f"Failed to add to knowledge base: {str(e)}"
-        }
-
-
-def search_projects_semantic(query: str, limit: int = 5) -> List[Dict[str, Any]]:
-    """Search projects using semantic/RAG search via knowledge base.
-
-    Args:
-        query: Natural language query (e.g., "show me my e-commerce projects")
-        limit: Max results
-
-    Returns:
-        List of matching projects with relevance scores
-    """
-    user_id = get_current_user_id()
-    if not user_id:
-        print(f"[project_tools] ERROR: No user_id in context")
-        return []
-
-    try:
-        # Search knowledge base
-        kb = get_knowledge_base()
-        results = kb.search(query=query)  # Search without limit parameter
-
-        # Extract project IDs from knowledge base results
-        project_ids = []
-        for result in results:
-            if hasattr(result, 'id') and result.id.startswith("project_"):
-                project_id = result.id.replace("project_", "")
-                project_ids.append(project_id)
-
-        if not project_ids:
-            return []
-
-        # Fetch project details and filter by user_id
-        projects = []
-        for pid in project_ids:
-            project = get_project(pid)
-            if project and project.get("user_id") == user_id:
-                projects.append(project)
-            if len(projects) >= limit:
-                break
-
-        return projects
-
-    except Exception as e:
-        print(f"[project_tools] ERROR in semantic search: {e}")
-        return []
 
 
 # ============================================================================

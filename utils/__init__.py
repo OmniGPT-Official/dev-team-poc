@@ -6,7 +6,7 @@ This package provides utility modules for the Agent-OS system.
 Main components:
 - SmartGitHubMCP: Drop-in replacement for MCPTools with caching and smart fetching
 - GitHubMCPWrapper: Lower-level wrapper for custom integrations
-- KnowledgeBase: Project context storage and retrieval
+- EmailTracker: Duplicate prevention for email sending
 """
 
 # Smart MCP wrapper (recommended for agents)
@@ -28,11 +28,6 @@ from utils.github_mcp_wrapper import (
     create_wrapper,
     smart_fetch_file,
     GitHubMCPError,
-)
-
-# Knowledge base for project context (Agno's native Knowledge system)
-from utils.knowledge_base import (
-    get_knowledge_base,
 )
 
 # Email tracker for duplicate prevention
@@ -60,8 +55,6 @@ __all__ = [
     "create_wrapper",
     "smart_fetch_file",
     "GitHubMCPError",
-    # Knowledge base
-    "get_knowledge_base",
     # Email tracker
     "mark_email_sent",
     "check_email_sent",
