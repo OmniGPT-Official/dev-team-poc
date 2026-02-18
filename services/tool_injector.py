@@ -94,6 +94,11 @@ def make_tool_hook(*provider_names: str):
         if not user_id:
             return
 
+        # Resolve Slack IDs to UUIDs (cached after first lookup)
+        user_id = _resolve_user_id(user_id)
+        if not user_id:
+            return
+
         # Snapshot static tools on first invocation.
         # TODO(production): This monkey-patches _static_tools onto the Agent instance.
         # For production, move the snapshot into the closure (nonlocal) or use a more
