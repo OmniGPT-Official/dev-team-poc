@@ -58,12 +58,31 @@ def resolve_tools(user_id: str, *provider_names: str) -> list:
 
 @register("google_sheets")
 def _google_sheets(user_id: str):
+    import os
     from agno.tools.googlesheets import GoogleSheetsTools
     from services.oauth_store import get_google_credentials
 
     creds = get_google_credentials(user_id, "google_sheets")
+
     if not creds:
-        return None
+        print(f"[tool_providers] No google_sheets credentials found in Supabase for user_id={user_id!r}")
+        # Fallback: use global env var credentials (set via get_google_token.py)
+        refresh_token = os.getenv("GOOGLE_OAUTH_REFRESH_TOKEN")
+        if refresh_token:
+            from google.oauth2.credentials import Credentials
+            print(f"[tool_providers] Using GOOGLE_OAUTH_REFRESH_TOKEN env var as fallback for google_sheets")
+            creds = Credentials(
+                token=None,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=os.getenv("GOOGLE_CLIENT_ID"),
+                client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+                scopes=["https://www.googleapis.com/auth/spreadsheets"],
+            )
+        else:
+            print(f"[tool_providers] No GOOGLE_OAUTH_REFRESH_TOKEN env var either — google_sheets unavailable for user_id={user_id!r}")
+            return None
+
     return GoogleSheetsTools(
         creds=creds,
         enable_read_sheet=True,
