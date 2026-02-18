@@ -214,11 +214,7 @@ def _job_boards(user_id: str):
 
 @register("smart_browser")
 def _smart_browser(user_id: str):
-    """AI-vision browser — navigates any website on behalf of the user.
-
-    Uses Browserbase when BROWSERBASE_API_KEY + BROWSERBASE_PROJECT_ID are set
-    (managed residential-IP browser, bypasses Cloudflare automatically).
-    Falls back to custom SmartBrowserTools otherwise.
+    """Browserbase managed browser — residential IPs, Cloudflare bypass, full interaction.
 
     Railway env vars needed:
       BROWSERBASE_API_KEY      — from browserbase.com/settings
@@ -227,16 +223,12 @@ def _smart_browser(user_id: str):
     import os
     api_key = os.getenv("BROWSERBASE_API_KEY", "")
     project_id = os.getenv("BROWSERBASE_PROJECT_ID", "")
-
-    if api_key and project_id:
-        from agno.tools.browserbase import BrowserbaseTools
-        print(f"[tool_providers] BrowserbaseTools for user {user_id!r}")
-        return BrowserbaseTools()
-
-    # Fallback: custom vision browser (works locally, may hit Cloudflare on Railway)
-    from tools.smart_browser_tools import SmartBrowserTools
-    print(f"[tool_providers] SmartBrowserTools (fallback) for user {user_id!r}")
-    return SmartBrowserTools(user_id=user_id)
+    if not api_key or not project_id:
+        print(f"[tool_providers] BROWSERBASE_API_KEY or BROWSERBASE_PROJECT_ID not set — smart_browser disabled")
+        return None
+    from agno.tools.browserbase import BrowserbaseTools
+    print(f"[tool_providers] BrowserbaseTools for user {user_id!r}")
+    return BrowserbaseTools()
 
 
 @register("job_feeds")
