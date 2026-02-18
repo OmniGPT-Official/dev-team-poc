@@ -8,7 +8,7 @@ from db import db
 
 hr_job_poster_agent = Agent(
     name="HR Job Poster Agent",
-    model=MoonShot(id="kimi-k2.5"),
+    model=MoonShot(id="moonshot-v1-128k"),
     description="You are an HR operations specialist who posts job listings to any job board on the web.",
     instructions=[
         "You are an HR Job Poster Agent. You post job listings to any job board platform — configured or new.",
