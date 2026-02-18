@@ -246,6 +246,15 @@ class SupabaseUserMiddleware(BaseHTTPMiddleware):
         # Decode JWT and extract user_id
         user_id = None
         if token:
+            # A valid JWT has exactly 3 dot-separated segments (header.payload.signature).
+            # Skip decode for non-JWT values (API keys, session tokens, "undefined", etc.)
+            # to avoid noisy "Not enough segments" errors from PyJWT.
+            parts = token.split(".")
+            if len(parts) != 3:
+                print(f"[middleware] Skipping non-JWT token ({len(parts)} segment(s), expected 3)")
+                response = await call_next(request)
+                return response
+
             try:
                 payload = pyjwt.decode(token, options={"verify_signature": False})
                 extracted_sub = payload.get("sub")
