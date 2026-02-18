@@ -138,17 +138,17 @@ hr_workflow = Workflow(
             1. **Ask which platform to post to**
                - Call `list_job_boards()` to show available configured platforms
                - Ask user: "Which platform would you like to post to?"
-               - If user wants a non-configured platform and browser tools are available,
-                 offer to use the managed browser
 
             2. **Confirm posting details**
                - Show: job title, platform, location, job type, salary, apply email
                - Ask: "Shall I proceed with posting?"
 
-            3. **Post the job**
-               - For configured platforms: use `post_job_to_board(...)`
-               - For other platforms: use browser tools if available
-               - If browser tools are not available, explain and suggest configured platforms
+            3. **Post the job using the managed browser (Browserbase)**
+               - For Indeed Thailand: use `navigate_to('https://employers.indeed.com')` then
+                 interact via `get_page_content()` and `execute_javascript()` to fill and submit forms.
+               - For any other website: use `navigate_to(url)` with the target job board URL.
+               - Do NOT call `post_job_to_board()` — that function has been removed because it
+                 used local Playwright which is blocked by Cloudflare on Railway.
 
             4. **Report results**
                - Share the live job URL if available
@@ -170,6 +170,7 @@ hr_workflow = Workflow(
             **IMPORTANT:**
             - NEVER post without explicit user confirmation
             - If credentials are missing, tell the user to set them up
+            - Always use Browserbase browser tools (navigate_to, get_page_content, execute_javascript)
             - This is the final step — end with clear confirmation
             """,
         ),

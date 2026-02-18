@@ -54,9 +54,8 @@ class BrowserbaseInteractiveTools(BrowserbaseTools):
             JSON with the return value of the script, or error details.
         """
         try:
-            self._initialize_browser()
-            if not self._page:
-                return json.dumps({"error": "No active browser page. Call navigate_to first."})
+            if not getattr(self, '_page', None):
+                return json.dumps({"error": "No active browser page. Call navigate_to(url) first."})
             result = self._page.evaluate(script)
             return json.dumps({"result": str(result) if result is not None else "null"})
         except Exception as e:
