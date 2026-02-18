@@ -56,6 +56,7 @@ Known edge cases / TODOs
    post_image doesn't. Should add an image_id param for parity.
 """
 
+import time
 import uuid
 from mimetypes import guess_extension
 from typing import Optional, Sequence
@@ -66,6 +67,8 @@ from agno.tools import Toolkit
 
 GRAPH_API_BASE = "https://graph.instagram.com/v22.0"
 TIMEOUT = 30
+CONTAINER_POLL_INTERVAL = 3  # seconds between status checks
+CONTAINER_POLL_MAX_WAIT = 60  # max seconds to wait for container to finish
 
 # Map image formats to MIME types for attached images
 FORMAT_TO_MIME = {
@@ -214,8 +217,41 @@ class InstagramTools(Toolkit):
         resp.raise_for_status()
         return resp.json()["id"]
 
+    def _wait_for_container(self, container_id: str) -> None:
+        """Poll a media container until Instagram finishes processing it.
+
+        Raises RuntimeError if the container errors out or times out.
+        """
+        deadline = time.monotonic() + CONTAINER_POLL_MAX_WAIT
+        while time.monotonic() < deadline:
+            resp = requests.get(
+                f"{GRAPH_API_BASE}/{container_id}",
+                params={
+                    "fields": "status_code,status",
+                    "access_token": self.access_token,
+                },
+                timeout=TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            status_code = data.get("status_code")
+
+            if status_code == "FINISHED":
+                return
+            if status_code == "ERROR":
+                detail = data.get("status", "Unknown error")
+                raise RuntimeError(f"Instagram rejected the media: {detail}")
+
+            time.sleep(CONTAINER_POLL_INTERVAL)
+
+        raise RuntimeError(
+            f"Instagram did not finish processing container {container_id} "
+            f"within {CONTAINER_POLL_MAX_WAIT}s"
+        )
+
     def _publish_media(self, creation_id: str) -> str:
         """Publish a previously created media container and return the media ID."""
+        self._wait_for_container(creation_id)
         resp = requests.post(
             f"{GRAPH_API_BASE}/{self.ig_user_id}/media_publish",
             data={
@@ -329,10 +365,11 @@ class InstagramTools(Toolkit):
             if len(urls) < 2 or len(urls) > 10:
                 return "A carousel requires between 2 and 10 images."
 
-            # Create individual carousel item containers
+            # Create individual carousel item containers and wait for each
             children_ids = []
             for url in urls:
                 item_id = self._create_media_container(url, is_carousel_item=True)
+                self._wait_for_container(item_id)
                 children_ids.append(item_id)
 
             # Create the carousel container
