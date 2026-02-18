@@ -27,6 +27,10 @@ class BrowserbaseInteractiveTools(BrowserbaseTools):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.register(self.execute_javascript)
+        # Register async variant so execute_javascript works in async context
+        # (FastAPI/uvicorn). The parent registers anavigate_to → "navigate_to"
+        # etc. the same way — the agent picks sync or async based on context.
+        self.register(self.aexecute_javascript, name="execute_javascript")
 
     def execute_javascript(self, script: str) -> str:
         """Execute JavaScript on the current browser page.
@@ -54,9 +58,30 @@ class BrowserbaseInteractiveTools(BrowserbaseTools):
             JSON with the return value of the script, or error details.
         """
         try:
-            if not getattr(self, '_page', None):
+            if not self._page:
                 return json.dumps({"error": "No active browser page. Call navigate_to(url) first."})
             result = self._page.evaluate(script)
+            return json.dumps({"result": str(result) if result is not None else "null"})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    async def aexecute_javascript(self, script: str) -> str:
+        """Execute JavaScript on the current browser page (async).
+
+        Async variant of execute_javascript — used automatically when the agent
+        runs in async context (FastAPI/uvicorn). See execute_javascript for
+        usage patterns and examples.
+
+        Args:
+            script: JavaScript code to execute on the page.
+
+        Returns:
+            JSON with the return value of the script, or error details.
+        """
+        try:
+            if not self._async_page:
+                return json.dumps({"error": "No active browser page. Call navigate_to(url) first."})
+            result = await self._async_page.evaluate(script)
             return json.dumps({"result": str(result) if result is not None else "null"})
         except Exception as e:
             return json.dumps({"error": str(e)})
