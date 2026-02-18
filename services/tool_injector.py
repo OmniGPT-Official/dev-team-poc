@@ -33,10 +33,11 @@ _slack_id_cache: dict[str, str | None] = {}
 def _resolve_user_id(raw_id: str) -> str | None:
     """Return a UUID user_id for *raw_id*.
 
-    If *raw_id* is already a UUID, return it as-is.
-    Otherwise treat it as a Slack user ID, look up the UUID from
-    user_oauth_connections.slack_id (one-time), and cache the result
-    so subsequent calls for the same Slack ID never hit the DB again.
+    Resolution order:
+      1. Already a UUID → return as-is
+      2. Looks like an email → look up via Supabase auth admin
+      3. Otherwise → treat as Slack user ID, look up from user_oauth_connections
+    Results are cached in-memory after the first DB hit.
     """
     if _UUID_RE.match(raw_id):
         return raw_id
@@ -45,10 +46,27 @@ def _resolve_user_id(raw_id: str) -> str | None:
     if raw_id in _slack_id_cache:
         cached = _slack_id_cache[raw_id]
         if cached:
-            print(f"[pre-hook] Slack ID {raw_id!r} → cached UUID {cached!r}")
+            print(f"[pre-hook] {raw_id!r} → cached UUID {cached!r}")
         return cached
 
-    # One-time DB lookup
+    # Email lookup via Supabase auth admin
+    if "@" in raw_id:
+        print(f"[pre-hook] {raw_id!r} looks like email, looking up UUID via auth admin...")
+        try:
+            from services.oauth_store import get_supabase_client
+            response = get_supabase_client().auth.admin.get_user_by_email(raw_id)
+            if response and response.user:
+                uuid = response.user.id
+                _slack_id_cache[raw_id] = uuid
+                print(f"[pre-hook] Resolved email {raw_id!r} → {uuid!r} (cached)")
+                return uuid
+        except Exception as e:
+            print(f"[pre-hook] email lookup failed: {e}")
+        _slack_id_cache[raw_id] = None
+        print(f"[pre-hook] No user found for email {raw_id!r}, skipping tool injection")
+        return None
+
+    # Slack ID lookup
     print(f"[pre-hook] {raw_id!r} is not a UUID, looking up via slack_id...")
     try:
         from services.oauth_store import get_supabase_client
