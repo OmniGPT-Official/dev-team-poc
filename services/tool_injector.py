@@ -107,12 +107,7 @@ def make_tool_hook(*provider_names: str):
                   f"Ensure user_id is passed when running agents/workflows.")
             return
 
-        # Resolve Slack IDs to UUIDs (cached after first lookup)
-        user_id = _resolve_user_id(user_id)
-        if not user_id:
-            return
-
-        # Resolve Slack IDs to UUIDs (cached after first lookup)
+        # Resolve emails / Slack IDs to UUIDs (cached after first lookup)
         user_id = _resolve_user_id(user_id)
         if not user_id:
             return
