@@ -14,7 +14,7 @@ Architecture: Single Agent + WorkflowTools
 from agno.agent import Agent
 from agno.workflow import Workflow, Step
 from agno.tools.workflow import WorkflowTools
-from agno.models.google import Gemini
+from agno.models.moonshot import MoonShot
 from agents.calling_agents import (
     lead_reader_agent,
     calling_coordinator_agent,
@@ -24,7 +24,7 @@ from services.tool_injector import inject_user_tools
 from db import db
 
 # Cost-effective model for POC
-MODEL = Gemini(id="gemini-3-flash-preview")
+MODEL = MoonShot(id="kimi-k2.5", extra_body={"thinking": {"type": "disabled"}})
 
 
 # ─────────────────────────────────────────────────────────────────────────
