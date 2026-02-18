@@ -18,8 +18,9 @@ from agno.tools import Toolkit
 class GenericJobBoardTools(Toolkit):
     """Agent-facing tools for multi-platform job posting."""
 
-    def __init__(self):
+    def __init__(self, user_id: str | None = None):
         super().__init__(name="generic_job_boards")
+        self.user_id = user_id
         self.register(self.list_job_boards)
         self.register(self.check_job_board_setup)
         self.register(self.post_job_to_board)
@@ -39,13 +40,14 @@ class GenericJobBoardTools(Toolkit):
 
         boards = []
         for board_id, board in BOARD_REGISTRY.items():
-            cred_check = board.check_credentials()
+            cred_check = board.check_credentials(self.user_id)
             boards.append({
                 "id": board_id,
                 "name": board.name,
                 "country": board.country,
                 "status": "ready" if cred_check["configured"] else "missing_credentials",
                 "missing_env_vars": cred_check["missing"],
+                "credential_source": cred_check.get("source", "env_vars"),
             })
 
         if not boards:
@@ -79,24 +81,25 @@ class GenericJobBoardTools(Toolkit):
                 ),
             })
 
-        cred_check = board.check_credentials()
+        cred_check = board.check_credentials(self.user_id)
 
         if cred_check["configured"]:
+            source = cred_check.get("source", "env_vars")
             return json.dumps({
                 "board_id": board_id,
                 "name": board.name,
                 "status": "ready",
+                "credential_source": source,
                 "message": f"{board.name} is fully configured and ready to post.",
             })
 
         missing = cred_check["missing"]
+        # Guide user to save credentials via the Credentials Manager agent
         instructions = (
-            f"{board.name} needs the following env vars added in Railway:\n"
-            + "\n".join(f"  - {v}" for v in missing)
-            + "\n\nTo add them:\n"
-            "  1. Go to Railway → your project → Variables\n"
-            "  2. Add each variable above\n"
-            "  3. Railway will auto-redeploy — posting will work immediately after."
+            f"{board.name} credentials are not set up yet.\n\n"
+            "To set them up, tell me:\n"
+            "  'Save my Indeed credentials' and provide your Indeed email and Gmail App Password.\n\n"
+            "I'll store them securely so you never need to do this again."
         )
 
         return json.dumps({
@@ -153,7 +156,7 @@ class GenericJobBoardTools(Toolkit):
             })
 
         # Credential check before attempting to post
-        cred_check = board.check_credentials()
+        cred_check = board.check_credentials(self.user_id)
         if not cred_check["configured"]:
             missing = cred_check["missing"]
             return json.dumps({
@@ -163,10 +166,13 @@ class GenericJobBoardTools(Toolkit):
                 "name": board.name,
                 "missing_env_vars": missing,
                 "message": (
-                    f"{board.name} needs these Railway env vars before I can post:\n"
-                    + "\n".join(f"  - {v}" for v in missing)
+                    f"Credentials for {board.name} are not set up yet. "
+                    "Tell me your Indeed email and Gmail App Password and I'll save them for you."
                 ),
             })
+
+        # Fetch user credentials to pass to the board plugin
+        credentials = board.get_user_credentials(self.user_id)
 
         job_data = {
             "title": title,
@@ -203,8 +209,8 @@ class GenericJobBoardTools(Toolkit):
                     )
                     page = await context.new_page()
                     try:
-                        await board.login(page)
-                        result = await board.post_job(page, job_data)
+                        await board.login(page, credentials)
+                        result = await board.post_job(page, job_data, credentials)
                         return result
                     finally:
                         await browser.close()

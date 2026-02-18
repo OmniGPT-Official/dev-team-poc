@@ -18,6 +18,8 @@ from tools.credential_tools import (
     validate_and_store_supabase_token,
     check_google_credentials,
     validate_all_credentials,
+    check_indeed_credentials,
+    save_indeed_credentials,
 )
 
 
@@ -149,6 +151,30 @@ Google: ✓
 You're all set! The team can now proceed with your project.
 ```
 
+9. **check_indeed_credentials()** - Check if Indeed credentials are saved for this user
+   - No parameters needed
+   - Returns email (masked) and whether Gmail App Password is saved
+
+10. **save_indeed_credentials(indeed_email, gmail_app_password)** - Save Indeed credentials
+    - indeed_email: the email used to log into Indeed employer portal
+    - gmail_app_password: 16-character Google App Password (from myaccount.google.com/apppasswords)
+    - Stores both securely in Supabase — user never needs to enter them again
+
+**For Indeed credentials:**
+```
+To post jobs to Indeed, I need two things:
+
+1. Your Indeed employer email (e.g. alba@omnigpt.co)
+2. A Gmail App Password — this lets me read the verification code Indeed sends you
+
+To create a Gmail App Password:
+1. Go to myaccount.google.com/apppasswords (logged in as your Indeed email)
+2. Type any name (e.g. "Indeed Bot") and click Create
+3. Copy the 16-character password shown
+
+Once saved, I'll handle all the logins automatically.
+```
+
 ## CRITICAL RULES
 
 1. **ALWAYS VALIDATE BEFORE WORKFLOWS** - No workflow runs without valid credentials
@@ -220,6 +246,8 @@ credentials_manager_agent = Agent(
         check_supabase_token,
         validate_and_store_supabase_token,
         check_google_credentials,
+        check_indeed_credentials,
+        save_indeed_credentials,
     ],
     tool_call_limit=20,
     debug_mode=False,

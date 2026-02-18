@@ -1,11 +1,12 @@
 """Indeed Thailand job board plugin.
 
-Wraps the existing IndeedBrowserPosterTools from browser_posting_tools.py.
+Credentials lookup order:
+  1. Supabase (per-user) — stored via Credentials Manager agent
+  2. Env vars fallback   — INDEED_EMAIL + GMAIL_APP_PASSWORD
 """
 
 from __future__ import annotations
 
-import asyncio
 import os
 
 from tools.job_boards import JobBoardBase, register_board
@@ -18,20 +19,31 @@ class IndeedTH(JobBoardBase):
     country = "TH"
     required_env_vars = ["INDEED_EMAIL", "GMAIL_APP_PASSWORD"]
 
-    async def login(self, page) -> None:
-        """Delegates to the shared _indeed_login helper."""
+    # Maps internal key → Supabase provider name in user_api_keys table
+    credential_keys = {
+        "email": "indeed_email",
+        "gmail_app_password": "gmail_app_password",
+    }
+
+    def _resolve(self, credentials: dict) -> tuple[str, str]:
+        """Return (email, gmail_app_password) from Supabase or env var fallback."""
+        email = credentials.get("email") or os.getenv("INDEED_EMAIL", "")
+        gmail_app_pw = credentials.get("gmail_app_password") or os.getenv("GMAIL_APP_PASSWORD", "")
+        return email, gmail_app_pw
+
+    async def login(self, page, credentials: dict) -> None:
         from tools.browser_posting_tools import _indeed_login
-        email = os.getenv("INDEED_EMAIL", "")
+        email, _ = self._resolve(credentials)
         password = os.getenv("INDEED_PASSWORD", "")
         await _indeed_login(page, email, password)
 
-    async def post_job(self, page, job_data: dict) -> dict:
-        """Post a job using the existing IndeedBrowserPosterTools logic."""
-        from tools.browser_posting_tools import IndeedBrowserPosterTools
+    async def post_job(self, page, job_data: dict, credentials: dict) -> dict:
         import json
+        from tools.browser_posting_tools import IndeedBrowserPosterTools
 
+        email, _ = self._resolve(credentials)
         poster = IndeedBrowserPosterTools(
-            email=os.getenv("INDEED_EMAIL", ""),
+            email=email,
             password=os.getenv("INDEED_PASSWORD", ""),
         )
         result_json = poster.post_job_to_indeed(
