@@ -214,11 +214,10 @@ def _job_boards(user_id: str):
 
 @register("smart_browser")
 def _smart_browser(user_id: str):
-    """Browserbase managed browser — residential IPs, Cloudflare bypass, full interaction.
+    """Browserbase managed browser with full page interaction.
 
-    Railway env vars needed:
-      BROWSERBASE_API_KEY      — from browserbase.com/settings
-      BROWSERBASE_PROJECT_ID   — from browserbase.com/settings
+    Provides: navigate_to, get_page_content, screenshot, close_session, execute_javascript
+    Requires: BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID env vars in Railway.
     """
     import os
     api_key = os.getenv("BROWSERBASE_API_KEY", "")
@@ -226,9 +225,9 @@ def _smart_browser(user_id: str):
     if not api_key or not project_id:
         print(f"[tool_providers] BROWSERBASE_API_KEY or BROWSERBASE_PROJECT_ID not set — smart_browser disabled")
         return None
-    from agno.tools.browserbase import BrowserbaseTools
-    print(f"[tool_providers] BrowserbaseTools for user {user_id!r}")
-    return BrowserbaseTools()
+    from tools.browserbase_tools import BrowserbaseInteractiveTools
+    print(f"[tool_providers] BrowserbaseInteractiveTools for user {user_id!r}")
+    return BrowserbaseInteractiveTools()
 
 
 @register("job_feeds")
