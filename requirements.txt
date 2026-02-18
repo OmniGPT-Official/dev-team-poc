@@ -21,5 +21,6 @@ psycopg2-binary
 pgvector
 supabase
 elevenlabs
+browserbase
 playwright>=1.40.0
 slack-sdk  # Slack interface for AgentOS

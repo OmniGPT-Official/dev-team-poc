@@ -233,15 +233,20 @@ def _job_boards(user_id: str):
 
 @register("smart_browser")
 def _smart_browser(user_id: str):
-    """AI-vision browser — navigates any website on behalf of the user.
+    """Browserbase managed browser with full page interaction.
 
-    No credentials required to register this provider; the browser loads
-    per-user session cookies from Supabase automatically at runtime.
+    Provides: navigate_to, get_page_content, screenshot, close_session, execute_javascript
+    Requires: BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID env vars in Railway.
     """
-    from tools.smart_browser_tools import SmartBrowserTools
-
-    print(f"[tool_providers] SmartBrowserTools for user {user_id!r}")
-    return SmartBrowserTools(user_id=user_id)
+    import os
+    api_key = os.getenv("BROWSERBASE_API_KEY", "")
+    project_id = os.getenv("BROWSERBASE_PROJECT_ID", "")
+    if not api_key or not project_id:
+        print(f"[tool_providers] BROWSERBASE_API_KEY or BROWSERBASE_PROJECT_ID not set — smart_browser disabled")
+        return None
+    from tools.browserbase_tools import BrowserbaseInteractiveTools
+    print(f"[tool_providers] BrowserbaseInteractiveTools for user {user_id!r}")
+    return BrowserbaseInteractiveTools()
 
 
 @register("job_feeds")
