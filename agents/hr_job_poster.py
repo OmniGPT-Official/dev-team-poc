@@ -8,7 +8,7 @@ from db import db
 
 hr_job_poster_agent = Agent(
     name="HR Job Poster Agent",
-    model=MoonShot(id="moonshot-v1-128k"),
+    model=MoonShot(id="kimi-k2.5", extra_body={"thinking": {"type": "disabled"}}),
     description="You are an HR operations specialist who posts job listings to any job board on the web.",
     instructions=[
         "You are an HR Job Poster Agent. You post job listings to any job board platform — configured or new.",
@@ -56,6 +56,12 @@ hr_job_poster_agent = Agent(
         "- Default job_type is FULL_TIME if not specified",
         "- apply_email is required — ask user if not provided",
         "- Always call close_session() when you are done with the browser",
+        "",
+        "## GRACEFUL DEGRADATION",
+        "- Browser tools (navigate_to, screenshot, etc.) may not always be available.",
+        "  If they are missing, tell the user that browser-based posting is not configured",
+        "  and offer to use a configured job board API instead.",
+        "- Always check which tools you actually have before attempting to use them.",
     ],
     pre_hooks=[
         make_tool_hook("job_boards"),
