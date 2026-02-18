@@ -124,6 +124,7 @@ class DynamicNanoBananaTools(NanoBananaTools):
             logger.error(f"NanoBanana image generation failed: {exc}")
             return ToolResult(content=f"Error generating image: {str(exc)}")
 
+from services.tool_injector import make_tool_hook
 from db import db
 
 # Setup Content Creation Team agents
@@ -251,6 +252,7 @@ content_creation_team = Team(
     db=db,
     members=[content_strategist, content_writer],
     tools=[DynamicNanoBananaTools(model="gemini-3-pro-image-preview")],
+    pre_hooks=[make_tool_hook("instagram")],
     send_media_to_model=True,
     instructions=[
         "You are the leader of a Content Creation Team.",
@@ -299,11 +301,15 @@ content_creation_team = Team(
         "Do NOT use placeholder descriptions like '[Image: ...]' — actually call the image generation tool for every single visual.",
         "If the project has 10 slides, generate 10 images. No exceptions.",
         "",
-        "## PHASE 8 — Delivery",
+        "## PHASE 8 — Delivery & Publishing",
         "Package everything and deliver the final content with:",
         "- All generated images (already attached from PHASE 7 — do NOT re-link or write markdown image syntax)",
         "- Corresponding captions/copy next to each image",
         "- Any additional notes or recommendations",
+        "",
+        "If the user wants to post to Instagram, use the post_image or post_carousel tools.",
+        "If Instagram is not connected, use connect_instagram to get the authorization link.",
+        "Always confirm with the user before publishing to Instagram.",
         "",
         "## Premature Image Generation Guardrail",
         "If a user asks to 'just make an image' or 'generate an image' immediately without context:",
