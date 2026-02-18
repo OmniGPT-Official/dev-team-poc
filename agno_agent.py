@@ -54,7 +54,7 @@ from instagram_agent import instagram_agent  # Instagram Agent (OAuth-enabled)
 agent_os = AgentOS(
     name="Agent OS",
     interfaces=[
-        Slack(team=product_team),
+        Slack(agent=software_engineer_agent),
     ],
     agents=[
         credentials_manager_agent,  # Credentials Manager (validates tokens before workflows)
