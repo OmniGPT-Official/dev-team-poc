@@ -9,15 +9,18 @@ Usage::
         pre_hooks=[make_tool_hook("google_sheets", "google_gmail")],
     )
 
-Each agent declares only the providers it needs.  Static tools defined at
-agent init time are preserved across runs.
+    team = Team(
+        ...
+        pre_hooks=[make_tool_hook("instagram")],
+    )
+
+Each agent/team declares only the providers it needs.  Static tools defined
+at init time are preserved across runs.
 """
 
 from __future__ import annotations
 
 import re
-
-from agno.agent import Agent
 
 from services.tool_providers import resolve_tools
 
@@ -73,12 +76,20 @@ def _resolve_user_id(raw_id: str) -> str | None:
 def make_tool_hook(*provider_names: str):
     """Return a pre-hook that injects only the requested providers.
 
-    Static tools (those already on the agent before the first hook run) are
+    Works with both Agent and Team pre-hooks.  Agno passes ``agent=self``
+    for Agent hooks and ``team=self`` for Team hooks — we accept both.
+
+    Static tools (those already on the target before the first hook run) are
     snapshotted and prepended on every subsequent run so they are never lost.
     """
 
-    def _hook(agent: Agent, user_id: str) -> None:
-        print(f"[pre-hook] make_tool_hook({provider_names}) called for {agent.name} — user_id={user_id!r}")
+    def _hook(agent=None, team=None, user_id: str = "") -> None:
+        target = agent or team
+        if target is None:
+            print("[pre-hook] WARNING: Neither agent nor team provided to hook, skipping")
+            return
+
+        print(f"[pre-hook] make_tool_hook({provider_names}) called for {target.name} — user_id={user_id!r}")
         if not user_id:
             # Fallback: workflow step agents don't receive user_id directly from Agno.
             # Read from the context variable set by the HTTP middleware for this request.
@@ -87,7 +98,7 @@ def make_tool_hook(*provider_names: str):
             if user_id:
                 print(f"[pre-hook] Resolved user_id from request context: {user_id!r}")
             else:
-                print(f"[pre-hook] WARNING: No user_id for {agent.name} — tools cannot be injected. "
+                print(f"[pre-hook] WARNING: No user_id for {target.name} — tools cannot be injected. "
                       f"Ensure user_id is passed when running agents/workflows.")
                 return
 
@@ -97,19 +108,19 @@ def make_tool_hook(*provider_names: str):
             return
 
         # Snapshot static tools on first invocation.
-        # TODO(production): This monkey-patches _static_tools onto the Agent instance.
+        # TODO(production): This monkey-patches _static_tools onto the instance.
         # For production, move the snapshot into the closure (nonlocal) or use a more
         # unique attribute name (e.g. _omnigpt_static_tools) to avoid potential
         # collisions with future Agno internals.
-        if not hasattr(agent, "_static_tools"):
-            agent._static_tools = list(agent.tools or [])
+        if not hasattr(target, "_static_tools"):
+            target._static_tools = list(target.tools or [])
 
         user_tools = resolve_tools(user_id, *provider_names)
-        combined = agent._static_tools + user_tools
+        combined = target._static_tools + user_tools
 
         print(f"[pre-hook] Injecting {len(user_tools)} user tool(s): {[type(t).__name__ for t in user_tools]} "
-              f"(+ {len(agent._static_tools)} static)")
-        agent.set_tools(combined)
+              f"(+ {len(target._static_tools)} static)")
+        target.set_tools(combined)
 
     return _hook
 

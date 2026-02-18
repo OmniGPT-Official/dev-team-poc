@@ -93,3 +93,9 @@ output/
 
 # Dev files
 dev_files/
+
+# Auth tokens
+.token
+
+# Supabase temp files
+supabase/.temp/
