@@ -9,14 +9,14 @@ Uses custom ElevenLabsBatchCallingTools toolkit for API access.
 """
 
 from agno.agent import Agent
-from agno.models.google import Gemini
+from agno.models.moonshot import MoonShot
 from tools.elevenlabs_batch_calling import ElevenLabsBatchCallingTools
 from services.tool_injector import make_tool_hook
 from db import db
 
 # Use Gemini 3 Flash Preview for cost-effective POC testing
 # Cost: ~$0.19 per million tokens vs ~$9 for Claude Sonnet 4.5
-MODEL = Gemini(id="gemini-3-flash-preview")
+MODEL = MoonShot(id="kimi-k2.5", extra_body={"thinking": {"type": "disabled"}})
 
 
 # Lead Reader Agent - Reads and filters leads from Google Sheets
