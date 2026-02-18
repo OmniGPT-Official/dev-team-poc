@@ -216,12 +216,26 @@ def _job_boards(user_id: str):
 def _smart_browser(user_id: str):
     """AI-vision browser — navigates any website on behalf of the user.
 
-    No credentials required to register this provider; the browser loads
-    per-user session cookies from Supabase automatically at runtime.
-    """
-    from tools.smart_browser_tools import SmartBrowserTools
+    Uses Browserbase when BROWSERBASE_API_KEY + BROWSERBASE_PROJECT_ID are set
+    (managed residential-IP browser, bypasses Cloudflare automatically).
+    Falls back to custom SmartBrowserTools otherwise.
 
-    print(f"[tool_providers] SmartBrowserTools for user {user_id!r}")
+    Railway env vars needed:
+      BROWSERBASE_API_KEY      — from browserbase.com/settings
+      BROWSERBASE_PROJECT_ID   — from browserbase.com/settings
+    """
+    import os
+    api_key = os.getenv("BROWSERBASE_API_KEY", "")
+    project_id = os.getenv("BROWSERBASE_PROJECT_ID", "")
+
+    if api_key and project_id:
+        from agno.tools.browserbase import BrowserbaseTools
+        print(f"[tool_providers] BrowserbaseTools for user {user_id!r}")
+        return BrowserbaseTools()
+
+    # Fallback: custom vision browser (works locally, may hit Cloudflare on Railway)
+    from tools.smart_browser_tools import SmartBrowserTools
+    print(f"[tool_providers] SmartBrowserTools (fallback) for user {user_id!r}")
     return SmartBrowserTools(user_id=user_id)
 
 
