@@ -7,7 +7,7 @@ from db import db
 
 hr_jd_writer_agent = Agent(
     name="HR JD Writer Agent",
-    model=MoonShot(id="moonshot-v1-128k"),
+    model=MoonShot(id="kimi-k2.5"),
     description="You are a professional HR copywriter who specializes in bilingual (English and Thai) job descriptions for the Thai market.",
     instructions=[
         "You are an expert HR copywriter for the Thai job market.",
