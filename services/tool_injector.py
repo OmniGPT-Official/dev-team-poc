@@ -103,9 +103,16 @@ def make_tool_hook(*provider_names: str):
     def _hook(agent: Agent, user_id: str) -> None:
         print(f"[pre-hook] make_tool_hook({provider_names}) called for {agent.name} — user_id={user_id!r}")
         if not user_id:
-            print(f"[pre-hook] WARNING: No user_id for {agent.name} — tools cannot be injected. "
-                  f"Ensure user_id is passed when running agents/workflows.")
-            return
+            # Fallback: workflow step agents don't receive user_id directly from Agno.
+            # Read from the context variable set by the HTTP middleware for this request.
+            from services.user_context import get_current_user_id
+            user_id = get_current_user_id() or ""
+            if user_id:
+                print(f"[pre-hook] Resolved user_id from request context: {user_id!r}")
+            else:
+                print(f"[pre-hook] WARNING: No user_id for {agent.name} — tools cannot be injected. "
+                      f"Ensure user_id is passed when running agents/workflows.")
+                return
 
         # Resolve Slack IDs to UUIDs (cached after first lookup)
         user_id = _resolve_user_id(user_id)
