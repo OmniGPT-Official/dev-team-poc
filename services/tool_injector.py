@@ -85,7 +85,8 @@ def make_tool_hook(*provider_names: str):
     def _hook(agent: Agent, user_id: str) -> None:
         print(f"[pre-hook] make_tool_hook({provider_names}) called for {agent.name} — user_id={user_id!r}")
         if not user_id:
-            print("[pre-hook] No user_id, skipping tool injection")
+            print(f"[pre-hook] WARNING: No user_id for {agent.name} — tools cannot be injected. "
+                  f"Ensure user_id is passed when running agents/workflows.")
             return
 
         # Resolve Slack IDs to UUIDs (cached after first lookup)
