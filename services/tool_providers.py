@@ -242,7 +242,14 @@ def _smart_browser(user_id: str):
     api_key = os.getenv("BROWSERBASE_API_KEY", "")
     project_id = os.getenv("BROWSERBASE_PROJECT_ID", "")
     if not api_key or not project_id:
-        print(f"[tool_providers] BROWSERBASE_API_KEY or BROWSERBASE_PROJECT_ID not set — smart_browser disabled")
+        missing = []
+        if not api_key:
+            missing.append("BROWSERBASE_API_KEY")
+        if not project_id:
+            missing.append("BROWSERBASE_PROJECT_ID")
+        print(f"[tool_providers] smart_browser disabled — missing env var(s): {', '.join(missing)}. "
+              f"Set these in Railway to enable managed browser for job posting. "
+              f"The agent will still work using configured job board APIs.")
         return None
     from tools.browserbase_tools import BrowserbaseInteractiveTools
     print(f"[tool_providers] BrowserbaseInteractiveTools for user {user_id!r}")

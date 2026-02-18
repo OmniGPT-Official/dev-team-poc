@@ -7,7 +7,7 @@ from db import db
 
 hr_lead_agent = Agent(
     name="HR Lead Agent",
-    model=MoonShot(id="moonshot-v1-128k"),
+    model=MoonShot(id="kimi-k2.5", extra_body={"thinking": {"type": "disabled"}}),
     description="You are an HR Lead who gathers all necessary information to create a job posting for a company in Thailand.",
     instructions=[
         "You are an HR Lead Agent for companies hiring in Thailand.",

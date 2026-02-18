@@ -38,6 +38,7 @@ from agents.calling_agents import (
 from campaign_manager import campaign_manager  # Pattern 1: Single Agent + Workflow
 from agno_pai.factory import factory_agent  # Agno PAI Factory (meta-agent)
 from teams.hr_team import hr_team  # HR Team (internal agents not exposed standalone)
+from workflows.hr_workflow import hr_workflow  # HR Hiring Pipeline (3-step workflow)
 from instagram_agent import instagram_agent  # Instagram Agent (OAuth-enabled)
 
 # Initialize Agent OS with Enhanced Tracing
@@ -89,6 +90,7 @@ agent_os = AgentOS(
         outbound_calling_workflow,  # Outbound Calling Campaign (full with ElevenLabs)
         simple_calling_workflow,  # Outbound Calling Campaign (simple test version)
         outbound_calling_test_workflow,  # Outbound Calling Test (OAuth, first iteration)
+        hr_workflow,  # HR Hiring Pipeline (3-step: gather requirements, write JD, post job)
     ],
     tracing=True,  # Enable built-in OpenTelemetry tracing
 )
