@@ -26,8 +26,8 @@ _UUID_RE = re.compile(
     re.IGNORECASE,
 )
 
-# In-memory cache: slack_id → user_uuid (persists for process lifetime)
-_slack_id_cache: dict[str, str | None] = {}
+# In-memory cache: email → user_uuid (persists for process lifetime)
+_id_cache: dict[str, str | None] = {}
 
 
 def _resolve_user_id(raw_id: str) -> str | None:
@@ -36,15 +36,14 @@ def _resolve_user_id(raw_id: str) -> str | None:
     Resolution order:
       1. Already a UUID → return as-is
       2. Looks like an email → look up via Supabase auth admin
-      3. Otherwise → treat as Slack user ID, look up from user_oauth_connections
     Results are cached in-memory after the first DB hit.
     """
     if _UUID_RE.match(raw_id):
         return raw_id
 
     # Check cache first
-    if raw_id in _slack_id_cache:
-        cached = _slack_id_cache[raw_id]
+    if raw_id in _id_cache:
+        cached = _id_cache[raw_id]
         if cached:
             print(f"[pre-hook] {raw_id!r} → cached UUID {cached!r}")
         return cached
@@ -57,40 +56,18 @@ def _resolve_user_id(raw_id: str) -> str | None:
             response = get_supabase_client().auth.admin.get_user_by_email(raw_id)
             if response and response.user:
                 uuid = response.user.id
-                _slack_id_cache[raw_id] = uuid
+                _id_cache[raw_id] = uuid
                 print(f"[pre-hook] Resolved email {raw_id!r} → {uuid!r} (cached)")
                 return uuid
         except Exception as e:
             print(f"[pre-hook] email lookup failed: {e}")
-        _slack_id_cache[raw_id] = None
+        _id_cache[raw_id] = None
         print(f"[pre-hook] No user found for email {raw_id!r}, skipping tool injection")
         return None
 
-    # Slack ID lookup
-    print(f"[pre-hook] {raw_id!r} is not a UUID, looking up via slack_id...")
-    try:
-        from services.oauth_store import get_supabase_client
-
-        result = (
-            get_supabase_client()
-            .table("user_oauth_connections")
-            .select("user_id")
-            .eq("slack_id", raw_id)
-            .limit(1)
-            .execute()
-        )
-        if result.data:
-            uuid = result.data[0]["user_id"]
-            _slack_id_cache[raw_id] = uuid
-            print(f"[pre-hook] Resolved slack_id {raw_id!r} → {uuid!r} (cached)")
-            return uuid
-        else:
-            _slack_id_cache[raw_id] = None
-            print(f"[pre-hook] No user found for slack_id {raw_id!r}, skipping tool injection")
-            return None
-    except Exception as e:
-        print(f"[pre-hook] slack_id lookup failed: {e}")
-        return None
+    # Unknown format — cannot resolve
+    print(f"[pre-hook] {raw_id!r} is not a UUID or email, skipping tool injection")
+    return None
 
 
 def make_tool_hook(*provider_names: str):
@@ -114,7 +91,7 @@ def make_tool_hook(*provider_names: str):
                       f"Ensure user_id is passed when running agents/workflows.")
                 return
 
-        # Resolve emails / Slack IDs to UUIDs (cached after first lookup)
+        # Resolve emails to UUIDs (cached after first lookup)
         user_id = _resolve_user_id(user_id)
         if not user_id:
             return
