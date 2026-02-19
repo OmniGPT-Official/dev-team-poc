@@ -91,11 +91,24 @@ class ElevenLabsBatchCallingTools(Toolkit):
 
         try:
             url = f"{self.base_url}/convai/batch-calling/submit"
+
+            # ElevenLabs API requires: { phone_number, conversation_initiation_client_data: { dynamic_variables: {...} } }
+            # Agents pass flat dicts like { phone_number, restaurant_name, city } — transform here.
+            formatted_recipients = []
+            for r in recipients:
+                recipient: Dict[str, Any] = {"phone_number": r["phone_number"]}
+                dynamic_vars = {k: v for k, v in r.items() if k != "phone_number"}
+                if dynamic_vars:
+                    recipient["conversation_initiation_client_data"] = {
+                        "dynamic_variables": dynamic_vars
+                    }
+                formatted_recipients.append(recipient)
+
             payload = {
                 "call_name": campaign_name,
                 "agent_id": self.agent_id,
                 "agent_phone_number_id": self.phone_number_id,
-                "recipients": recipients
+                "recipients": formatted_recipients
             }
 
             response = requests.post(url, headers=self._get_headers(), json=payload, timeout=30)
