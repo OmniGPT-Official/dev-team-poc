@@ -2,6 +2,8 @@
   "name": "agent-os",
   "private": true,
   "dependencies": {
-    "@modelcontextprotocol/server-github": "latest"
+    "@modelcontextprotocol/server-github": "latest",
+    "dotenv": "^8.2.0",
+    "node-fetch": "^3.3.2"
   }
 }

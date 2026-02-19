@@ -731,9 +731,28 @@ Repository: https://github.com/{_state.github_owner}/{_state.github_repo}
 4. Owner: "{_state.github_owner}", Repo: "{_state.github_repo}", Branch: "main"
 5. Use conventional commit messages per file: "feat: add <filename>"
 6. All Supabase env vars must reference environment variables (process.env.NEXT_PUBLIC_SUPABASE_URL etc.) — never hardcode values
-7. Include a comprehensive README.md as described in the architecture's README Specification section
 
-Implement the complete project now. List every file you created when done."""
+## ⚠️ MANDATORY: README.md IS A REQUIRED DELIVERABLE — NOT OPTIONAL
+
+You MUST create a comprehensive README.md and push it to the repository root.
+A project without a README is INCOMPLETE. This is non-negotiable.
+
+The README.md MUST include ALL of these sections (refer to the README Specification in the architecture document above for exact details):
+
+1. **Project Title & Description** — project name, one-line tagline, 2-3 sentence description
+2. **Live Demo** — placeholder: `🚀 **Live Demo:** [Vercel URL — add after deployment]`
+3. **Features** — bullet list of EVERY feature from the architecture doc (be specific)
+4. **Tech Stack** — table listing frontend, styling, database, auth, deployment layers
+5. **Project Structure** — annotated directory tree of every folder and key file
+6. **Database Schema** — table for every Supabase table (columns, types, RLS policies) — REQUIRED if Supabase is used
+7. **Environment Variables** — table with variable name, where to get it, required? + copy-paste `.env.local` block
+8. **Getting Started** — step-by-step: clone → install → configure env → run migrations → start dev server
+9. **Deployment** — how to deploy to Vercel, add env vars, note about Supabase requirement
+10. **License** — MIT
+
+Commit the README.md LAST with message: `docs: add comprehensive README`
+
+Implement the complete project now — all code files THEN the README. List every file you created when done."""
 
         user_id = _get_user_id()
         result = _run_with_heartbeat(
@@ -794,6 +813,60 @@ Implement the complete project now. List every file you created when done."""
             _log("⚠️", "DEV", f"Failed to create js/script.js: {res.get('message', '')}")
     else:
         _log("ℹ️", "DEV", "Skipping js/script.js (not needed or too short)")
+
+    # ── README for static HTML/CSS/JS sites ───────────────────────────────────
+    readme_prompt = f"""Create a comprehensive README.md for: {_state.project_name}
+
+Repository: https://github.com/{_state.github_owner}/{_state.github_repo}
+
+Based on this architecture:
+{arch_content[:3000]}
+
+The README.md MUST include ALL of these sections:
+
+1. **Project Title & Description** — project name, one-line tagline, 2-3 sentence description
+2. **Live Demo** — placeholder: `🚀 **Live Demo:** [Vercel URL — add after deployment]`
+3. **Features** — bullet list of EVERY feature from the architecture doc (be specific)
+4. **Tech Stack** — table: Frontend (HTML5/CSS3/JavaScript), Deployment (Vercel)
+5. **Project Structure** — annotated tree:
+   ```
+   /
+   ├── index.html     # Main entry point
+   ├── css/
+   │   └── styles.css # Stylesheet
+   └── js/
+       └── script.js  # JavaScript
+   ```
+6. **Getting Started** — clone repo, open index.html in browser
+7. **Deployment** — deploy to Vercel by importing the GitHub repo
+8. **License** — MIT
+
+Output ONLY the markdown content. Start with # {_state.project_name}"""
+
+    user_id = _get_user_id()
+    readme_result = _run_with_heartbeat(
+        software_engineer_agent.arun(readme_prompt, user_id=user_id), "DEV-README", timeout_seconds=0
+    )
+    if readme_result and readme_result.content:
+        readme_content = readme_result.content.strip()
+        # Strip markdown code fences if agent wrapped it
+        readme_content = re.sub(r'^```(?:markdown)?\s*\n?', '', readme_content)
+        readme_content = re.sub(r'\n?```$', '', readme_content)
+        if len(readme_content) > 100:
+            res = json.loads(gh.create_or_update_file(
+                owner=_state.github_owner, repo=_state.github_repo,
+                path="README.md", content=readme_content,
+                message="docs: add comprehensive README", branch="main",
+            ))
+            if res.get("success"):
+                files_created.append("README.md")
+                _log("✓", "DEV", f"Created README.md ({len(readme_content)} chars)")
+            else:
+                _log("⚠️", "DEV", f"Failed to create README.md: {res.get('message', '')}")
+        else:
+            _log("⚠️", "DEV", "README generation returned too little content")
+    else:
+        _log("⚠️", "DEV", "README generation failed — skipping")
 
     if files_created:
         _log("✅", "DEV", f"Static files created: {', '.join(files_created)}")
