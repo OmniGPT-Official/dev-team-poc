@@ -1,14 +1,16 @@
 """Brand Rebranding Agent - Rebrands product images with new logos and brand colors."""
 
 from agno.agent import Agent
-from agno.models.google import Gemini
+# from agno.models.google import Gemini  # TODO: switch back when Gemini rate limits are resolved
+from agno.models.anthropic import Claude
 from content_creation import DynamicNanoBananaTools
 from services.tool_injector import make_tool_hook
 from db import db
 
 brand_rebranding_agent = Agent(
     name="Brand Rebranding Agent",
-    model=Gemini(id="gemini-3-pro-preview"),
+    # model=Gemini(id="gemini-3-pro-preview"),  # TODO: switch back when Gemini rate limits are resolved
+    model=Claude(id="claude-sonnet-4-5-20250929"),
     description="Rebrands product images by applying new logos and brand colors, and can post results to Instagram.",
     tools=[DynamicNanoBananaTools(model="gemini-3-pro-image-preview")],
     pre_hooks=[make_tool_hook("instagram")],
