@@ -17,7 +17,7 @@ from services.tool_injector import inject_user_tools
 software_engineer_agent = Agent(
     name="Software Engineer Agent",
     role="Implements code, fixes bugs, writes tests, and creates code documentation. Handles version control and follows coding best practices.",
-    model=MoonShot(id="kimi-k2.5", max_tokens=16384, extra_body={"thinking": {"type": "disabled"}}),
+    model=MoonShot(id="kimi-k2.5", max_tokens=16384),
     db=db,
     add_history_to_context=True,
     num_history_messages=20,
