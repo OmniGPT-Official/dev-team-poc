@@ -67,6 +67,7 @@ class ElevenLabsBatchCallingTools(Toolkit):
         - phone_number (required): The phone number to call in E.164 format
         - restaurant_name (optional): Name for personalization
         - city (optional): City for personalization
+        - country (optional): Country for personalization
         - Any other custom fields your ElevenLabs agent uses
 
         Args:
@@ -78,8 +79,8 @@ class ElevenLabsBatchCallingTools(Toolkit):
 
         Example:
             recipients = [
-                {"phone_number": "+1234567890", "restaurant_name": "Joe's Pizza", "city": "NYC"},
-                {"phone_number": "+1987654321", "restaurant_name": "Pasta House", "city": "LA"}
+                {"phone_number": "+1234567890", "restaurant_name": "Joe's Pizza", "city": "NYC", "country": "US"},
+                {"phone_number": "+1987654321", "restaurant_name": "Pasta House", "city": "LA", "country": "US"}
             ]
             result = toolkit.submit_batch_call("US Restaurants", recipients)
         """
@@ -89,13 +90,33 @@ class ElevenLabsBatchCallingTools(Toolkit):
                 "message": "Set ELEVENLABS_AGENT_ID and ELEVENLABS_PHONE_NUMBER_ID env vars"
             }
 
+        # ElevenLabs API requires: { phone_number, conversation_initiation_client_data: { dynamic_variables: {...} } }
+        # Agents pass flat dicts like { phone_number, restaurant_name, city } — transform here.
+        formatted_recipients = []
+        for r in recipients:
+            if "phone_number" not in r:
+                return {
+                    "error": "Invalid recipient",
+                    "message": f"Recipient missing required phone_number field: {r}"
+                }
+            recipient: Dict[str, Any] = {"phone_number": r["phone_number"]}
+            dynamic_vars = {
+                k: v for k, v in r.items()
+                if k != "phone_number" and v is not None and v != ""
+            }
+            if dynamic_vars:
+                recipient["conversation_initiation_client_data"] = {
+                    "dynamic_variables": dynamic_vars
+                }
+            formatted_recipients.append(recipient)
+
         try:
             url = f"{self.base_url}/convai/batch-calling/submit"
             payload = {
                 "call_name": campaign_name,
                 "agent_id": self.agent_id,
                 "agent_phone_number_id": self.phone_number_id,
-                "recipients": recipients
+                "recipients": formatted_recipients
             }
 
             response = requests.post(url, headers=self._get_headers(), json=payload, timeout=30)
@@ -110,11 +131,23 @@ class ElevenLabsBatchCallingTools(Toolkit):
                 "message": f"Batch call submitted successfully with {len(recipients)} recipients"
             }
 
+        except requests.exceptions.HTTPError as e:
+            error_body = None
+            try:
+                error_body = e.response.json()
+            except Exception:
+                error_body = e.response.text
+            return {
+                "error": "Failed to submit batch call",
+                "message": str(e),
+                "status_code": e.response.status_code,
+                "api_error": error_body
+            }
         except requests.exceptions.RequestException as e:
             return {
                 "error": "Failed to submit batch call",
                 "message": str(e),
-                "status_code": getattr(e.response, "status_code", None) if hasattr(e, "response") else None
+                "status_code": None
             }
 
     def get_batch_status(self, batch_id: str) -> Dict[str, Any]:
