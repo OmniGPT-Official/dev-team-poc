@@ -11,6 +11,8 @@ Output: 2 Google Docs URLs (PRD/FS + Architecture/Tech Doc)
 
 import os
 import sys
+import threading
+import contextvars
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -29,6 +31,45 @@ def _log(emoji: str, step: str, msg: str, data: dict = None):
     """Concise logging."""
     print(f"{emoji} [{step}] {msg}")
     log_info(f"[{step}] {msg}")
+
+
+def _run_async(coro):
+    """Run an async coroutine in an isolated thread with its own event loop.
+
+    Using asyncio.run() directly in sync step executors (which are called from
+    within FastAPI's async event loop) closes the current event loop after each
+    call, causing 'Event loop is closed' errors when Agno tries to stream the
+    final Team response back to the SSE client.
+
+    This helper runs the coroutine in a brand-new thread with its own loop so
+    the parent event loop is never touched. contextvars are copied so that
+    context-var-based values (e.g. user_id, project_id) are visible inside.
+    """
+    import asyncio
+
+    result_holder = [None]
+    error_holder = [None]
+    ctx = contextvars.copy_context()
+
+    def _execute():
+        def _run_in_context():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result_holder[0] = loop.run_until_complete(coro)
+            except Exception as e:
+                error_holder[0] = e
+            finally:
+                loop.close()
+        ctx.run(_run_in_context)
+
+    thread = threading.Thread(target=_execute, daemon=True)
+    thread.start()
+    thread.join()
+
+    if error_holder[0]:
+        raise error_holder[0]
+    return result_holder[0]
 
 
 def get_product_lead_agent():
@@ -140,7 +181,6 @@ def create_project_entry_executor(step_input: StepInput) -> StepOutput:
 def create_prd_executor(step_input: StepInput) -> StepOutput:
     """Create PRD: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
-    import asyncio
 
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
@@ -181,7 +221,7 @@ Then continue with all the PRD sections as per your instructions.
 Return ONLY the full PRD content starting with the DOCUMENT HEADER above. Do not include any URLs."""
 
     _log("🤖", "PRD-CREATE", "Phase 1: Generating content via Product Lead...")
-    result = asyncio.run(get_product_lead_agent().arun(description + f"\n\nInput: {step_input.input}", user_id=user_id))
+    result = _run_async(get_product_lead_agent().arun(description + f"\n\nInput: {step_input.input}", user_id=user_id))
     prd_content = result.content if result and result.content else ""
     _log("✅", "PRD-CREATE", f"Phase 1 complete. Content length: {len(prd_content)}")
     _log("📄", "PRD-OUTPUT", f"First 200 chars: {prd_content[:200]}")
@@ -203,7 +243,6 @@ Return ONLY the full PRD content starting with the DOCUMENT HEADER above. Do not
 def create_architecture_executor(step_input: StepInput) -> StepOutput:
     """Create Architecture: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
-    import asyncio
 
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
@@ -254,7 +293,7 @@ Then continue with all architecture sections as per your instructions.
 Return ONLY the full architecture content starting with the DOCUMENT HEADER above. Do not include any URLs."""
 
     _log("🤖", "ARCH-CREATE", "Phase 1: Generating content via Lead Engineer...")
-    result = asyncio.run(get_lead_engineer_agent().arun(description + f"\n\nPRD CONTENT:\n{prev_content}", user_id=user_id))
+    result = _run_async(get_lead_engineer_agent().arun(description + f"\n\nPRD CONTENT:\n{prev_content}", user_id=user_id))
     arch_content = result.content if result and result.content else ""
     _log("✅", "ARCH-CREATE", f"Phase 1 complete. Content length: {len(arch_content)}")
     _log("📄", "ARCH-OUTPUT", f"First 200 chars: {arch_content[:200]}")
@@ -276,7 +315,6 @@ Return ONLY the full architecture content starting with the DOCUMENT HEADER abov
 def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
     """Supervisor validates documents and creates project in database."""
     import re
-    import asyncio
 
     # Get user_id from workflow session
     user_id = None
@@ -342,7 +380,7 @@ def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
 - Use status='in_development' when updating project"""
 
     _log("🤖", "SUPERVISOR", "Calling Supervisor agent...")
-    result = asyncio.run(get_supervisor_agent().arun(description, user_id=user_id))
+    result = _run_async(get_supervisor_agent().arun(description, user_id=user_id))
     output = result.content if result and result.content else ""
     _log("✅", "SUPERVISOR", f"Supervisor completed. Length: {len(output)}")
     _log("📄", "SUPERVISOR-OUTPUT", f"First 200 chars: {output[:200]}")
@@ -603,7 +641,6 @@ def validate_github_repo_executor(step_input: StepInput) -> StepOutput:
 def create_feature_spec_executor(step_input: StepInput) -> StepOutput:
     """Create Feature Spec: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
-    import asyncio
 
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
@@ -652,7 +689,7 @@ Then continue with all Feature Spec sections as per your instructions.
 Return ONLY the full Feature Spec content starting with the DOCUMENT HEADER above. Do not include any URLs."""
 
     _log("🤖", "FEATURE-SPEC-CREATE", "Phase 1: Generating content via Product Lead...")
-    result = asyncio.run(get_product_lead_agent().arun(description, user_id=user_id))
+    result = _run_async(get_product_lead_agent().arun(description, user_id=user_id))
     fs_content = result.content if result and result.content else ""
     _log("✅", "FEATURE-SPEC-CREATE", f"Phase 1 complete. Content length: {len(fs_content)}")
     _log("📄", "FEATURE-SPEC-OUTPUT", f"First 200 chars: {fs_content[:200]}")
@@ -675,7 +712,6 @@ Return ONLY the full Feature Spec content starting with the DOCUMENT HEADER abov
 def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
     """Create Technical Doc: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
-    import asyncio
 
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
@@ -746,7 +782,7 @@ Return ONLY the full technical document content starting with the DOCUMENT HEADE
     full_input += f"\n\nFEATURE SPECIFICATION CONTENT (you MUST address EVERY item below):\n{feature_spec_content}"
 
     _log("🤖", "TECH-DOC-CREATE", "Phase 1: Generating content via Lead Engineer...")
-    result = asyncio.run(get_lead_engineer_agent().arun(full_input, user_id=user_id))
+    result = _run_async(get_lead_engineer_agent().arun(full_input, user_id=user_id))
     tech_doc_content = result.content if result and result.content else ""
     _log("✅", "TECH-DOC-CREATE", f"Phase 1 complete. Content length: {len(tech_doc_content)}")
     _log("📄", "TECH-DOC-OUTPUT", f"First 200 chars: {tech_doc_content[:200]}")
@@ -768,7 +804,6 @@ Return ONLY the full technical document content starting with the DOCUMENT HEADE
 def supervisor_validation_existing_executor(step_input: StepInput) -> StepOutput:
     """Step 5 (Existing): Supervisor validates Feature Spec + Technical Doc and stores in DB."""
     import re
-    import asyncio
 
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
@@ -823,7 +858,7 @@ You are the Supervisor. Validate Feature Spec and Technical Doc, then store them
 """
 
     _log("🤖", "SUPERVISOR", "Calling Supervisor agent (existing)...")
-    result = asyncio.run(get_supervisor_agent().arun(description, user_id=user_id))
+    result = _run_async(get_supervisor_agent().arun(description, user_id=user_id))
     output = result.content if result and result.content else ""
     _log("✅", "SUPERVISOR", f"Supervisor completed. Length: {len(output)}")
     _log("📄", "SUPERVISOR-EXISTING-OUTPUT", f"First 200 chars: {output[:200]}")
