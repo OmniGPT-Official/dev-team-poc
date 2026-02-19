@@ -181,7 +181,6 @@ def create_project_entry_executor(step_input: StepInput) -> StepOutput:
 def create_prd_executor(step_input: StepInput) -> StepOutput:
     """Create PRD: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
-    import asyncio
 
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
@@ -244,7 +243,6 @@ Return ONLY the full PRD content starting with the DOCUMENT HEADER above. Do not
 def create_architecture_executor(step_input: StepInput) -> StepOutput:
     """Create Architecture: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
-    import asyncio
 
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
@@ -317,7 +315,6 @@ Return ONLY the full architecture content starting with the DOCUMENT HEADER abov
 def supervisor_validation_executor(step_input: StepInput) -> StepOutput:
     """Supervisor validates documents and creates project in database."""
     import re
-    import asyncio
 
     # Get user_id from workflow session
     user_id = None
@@ -644,7 +641,6 @@ def validate_github_repo_executor(step_input: StepInput) -> StepOutput:
 def create_feature_spec_executor(step_input: StepInput) -> StepOutput:
     """Create Feature Spec: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
-    import asyncio
 
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
@@ -716,7 +712,6 @@ Return ONLY the full Feature Spec content starting with the DOCUMENT HEADER abov
 def create_technical_doc_executor(step_input: StepInput) -> StepOutput:
     """Create Technical Doc: Phase 1 agent writes content, Phase 2 saves to Google Docs programmatically."""
     import re
-    import asyncio
 
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
@@ -809,7 +804,6 @@ Return ONLY the full technical document content starting with the DOCUMENT HEADE
 def supervisor_validation_existing_executor(step_input: StepInput) -> StepOutput:
     """Step 5 (Existing): Supervisor validates Feature Spec + Technical Doc and stores in DB."""
     import re
-    import asyncio
 
     user_id = None
     if step_input.workflow_session and hasattr(step_input.workflow_session, 'user_id'):
