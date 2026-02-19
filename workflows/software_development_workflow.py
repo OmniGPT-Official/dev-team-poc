@@ -65,6 +65,7 @@ class ImplementationState:
         self.architecture_content = ""
         self.is_existing_repo = False  # True when working with an existing repo
         self.user_id = ""  # Per-user credential lookup
+        self.deploy_url = ""  # Vercel deployment URL (set after deployment)
 
 
 _state = ImplementationState()
@@ -947,6 +948,8 @@ def validate_deployment_link(step_input: StepInput) -> StepOutput:
         _log("⚠️", "VALIDATE_DEPLOY", "Could not extract Vercel URL from deployment response")
         return StepOutput(content="WARNING: Deployment completed but URL not extracted", success=True)
 
+    # Persist URL into state so later steps (README update, summary) can use it reliably
+    _state.deploy_url = deploy_url
     _log("🔍", "VALIDATE_DEPLOY", f"Supervisor validating deployment: {deploy_url}")
 
     # Store deployment link in project database
@@ -972,8 +975,151 @@ def validate_deployment_link(step_input: StepInput) -> StepOutput:
         return StepOutput(content=f"ERROR: Validation failed: {e}", success=False)
 
 
+def update_readme_with_deploy_url(step_input: StepInput) -> StepOutput:
+    """Commit the live Vercel URL into README.md.
+
+    Two purposes:
+    1. Adds the real live demo link to README so visitors can find the site.
+    2. The commit triggers Vercel's GitHub webhook — acts as a guaranteed
+       redeploy if the initial deployment step was missed or failed silently.
+    """
+    global _state
+    import json as _json
+
+    # Prefer URL already saved in state; fall back to scanning previous step output
+    deploy_url = _state.deploy_url
+    if not deploy_url:
+        prev = step_input.previous_step_content or ""
+        url_match = re.search(r'https://[^\s]+vercel\.app[^\s]*', prev)
+        deploy_url = url_match.group(0).rstrip('.,)') if url_match else ""
+
+    if not deploy_url:
+        _log("⚠️", "README_UPDATE", "No deploy URL available — skipping README update")
+        return StepOutput(content="Skipped README update (no deploy URL found)", success=True)
+
+    _log("📝", "README_UPDATE", f"Patching README with deploy URL: {deploy_url}")
+
+    gh = _get_github_tools()
+
+    # ── 1. Read existing README ──────────────────────────────────────────────
+    readme_content = ""
+    try:
+        raw = _json.loads(gh.get_file_contents(
+            owner=_state.github_owner,
+            repo=_state.github_repo,
+            path="README.md",
+        ))
+        if isinstance(raw, dict) and raw.get("content"):
+            readme_content = raw["content"]
+            _log("📄", "README_UPDATE", f"Read README ({len(readme_content)} chars)")
+    except Exception as e:
+        _log("⚠️", "README_UPDATE", f"Could not read README: {e}")
+
+    # ── 2. Patch the URL ─────────────────────────────────────────────────────
+    new_readme = readme_content
+
+    if readme_content:
+        # Replace common placeholder patterns left by the Software Engineer
+        placeholder_patterns = [
+            r'https?://[^\s\]]+vercel\.app[^\s\]]*',   # existing Vercel URL
+            r'\[Vercel URL[^\]]*\]',                    # [Vercel URL — add after deployment]
+            r'\[vercel\.app[^\]]*\]',
+            r'Deployment in progress',
+            r'\[deploy-url\]',
+            r'\[DEPLOY_URL\]',
+        ]
+        replaced = False
+        for pattern in placeholder_patterns:
+            if re.search(pattern, new_readme, re.IGNORECASE):
+                new_readme = re.sub(pattern, deploy_url, new_readme, count=1, flags=re.IGNORECASE)
+                replaced = True
+                break
+
+        # If no placeholder found, inject a Live Demo badge right after the first heading
+        if not replaced:
+            lines = new_readme.split('\n')
+            insert_at = 1
+            for i, line in enumerate(lines):
+                if line.startswith('#'):
+                    insert_at = i + 1
+                    while insert_at < len(lines) and not lines[insert_at].strip():
+                        insert_at += 1
+                    break
+            lines.insert(insert_at, f'\n🚀 **Live Demo:** {deploy_url}\n')
+            new_readme = '\n'.join(lines)
+    else:
+        # No README at all — create a minimal one so the commit still triggers Vercel
+        new_readme = f"# {_state.project_name}\n\n🚀 **Live Demo:** {deploy_url}\n"
+
+    if new_readme == readme_content:
+        _log("ℹ️", "README_UPDATE", "README already contains the deploy URL — no changes needed")
+        return StepOutput(content=f"README unchanged (URL already present: {deploy_url})", success=True)
+
+    # ── 3. Commit — this push also triggers Vercel's GitHub webhook ──────────
+    try:
+        res = _json.loads(gh.create_or_update_file(
+            owner=_state.github_owner,
+            repo=_state.github_repo,
+            path="README.md",
+            content=new_readme,
+            message=f"docs: add live deployment URL to README\n\nLive: {deploy_url}",
+            branch="main",
+        ))
+        if res.get("success"):
+            _log("✅", "README_UPDATE", "README committed — Vercel webhook triggered for redeploy")
+            return StepOutput(
+                content=f"README updated with live URL: {deploy_url}",
+                success=True,
+            )
+        else:
+            _log("⚠️", "README_UPDATE", f"Commit failed: {res.get('message', 'unknown error')}")
+            return StepOutput(content="WARNING: README commit failed (non-critical)", success=True)
+    except Exception as e:
+        _log("⚠️", "README_UPDATE", f"README commit error: {e}")
+        return StepOutput(content=f"WARNING: README update skipped: {e}", success=True)
+
+
+def _extract_env_vars_section(content: str) -> str:
+    """Extract the Environment Variables section from an architecture document.
+
+    Returns a formatted string of env vars ready to paste into Vercel,
+    or an empty string if none are found.
+    """
+    # Try to find an "Environment Variables" section in the document
+    env_section_match = re.search(
+        r'(?:#{1,3}\s*)?Environment\s+Variables?[^\n]*\n(.*?)(?=\n#{1,3}\s|\Z)',
+        content,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not env_section_match:
+        return ""
+
+    section = env_section_match.group(1)
+
+    # Extract lines that look like env var entries:
+    # Patterns: `KEY=value`, `KEY: value`, `- KEY`, `* KEY`, `KEY —`, `KEY —`
+    env_var_pattern = re.compile(
+        r'(?:^|\n)\s*[-*]?\s*(`?)([A-Z][A-Z0-9_]{2,})\1\s*[=:\—–-]?\s*([^\n]*)',
+        re.MULTILINE,
+    )
+    matches = env_var_pattern.findall(section)
+
+    if not matches:
+        return ""
+
+    lines = []
+    for _, key, description in matches:
+        desc = description.strip().lstrip('=:—–-').strip()
+        if desc:
+            lines.append(f"  {key}={desc}")
+        else:
+            lines.append(f"  {key}=<your-value>")
+
+    return "\n".join(lines[:20])  # Cap at 20 vars
+
+
 def create_summary(step_input: StepInput) -> StepOutput:
-    """Create final summary."""
+    """Create final summary with env var instructions for Vercel."""
     global _state
 
     deploy_content = step_input.previous_step_content or ""
@@ -983,6 +1129,57 @@ def create_summary(step_input: StepInput) -> StepOutput:
     deploy_url = url_match.group(0) if url_match else "Deployment in progress"
 
     repo_url = f"https://github.com/{_state.github_owner}/{_state.github_repo}"
+
+    # Extract env vars from architecture document to guide user through Vercel setup
+    env_vars_block = _extract_env_vars_section(_state.architecture_content)
+
+    # Check if Supabase is mentioned in the architecture (needs env vars even if section is missing)
+    uses_supabase = bool(re.search(r'supabase', _state.architecture_content, re.IGNORECASE))
+
+    # Build env vars section for the summary
+    if env_vars_block:
+        env_section = f"""
+### ⚙️ Action Required: Add Environment Variables in Vercel
+
+Your project requires environment variables to work correctly. Please add them now:
+
+1. Go to [Vercel Dashboard](https://vercel.com/dashboard) → select your project **{_state.project_name}**
+2. Click **Settings** → **Environment Variables**
+3. Add each variable below (for **Production**, **Preview**, and **Development**):
+
+```
+{env_vars_block}
+```
+
+4. Click **Save** — Vercel will automatically redeploy with the new variables.
+
+> **Where to find Supabase values:** Supabase Dashboard → your project → **Project Settings** → **API**
+> - `NEXT_PUBLIC_SUPABASE_URL` → Project URL
+> - `NEXT_PUBLIC_SUPABASE_ANON_KEY` → anon / public key
+> - `SUPABASE_SERVICE_ROLE_KEY` → service_role key (keep this server-only, never expose to client)
+"""
+    elif uses_supabase:
+        env_section = f"""
+### ⚙️ Action Required: Add Environment Variables in Vercel
+
+This project uses Supabase. Please add the following environment variables:
+
+1. Go to [Vercel Dashboard](https://vercel.com/dashboard) → select your project **{_state.project_name}**
+2. Click **Settings** → **Environment Variables**
+3. Add these variables (for **Production**, **Preview**, and **Development**):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=<your Supabase Project URL>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<your Supabase anon/public key>
+SUPABASE_SERVICE_ROLE_KEY=<your Supabase service_role key>
+```
+
+4. Click **Save** — Vercel will automatically redeploy.
+
+> **Where to find these values:** Supabase Dashboard → your project → **Project Settings** → **API**
+"""
+    else:
+        env_section = ""
 
     summary = f"""
 ## ✅ Implementation Complete!
@@ -996,7 +1193,7 @@ def create_summary(step_input: StepInput) -> StepOutput:
 
 ### Review
 - Code Review (Quality + Security + Conventions): {_state.code_review_status}
-"""
+{env_section}"""
 
     _log("🎉", "DONE", f"Project complete! {deploy_url}")
 
@@ -1028,6 +1225,7 @@ new_project_steps = Steps(
         ),
         Step(name="deploy", executor=deploy_to_vercel),
         Step(name="validate_deployment", executor=validate_deployment_link),
+        Step(name="update_readme", executor=update_readme_with_deploy_url),  # Patches live URL into README + triggers Vercel redeploy via webhook
         Step(name="summary", executor=create_summary),
     ]
 )

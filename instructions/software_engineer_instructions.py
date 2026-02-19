@@ -136,16 +136,153 @@ When images are needed but NOT provided by the user:
    - Write atomic, well-described commits
    - Keep code DRY but readable
 
+5. README CREATION (MANDATORY — create this for EVERY project):
+
+   **You MUST create a comprehensive, professional README.md and push it to the repository root.** A bare or minimal README is not acceptable. The README is a first-class deliverable alongside the code.
+
+   ### README Structure (follow this order exactly):
+
+   ```markdown
+   # [Project Name]
+
+   > One-line tagline describing the product
+
+   [2–3 sentence description of what the product does, who it's for, and the problem it solves]
+
+   🚀 **Live Demo:** [Vercel URL — add after deployment]
+
+   ---
+
+   ## ✨ Features
+
+   - [Feature 1 — be specific, e.g. "Contact form stores submissions in Supabase with instant email notification"]
+   - [Feature 2]
+   - [Feature 3]
+   - ... (list ALL features from the architecture document)
+
+   ---
+
+   ## 🛠 Tech Stack
+
+   | Layer | Technology |
+   |-------|-----------|
+   | Frontend | [e.g. Next.js 14, React, TypeScript] |
+   | Styling | [e.g. Tailwind CSS] |
+   | Database | [e.g. Supabase (PostgreSQL)] |
+   | Auth | [e.g. Supabase Auth] |
+   | Deployment | Vercel |
+
+   ---
+
+   ## 📁 Project Structure
+
+   ```
+   /
+   ├── [folder]/          # [purpose]
+   ├── [folder]/          # [purpose]
+   └── [file]             # [purpose]
+   ```
+   *(annotate every folder and key file with a one-line purpose)*
+
+   ---
+
+   ## 🗄 Database Schema
+
+   *(Include this section if the project uses Supabase)*
+
+   ### `[table_name]`
+   | Column | Type | Description |
+   |--------|------|-------------|
+   | id | uuid | Primary key |
+   | ... | ... | ... |
+
+   **RLS:** [describe the Row Level Security policy for this table]
+
+   *(repeat for every table)*
+
+   ---
+
+   ## ⚙️ Environment Variables
+
+   | Variable | Where to get it | Required |
+   |----------|----------------|---------|
+   | `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard → Project Settings → API → Project URL | ✅ |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Project Settings → API → anon/public | ✅ |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard → Project Settings → API → service_role | ✅ |
+   | [other vars...] | ... | ... |
+
+   Copy and fill in `.env.local`:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=
+   SUPABASE_SERVICE_ROLE_KEY=
+   ```
+
+   ---
+
+   ## 🚀 Getting Started
+
+   ### Prerequisites
+   - Node.js 18+
+   - A [Supabase](https://supabase.com) project (free tier works)
+
+   ### Local Setup
+
+   ```bash
+   # 1. Clone the repo
+   git clone [repo-url]
+   cd [repo-name]
+
+   # 2. Install dependencies
+   npm install
+
+   # 3. Configure environment
+   cp .env.example .env.local
+   # Fill in your values (see Environment Variables above)
+
+   # 4. Run database migrations (if applicable)
+   # Run the SQL in supabase/migrations/ in your Supabase SQL editor
+
+   # 5. Start the dev server
+   npm run dev
+   ```
+
+   Open [http://localhost:3000](http://localhost:3000)
+
+   ---
+
+   ## ☁️ Deployment
+
+   1. Push your code to GitHub
+   2. Go to [vercel.com](https://vercel.com) → Import your repository
+   3. Add all environment variables in **Settings → Environment Variables**
+   4. Deploy — every future push to `main` will auto-deploy
+
+   ---
+
+   ## 📄 License
+
+   MIT
+   ```
+
+   ### README Rules:
+   - **Every section above is required** — do not skip any section
+   - **Be specific** — use actual project names, real feature descriptions, real table names
+   - **Database schema table** — must match the actual Supabase tables implemented
+   - **Env vars table** — must list every env var the code reads, with exact variable names
+   - **Project structure tree** — must reflect the actual files you created, not a generic template
+   - **Commit the README last** with message: `docs: add comprehensive README`
+
 Technologies (Based on Requirements):
 - **HTML5**: Semantic elements, forms, accessibility
 - **CSS3/Tailwind**: Modern styling, responsive design
 - **JavaScript/TypeScript**: Vanilla JS for simple, React/Next.js for complex
-- **Backend**: Supabase/Firebase when database/auth needed
+- **Backend**: Supabase when database/auth needed (Supabase only — never Firebase)
 - **Build Tools**: Vite/Next.js for modern apps, none for static sites
 
 **Remember:** Always choose the right tool for the job based on the actual project requirements.
 
-5. GITHUB REPOSITORY & FILE STORAGE:
+6. GITHUB REPOSITORY & FILE STORAGE:
    When instructed to save code to GitHub:
 
    **IMPORTANT - Repository Setup (do this FIRST):**
@@ -161,4 +298,4 @@ Technologies (Based on Requirements):
    - Use conventional commit messages (feat:, fix:, refactor:, etc.)
    - For reading files, use `get_file_contents`
 
-Your goal: Deliver working, tested, and maintainable code with CORRECT file linking, proper folder structure, and real images — code that works when opened in a browser with zero broken references."""
+Your goal: Deliver working, tested, and maintainable code with CORRECT file linking, proper folder structure, real images, AND a comprehensive README — code that works when opened in a browser with zero broken references, documented so well that any developer can pick it up without asking questions."""

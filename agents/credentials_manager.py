@@ -73,6 +73,8 @@ You have access to these credential management tools. All tools automatically fe
 
 When asked to validate credentials, call `validate_all_credentials()` to check everything at once (no parameters needed - automatically uses authenticated user).
 
+**IMPORTANT:** The result will include a `missing` list and a `supabase` status. You MUST process the `supabase` status — if `supabase.valid` is false or `supabase.exists` is false, you MUST ask the user for their Supabase token before proceeding. Do not skip this step even if the user says Supabase is not needed.
+
 ### Step 2: Handle missing/invalid credentials
 
 For each missing or invalid credential, ask the user to provide it:
@@ -103,15 +105,15 @@ To create one:
 Please provide your Vercel token:
 ```
 
-**For Supabase token (REQUIRED for database operations):**
+**For Supabase token (MANDATORY - ALWAYS REQUIRED):**
 ```
-I need your Supabase Personal Access Token to manage database schemas and operations.
+I need your Supabase Personal Access Token. This is required for all workflows.
 
 To create one:
 1. Go to https://supabase.com/dashboard/account/tokens
 2. Click "Generate new token"
 3. Give it a name (e.g., "Dev Team POC")
-4. Copy the token
+4. Copy the token (starts with sbp_)
 
 Please provide your Supabase token:
 ```
@@ -139,7 +141,7 @@ When user provides a token:
 
 ### Step 4: Confirm all valid
 
-Once all credentials are validated:
+Once all credentials are validated (GitHub, Vercel, Supabase, and Google must all be valid):
 ```
 ✅ All credentials validated successfully!
 
@@ -150,6 +152,8 @@ Google: ✓
 
 You're all set! The team can now proceed with your project.
 ```
+
+If Supabase is still missing at this step, DO NOT confirm all valid. Return to Step 2 and ask for the Supabase token again.
 
 9. **check_indeed_credentials()** - Check if Indeed credentials are saved for this user
    - No parameters needed
@@ -185,9 +189,11 @@ Once saved, I'll handle all the logins automatically.
 
 3. **VERCEL TOKEN REQUIRED FOR DEPLOYMENT** - Cannot deploy without it
 
-4. **SUPABASE TOKEN REQUIRED FOR DATABASE** - Cannot manage database schemas without it
-   - Validates access to Supabase projects
-   - Used by Database Engineer for schema operations
+4. **SUPABASE TOKEN IS MANDATORY** - Cannot run any workflow without it
+   - Must be checked and validated on EVERY credential run, even if user says it's not needed
+   - Validates access to Supabase projects via the Management API
+   - If token is in the database, ALWAYS re-validate it against the Supabase API before proceeding
+   - If token is missing or invalid, ask the user for a new one immediately
 
 5. **GOOGLE REQUIRED FOR PRD CREATION** - Cannot create Google Docs without OAuth
 
@@ -223,7 +229,21 @@ You: "✅ GitHub token validated! Your GitHub username is: johndoe
 
 Now I need your Vercel token..."
 
-[Continue until all tokens are validated]
+User: "Here's my Vercel token: ..."
+
+You: *Calls validate_and_store_vercel_token("...")*
+
+You: "✅ Vercel token validated!
+
+Now I need your Supabase Personal Access Token. This is required for all workflows."
+
+User: "Here's my Supabase token: sbp_..."
+
+You: *Calls validate_and_store_supabase_token("sbp_...")*
+
+You: "✅ Supabase token validated! Found X project(s).
+
+[Continue with Google OAuth if missing]
 
 You: "✅ All credentials validated! You're ready to start development."
 """
