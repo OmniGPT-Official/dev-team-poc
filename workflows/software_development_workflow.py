@@ -479,37 +479,47 @@ Return the repository URL when done."""
         return StepOutput(content=f"Repository created at: {repo_url}", success=True)
 
 
+def _detect_tech_stack(content: str) -> str:
+    """Detect the primary tech stack from architecture document content.
+
+    Returns:
+        "nextjs"  — Next.js (with or without TypeScript / Tailwind / Supabase)
+        "react"   — React + Vite SPA (no Next.js)
+        "html"    — Simple HTML / CSS / JS static site
+    """
+    c = content.lower()
+    if re.search(r'\bnext\.?js\b', c):
+        return "nextjs"
+    if re.search(r'\breact\b', c) or re.search(r'\bvite\b', c):
+        return "react"
+    return "html"
+
+
 def _extract_code(response: str) -> str:
     """Extract code from agent response - handles markdown code blocks or raw code."""
     if not response:
         return ""
-
-    # Try to extract from markdown code block first
     code_match = re.search(r'```(?:html|css|javascript|js)?\s*\n?(.*?)```', response, re.DOTALL)
     if code_match:
         return code_match.group(1).strip()
-
-    # If no code block, return the response as-is (might be raw code)
     return response.strip()
 
 
-def _generate_file_content(agent, file_type: str, project_name: str, architecture: str) -> str:
-    """Ask agent to generate code for a specific file type."""
-
-    # Shared context so every file knows the exact folder structure
+def _generate_html_file_content(agent, file_type: str, project_name: str, architecture: str) -> str:
+    """Ask agent to generate a single static-site file (HTML / CSS / JS).
+    Only used when the architecture specifies a plain HTML/CSS/JS stack.
+    """
     folder_context = """
-## EXACT FOLDER STRUCTURE (all files will be created at these paths):
+## EXACT FOLDER STRUCTURE:
 ```
 /
-  index.html          ← you are here (for HTML)
+  index.html
   css/
-    styles.css        ← you are here (for CSS)
+    styles.css
   js/
-    script.js         ← you are here (for JS)
-  images/             ← use Unsplash URLs if no images provided
+    script.js
 ```
 """
-
     prompts = {
         "html": f"""Generate a complete index.html file for: {project_name}
 
@@ -519,67 +529,37 @@ Based on this architecture:
 
 Requirements:
 - Complete HTML5 structure with DOCTYPE, html, head, body
-- Include meta tags (charset, viewport)
-- Link stylesheet as: <link rel="stylesheet" href="css/styles.css">
-- Link script as: <script src="js/script.js"></script>
-- CRITICAL: CSS is at css/styles.css NOT styles.css
-- CRITICAL: JS is at js/script.js NOT script.js
-- All sections from the architecture
-- Semantic HTML elements
-- Real content (not Lorem ipsum)
-- For images: use Unsplash URLs relevant to the project, e.g.:
-  <img src="https://images.unsplash.com/photo-XXXXX?w=800&h=600&fit=crop" alt="description">
-  Pick REAL Unsplash photo IDs that match the project topic
+- Link stylesheet: <link rel="stylesheet" href="css/styles.css">
+- Link script: <script src="js/script.js"></script>
+- All sections from the architecture, real content (not Lorem ipsum)
+- Unsplash URLs for images: https://images.unsplash.com/photo-XXXXX?w=800&h=600&fit=crop
 
-Output ONLY the HTML code, nothing else. Start with <!DOCTYPE html>""",
+Output ONLY the HTML. Start with <!DOCTYPE html>""",
 
-        "css": f"""Generate a complete styles.css file for: {project_name}
-
-This file will be saved at: css/styles.css
-It is linked from index.html as: <link rel="stylesheet" href="css/styles.css">
+        "css": f"""Generate a complete styles.css for: {project_name}
+Saved at: css/styles.css
 
 Based on this architecture:
 {architecture[:2000]}
 {folder_context}
 
-Requirements:
-- Modern, professional styling
-- Responsive design (mobile-first)
-- Style all sections from the architecture
-- Nice colors, typography, spacing
-- Hover effects, transitions
-- CSS variables for colors
-- If referencing images in CSS, use Unsplash URLs:
-  background-image: url('https://images.unsplash.com/photo-XXXXX?w=1200&h=800&fit=crop');
-- Do NOT use url() with local paths like ../images/ — use Unsplash directly
+Requirements: modern responsive styling, CSS variables, transitions, mobile-first.
+Use Unsplash for any background images. Output ONLY CSS. Start with /* or :root""",
 
-Output ONLY the CSS code, nothing else. Start with /* or :root""",
-
-        "js": f"""Generate a complete script.js file for: {project_name}
-
-This file will be saved at: js/script.js
-It is linked from index.html as: <script src="js/script.js"></script>
+        "js": f"""Generate a complete script.js for: {project_name}
+Saved at: js/script.js
 
 Based on this architecture:
 {architecture[:1500]}
 {folder_context}
 
-Requirements:
-- Mobile navigation toggle
-- Smooth scrolling
-- Form validation if forms exist
-- Any interactive features from architecture
-- Clean, modern JavaScript (ES6+)
-- Use document.querySelector / querySelectorAll to target HTML elements
-- Make sure IDs/classes you target actually exist in the HTML
-
-Output ONLY the JavaScript code, nothing else. Start with // or 'use strict'"""
+Requirements: mobile nav toggle, smooth scroll, form validation, ES6+.
+Output ONLY JavaScript. Start with // or 'use strict'""",
     }
 
     prompt = prompts.get(file_type, "")
     if not prompt:
         return ""
-
     user_id = _get_user_id()
     result = _run_with_heartbeat(agent.arun(prompt, user_id=user_id), f"DEV-{file_type.upper()}", timeout_seconds=0)
     if result and result.content:
@@ -590,8 +570,11 @@ Output ONLY the JavaScript code, nothing else. Start with // or 'use strict'"""
 def development(step_input: StepInput) -> StepOutput:
     """Software Engineer implements code.
 
-    - EXISTING project: Reads current files, then asks agent to make targeted updates.
-    - NEW project: Generates each file from scratch (HTML/CSS/JS).
+    Routing:
+    - EXISTING project  → agent-driven targeted updates on current codebase
+    - NEW project       → stack-aware implementation:
+        * Next.js / React → full agent-driven implementation (reads architecture, creates all files)
+        * HTML/CSS/JS     → direct file generation (index.html, css/styles.css, js/script.js)
     """
     global _state
 
@@ -606,7 +589,6 @@ def development(step_input: StepInput) -> StepOutput:
 
     gh = _get_github_tools()
     arch_content = _state.architecture_content
-    files_created = []
 
     # =====================================================================
     # EXISTING PROJECT — agent-driven updates on existing codebase
@@ -614,7 +596,6 @@ def development(step_input: StepInput) -> StepOutput:
     if _state.is_existing_repo:
         _log("💻", "DEV", f"Iteration {_state.iteration} - Updating EXISTING repo...")
 
-        # 1. List all existing files
         all_files = json.loads(gh.list_repository_files(_state.github_owner, _state.github_repo))
         file_list = []
         if isinstance(all_files, list):
@@ -622,7 +603,6 @@ def development(step_input: StepInput) -> StepOutput:
 
         _log("📂", "DEV", f"Existing files: {', '.join(file_list[:30])}")
 
-        # 2. Read key existing files to give agent context
         existing_code = {}
         code_extensions = ('.html', '.css', '.js', '.jsx', '.tsx', '.ts', '.json', '.py', '.md')
         files_to_read = [f for f in file_list if any(f.endswith(ext) for ext in code_extensions)][:10]
@@ -635,17 +615,15 @@ def development(step_input: StepInput) -> StepOutput:
                     path=file_path,
                 ))
                 if isinstance(content, dict) and content.get("content"):
-                    existing_code[file_path] = content["content"][:3000]  # Truncate large files
+                    existing_code[file_path] = content["content"][:3000]
                     _log("📄", "DEV", f"Read: {file_path} ({len(content.get('content', ''))} chars)")
             except Exception as e:
                 _log("⚠️", "DEV", f"Could not read {file_path}: {e}")
 
-        # 3. Build context of existing code for the agent
         existing_code_context = "\n\n".join(
             f"--- FILE: {path} ---\n{code}" for path, code in existing_code.items()
         )
 
-        # 4. Ask agent to generate updates based on architecture + existing code
         prompt = f"""You are updating an EXISTING project: {_state.project_name}
 Repository: https://github.com/{_state.github_owner}/{_state.github_repo}
 
@@ -680,29 +658,106 @@ List exactly which files you modified when done."""
 
         if result and result.content:
             _log("✅", "DEV", f"Agent completed updates")
-            # The agent uses GitHub tools directly, so files are already pushed
             return StepOutput(content=f"Updated existing repo: {result.content[:500]}", success=True)
         else:
             _log("❌", "DEV", "Agent failed to produce updates")
             return StepOutput(content="ERROR: Agent failed to update existing repo", success=False)
 
     # =====================================================================
-    # NEW PROJECT — generate files from scratch
+    # NEW PROJECT — detect stack from architecture, then implement accordingly
     # =====================================================================
-    _log("💻", "DEV", f"Iteration {_state.iteration} - Implementing NEW project code...")
+    tech_stack = _detect_tech_stack(arch_content)
+    _log("🔍", "DEV", f"Architecture specifies tech stack: {tech_stack.upper()}")
+    _log("💻", "DEV", f"Iteration {_state.iteration} - Implementing NEW {tech_stack.upper()} project...")
 
-    # --- Generate and create index.html (at root) ---
-    _log("📄", "DEV", "Generating index.html...")
-    html_code = _generate_file_content(software_engineer_agent, "html", _state.project_name, arch_content)
+    # ─────────────────────────────────────────────────────────────────────
+    # FRAMEWORK PROJECTS (Next.js / React) — full agent-driven implementation
+    # The agent reads the architecture document and creates ALL necessary files.
+    # ─────────────────────────────────────────────────────────────────────
+    if tech_stack in ("nextjs", "react"):
+        _log("🤖", "DEV", f"Delegating full {tech_stack.upper()} implementation to Software Engineer...")
 
+        framework_hints = {
+            "nextjs": """
+## NEXT.JS PROJECT — Required files to create:
+- package.json         (next, react, react-dom, typescript, tailwindcss, @supabase/supabase-js, etc.)
+- next.config.js / next.config.ts
+- tailwind.config.ts + postcss.config.js  (if Tailwind is in the architecture)
+- tsconfig.json        (if TypeScript is in the architecture)
+- .env.example         (list all env vars from the architecture, values left blank)
+- app/layout.tsx       (root layout with metadata, fonts, global CSS import)
+- app/page.tsx         (home page — implement ALL sections from the architecture)
+- app/globals.css      (Tailwind directives + any custom CSS)
+- components/          (one file per reusable component described in architecture)
+- lib/supabase.ts      (createClient helper — ONLY if Supabase is in the architecture)
+- Any API routes (app/api/...) required by the architecture
+- README.md            (comprehensive — see README Specification in architecture doc)
+
+Do NOT generate index.html, css/styles.css, or js/script.js — this is a Next.js app.
+""",
+            "react": """
+## REACT + VITE PROJECT — Required files to create:
+- package.json         (react, react-dom, vite, typescript, tailwindcss as needed)
+- vite.config.ts
+- tailwind.config.ts + postcss.config.js  (if Tailwind is in the architecture)
+- tsconfig.json        (if TypeScript is in the architecture)
+- .env.example         (list all env vars from the architecture, values left blank)
+- index.html           (Vite entry point — loads src/main.tsx)
+- src/main.tsx / src/main.jsx
+- src/App.tsx / src/App.jsx
+- src/index.css        (Tailwind directives or global styles)
+- src/components/      (one file per component described in architecture)
+- src/lib/supabase.ts  (createClient — ONLY if Supabase is in the architecture)
+- README.md            (comprehensive — see README Specification in architecture doc)
+
+Do NOT generate a static index.html at root — this is a Vite React app.
+""",
+        }
+
+        prompt = f"""You are implementing a BRAND NEW {tech_stack.upper()} project from scratch.
+
+Project: {_state.project_name}
+Repository: https://github.com/{_state.github_owner}/{_state.github_repo}
+
+## ARCHITECTURE DOCUMENT (your single source of truth — implement EXACTLY this):
+{arch_content[:8000]}
+
+{framework_hints.get(tech_stack, '')}
+
+## CRITICAL IMPLEMENTATION RULES:
+1. READ the architecture document carefully — implement the EXACT tech stack it specifies
+2. Do NOT substitute a different framework (e.g. do NOT use HTML/CSS/JS if architecture says Next.js)
+3. Create EVERY file the architecture requires using create_or_update_file
+4. Owner: "{_state.github_owner}", Repo: "{_state.github_repo}", Branch: "main"
+5. Use conventional commit messages per file: "feat: add <filename>"
+6. All Supabase env vars must reference environment variables (process.env.NEXT_PUBLIC_SUPABASE_URL etc.) — never hardcode values
+7. Include a comprehensive README.md as described in the architecture's README Specification section
+
+Implement the complete project now. List every file you created when done."""
+
+        user_id = _get_user_id()
+        result = _run_with_heartbeat(
+            software_engineer_agent.arun(prompt, user_id=user_id), "DEV-FRAMEWORK", timeout_seconds=0
+        )
+
+        if result and result.content:
+            _log("✅", "DEV", f"Framework project implemented by agent")
+            return StepOutput(content=f"Implemented {tech_stack.upper()} project: {result.content[:500]}", success=True)
+        else:
+            _log("❌", "DEV", "Agent failed to implement framework project")
+            return StepOutput(content=f"ERROR: Agent failed to implement {tech_stack} project", success=False)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # STATIC HTML/CSS/JS — direct file generation (original behaviour)
+    # ─────────────────────────────────────────────────────────────────────
+    _log("📄", "DEV", "Static HTML/CSS/JS stack — generating files directly...")
+    files_created = []
+
+    html_code = _generate_html_file_content(software_engineer_agent, "html", _state.project_name, arch_content)
     if html_code and len(html_code) > 100:
         res = json.loads(gh.create_or_update_file(
-            owner=_state.github_owner,
-            repo=_state.github_repo,
-            path="index.html",
-            content=html_code,
-            message="feat: add index.html",
-            branch="main",
+            owner=_state.github_owner, repo=_state.github_repo,
+            path="index.html", content=html_code, message="feat: add index.html", branch="main",
         ))
         if res.get("success"):
             files_created.append("index.html")
@@ -710,20 +765,13 @@ List exactly which files you modified when done."""
         else:
             _log("⚠️", "DEV", f"Failed to create index.html: {res.get('message', '')}")
     else:
-        _log("⚠️", "DEV", f"HTML generation failed or too short ({len(html_code) if html_code else 0} chars)")
+        _log("⚠️", "DEV", f"HTML generation failed ({len(html_code) if html_code else 0} chars)")
 
-    # --- Generate and create css/styles.css ---
-    _log("🎨", "DEV", "Generating css/styles.css...")
-    css_code = _generate_file_content(software_engineer_agent, "css", _state.project_name, arch_content)
-
+    css_code = _generate_html_file_content(software_engineer_agent, "css", _state.project_name, arch_content)
     if css_code and len(css_code) > 50:
         res = json.loads(gh.create_or_update_file(
-            owner=_state.github_owner,
-            repo=_state.github_repo,
-            path="css/styles.css",
-            content=css_code,
-            message="feat: add css/styles.css",
-            branch="main",
+            owner=_state.github_owner, repo=_state.github_repo,
+            path="css/styles.css", content=css_code, message="feat: add css/styles.css", branch="main",
         ))
         if res.get("success"):
             files_created.append("css/styles.css")
@@ -731,20 +779,13 @@ List exactly which files you modified when done."""
         else:
             _log("⚠️", "DEV", f"Failed to create css/styles.css: {res.get('message', '')}")
     else:
-        _log("⚠️", "DEV", f"CSS generation failed or too short ({len(css_code) if css_code else 0} chars)")
+        _log("⚠️", "DEV", f"CSS generation failed ({len(css_code) if css_code else 0} chars)")
 
-    # --- Generate and create js/script.js ---
-    _log("⚡", "DEV", "Generating js/script.js...")
-    js_code = _generate_file_content(software_engineer_agent, "js", _state.project_name, arch_content)
-
+    js_code = _generate_html_file_content(software_engineer_agent, "js", _state.project_name, arch_content)
     if js_code and len(js_code) > 20:
         res = json.loads(gh.create_or_update_file(
-            owner=_state.github_owner,
-            repo=_state.github_repo,
-            path="js/script.js",
-            content=js_code,
-            message="feat: add js/script.js",
-            branch="main",
+            owner=_state.github_owner, repo=_state.github_repo,
+            path="js/script.js", content=js_code, message="feat: add js/script.js", branch="main",
         ))
         if res.get("success"):
             files_created.append("js/script.js")
@@ -754,9 +795,8 @@ List exactly which files you modified when done."""
     else:
         _log("ℹ️", "DEV", "Skipping js/script.js (not needed or too short)")
 
-    # --- Summary ---
     if files_created:
-        _log("✅", "DEV", f"Files created: {', '.join(files_created)}")
+        _log("✅", "DEV", f"Static files created: {', '.join(files_created)}")
     else:
         _log("❌", "DEV", "No files were created!")
 
