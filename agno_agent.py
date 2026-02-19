@@ -39,6 +39,7 @@ from agno_pai.factory import factory_agent  # Agno PAI Factory (meta-agent)
 from teams.hr_team import hr_team  # HR Team (internal agents not exposed standalone)
 from workflows.hr_workflow import hr_workflow  # HR Hiring Pipeline (3-step workflow)
 from instagram_agent import instagram_agent  # Instagram Agent (OAuth-enabled)
+from brand_rebranding import brand_rebranding_agent  # Brand Rebranding Agent
 
 # Initialize Agent OS with Enhanced Tracing
 # Tracing provides visibility into:
@@ -74,6 +75,7 @@ agent_os = AgentOS(
         campaign_manager,  # Campaign Manager (Pattern 1: Single Agent + Internal Workflow)
         factory_agent,  # Agno PAI Factory — generates agents on demand
         instagram_agent,  # Instagram Agent (OAuth-enabled, image posting)
+        brand_rebranding_agent,  # Brand Rebranding Agent (image rebranding + Instagram)
     ],
     teams=[
         product_team,         # Product Development Team
