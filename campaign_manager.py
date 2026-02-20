@@ -21,6 +21,7 @@ Session-state caching (Bug fixes):
   replaced by a real Python conditional in the Step 1 executor function.
 """
 
+import json
 from typing import Optional, Dict, Any
 
 from agno.agent import Agent
@@ -84,6 +85,56 @@ def step1_read_leads(
         )
     leads_key = f"leads_{sheet_url}"
 
+    # ── Inline leads: campaign manager already read the sheet ────────────────
+    # The campaign manager has OAuth access and reads the sheet during conversation.
+    # It passes the leads as a LEADS: line (compact JSON) so Step 1 never needs to
+    # re-read the sheet (OAuth not available in executor context).
+    #
+    # Handles multi-line JSON: accumulates continuation lines until the array closes.
+    # Uses json.loads for structural validation — substring checks accept error strings.
+    # Fails loudly on invalid LEADS: line to avoid silent fallthrough to broken OAuth path.
+    lines = raw_input.splitlines()
+    leads_start = None
+    for i, ln in enumerate(lines):
+        if ln.strip().lower().startswith("leads:"):
+            leads_start = i
+            break
+
+    if leads_start is not None:
+        first = lines[leads_start].strip()
+        inline_leads = first.split(":", 1)[1].strip()
+        # Accumulate continuation lines if JSON didn't close on the same line
+        if inline_leads and not inline_leads.endswith("]"):
+            for continuation in lines[leads_start + 1:]:
+                inline_leads += continuation.strip()
+                if continuation.strip().endswith("]"):
+                    break
+        # Structural validation via json.loads — reject strings, error messages, wrong schema
+        try:
+            parsed = json.loads(inline_leads)
+            if isinstance(parsed, list) and parsed and "phone_number" in parsed[0]:
+                session_state[leads_key] = inline_leads
+                logger.info(f"Step 1: using inline leads from campaign manager (key={leads_key})")
+                return StepOutput(
+                    step_name="Step 1: Read Leads",
+                    content=inline_leads,
+                    success=True,
+                )
+            else:
+                logger.error(f"Step 1: LEADS line present but schema invalid: {inline_leads[:200]}")
+                return StepOutput(
+                    step_name="Step 1: Read Leads",
+                    content="❌ Error: LEADS JSON must be a non-empty array with a phone_number field.",
+                    success=False,
+                )
+        except json.JSONDecodeError as e:
+            logger.error(f"Step 1: LEADS line is not valid JSON ({e}): {inline_leads[:200]}")
+            return StepOutput(
+                step_name="Step 1: Read Leads",
+                content=f"❌ Error: LEADS line could not be parsed as JSON: {e}",
+                success=False,
+            )
+
     # ── Cache hit: return stored leads without re-reading the sheet ──────────
     cached_leads = session_state.get(leads_key)
     if cached_leads:
@@ -107,6 +158,7 @@ def step1_read_leads(
         logger.warning(f"Step 1 output looks invalid — not caching: {output_content[:100]}")
 
     return StepOutput(
+        step_name="Step 1: Read Leads",
         content=output_content,
         success=bool(output_content),
     )
@@ -132,7 +184,7 @@ def step2_submit_batch_call(
 
     message = (
         f"CAMPAIGN: {campaign_name}\n"
-        f"LEADS (JSON array — pass ALL fields to submit_batch_call as-is):\n{step1_content}\n"
+        f"LEADS (JSON array — pass exactly these fields to submit_batch_call as-is):\n{step1_content}\n"
         f"Submit batch call now."
     )
 
@@ -259,15 +311,29 @@ campaign_manager = Agent(
         "   - Save the user's answer as: DYNAMIC_FIELDS = [list of field names]",
         "3. (Optional) Campaign name",
         "",
+        "## READING THE SHEET",
+        "When the user provides the Google Sheet URL, read it immediately using the read_sheet tool.",
+        "Show the user a summary table of leads found (phone_number + all columns).",
+        "Then ask which DYNAMIC_FIELDS to use for the call.",
+        "",
         "## RUNNING THE CAMPAIGN",
-        "Once you have the sheet URL, DYNAMIC_FIELDS, and optional campaign name, trigger the workflow.",
-        "Pass these three things as the workflow input (plain text, one per line):",
-        "  Sheet: <sheet_url>",
-        "  DYNAMIC_FIELDS: <comma-separated field names, e.g. restaurant_name>",
-        "  Campaign: <campaign_name>",
-        "The workflow handles lead caching automatically — you never need to pass lead data yourself.",
+        "Once you have read the sheet, confirmed DYNAMIC_FIELDS, and the user says go:",
+        "1. Filter the leads: keep only rows where status is empty or 'not_contacted'",
+        "2. For each lead, keep ONLY: phone_number + the DYNAMIC_FIELDS the user chose (e.g. restaurant_name)",
+        "   - Also keep 'language' if present in the sheet",
+        "   - Drop all other columns (email, website, status, city, country unless user asked for them)",
+        "3. Format the filtered leads as compact JSON (single line, no line breaks inside the array)",
+        "4. Trigger the workflow with these four things (plain text, one per line):",
+        "  Sheet: https://docs.google.com/spreadsheets/d/YOUR_ID/edit",
+        "  DYNAMIC_FIELDS: restaurant_name",
+        "  Campaign: Bangkok Restaurants Feb 2026",
+        "  LEADS: [{\"phone_number\":\"+66620230022\",\"restaurant_name\":\"Pad Thai Padel\"},{\"phone_number\":\"+66821077730\",\"restaurant_name\":\"Alba Cookies\"}]",
+        "IMPORTANT — LEADS line rules:",
+        "  - The LEADS value MUST be a single line of compact JSON (no line breaks, no trailing text)",
+        "  - Only include phone_number + DYNAMIC_FIELDS (+ language if present in the sheet)",
+        "  - This lets the workflow skip the sheet re-read (OAuth not available inside workflow steps)",
         "The workflow will:",
-        "   - Read and filter leads from the sheet (Step 1) — cached after first read",
+        "   - Use your pre-read leads directly (Step 1)",
         "   - Submit batch calls to ElevenLabs (Step 2)",
         "   - Update results in the sheet (Step 3)",
         "Keep the user informed of progress at each step.",
