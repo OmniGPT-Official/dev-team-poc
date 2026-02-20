@@ -827,13 +827,14 @@ When all tasks are done, list every file you modified."""
             return StepOutput(content="ERROR: Agent failed to update existing repo", success=False)
 
     # =====================================================================
-    # NEW PROJECT — generate files from scratch
+    # NEW PROJECT — detect stack, then execute tasks from TASKS.md
     # =====================================================================
+    tech_stack = _detect_tech_stack(arch_content)
+    _log("🔍", "DEV", f"Detected stack: {tech_stack.upper()}")
     _log("💻", "DEV", f"Iteration {_state.iteration} - Implementing NEW project code...")
 
     # ─────────────────────────────────────────────────────────────────────
-    # FRAMEWORK PROJECTS (Next.js / React) — full agent-driven implementation
-    # The agent reads the architecture document and creates ALL necessary files.
+    # FRAMEWORK PROJECTS (Next.js / React) — task-driven implementation
     # ─────────────────────────────────────────────────────────────────────
     if tech_stack in ("nextjs", "react"):
         _log("🤖", "DEV", f"Task-driven {tech_stack.upper()} implementation — reading TASKS.md...")
