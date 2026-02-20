@@ -51,7 +51,12 @@ _outbound_calling_workflow = Workflow(
             2. Use read_sheet to fetch all leads
             3. Filter for leads ready to call (status empty or 'not_contacted')
             4. Validate phone numbers are in E.164 format
-            5. Report: total leads, ready to call, skipped
+            5. Output ONLY: one summary line + compact JSON array of ready leads
+
+            **CRITICAL - Keep output small. Step 2 receives your full response as context.**
+            Output format (nothing else after the JSON):
+            SUMMARY: X total, Y ready, Z skipped
+            [{"phone_number":"+66...","restaurant_name":"...","city":"...","country":"..."},...]
 
             **STOP HERE** - Pass the filtered lead list to Step 2
             End with: "Step 1 complete. Ready for Step 2: Batch Calling."
@@ -196,7 +201,7 @@ campaign_manager = Agent(
     db=db,
     update_memory_on_run=True,  # Remember Sheet URLs and campaign details
     add_history_to_context=True,  # Main agent needs context for conversation
-    num_history_messages=10,  # FIX: Limit history to last 10 messages as safety measure
+    num_history_messages=3,  # FIX: Reduced from 10 — campaign results are large, 10 caused 4MB overflow
     add_datetime_to_context=True,
     markdown=True,
 )
