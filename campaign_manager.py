@@ -35,7 +35,7 @@ from agents.calling_agents import (
     calling_coordinator_agent,
     results_logger_agent,
 )
-from services.tool_injector import inject_user_tools
+from services.tool_injector import make_tool_hook
 from db import db
 
 # Cost-effective model for POC
@@ -385,7 +385,7 @@ campaign_manager = Agent(
         "- Be helpful and professional",
     ],
     tools=[workflow_tools],       # Workflow equipped as tool via WorkflowTools
-    pre_hooks=[inject_user_tools],  # Inject Google Sheets tools via OAuth
+    pre_hooks=[make_tool_hook("google_sheets")],  # Only Google Sheets needed
     db=db,
     update_memory_on_run=False,   # Disable auto-summaries that pollute cross-session memory
     enable_agentic_memory=True,   # Use agentic memory for deliberate cross-session recall
