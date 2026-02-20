@@ -9,12 +9,26 @@ Architecture: Single Agent + WorkflowTools
 - Internal workflow: Read leads → Batch call → Log results
 - Workflow equipped as tool via WorkflowTools
 - Conversational interface with step-by-step orchestration
+
+Session-state caching (Bug fixes):
+- Bug 1 (double-read): Leads are cached in session_state after first read. Python code
+  — not LLM prompts — decides whether to re-read the sheet on subsequent runs.
+- Bug 2 (cross-session memory): update_memory_on_run=False stops auto-storing run
+  summaries that polluted new campaigns with old lead data.
+- Bug 3 (lost intra-conversation context): session_state persists leads independently
+  of num_history_messages, so the sheet read is never lost when history truncates.
+- Bug 4 (LLM-instructed conditionals): The 'LEADS_ALREADY_READ' prompt workaround is
+  replaced by a real Python conditional in the Step 1 executor function.
 """
+
+from typing import Optional, Dict, Any
 
 from agno.agent import Agent
 from agno.workflow import Workflow, Step
+from agno.workflow.types import StepInput, StepOutput
 from agno.tools.workflow import WorkflowTools
 from agno.models.moonshot import MoonShot
+from agno.utils.log import logger
 from agents.calling_agents import (
     lead_reader_agent,
     calling_coordinator_agent,
@@ -28,80 +42,177 @@ MODEL = MoonShot(id="kimi-k2.5", extra_body={"thinking": {"type": "disabled"}})
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Workflow Step Executors: Python functions with session_state caching
+#
+# Each executor receives (step_input: StepInput, session_state: Dict) where
+# session_state is the shared, persisted dict for this workflow session.
+# Agno 2.4.8 injects session_state automatically when the function signature
+# declares it — see Step._call_custom_function for the injection logic.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def step1_read_leads(
+    step_input: StepInput,
+    session_state: Optional[Dict[str, Any]] = None,
+) -> StepOutput:
+    """
+    Step 1: Read and filter leads from Google Sheets.
+
+    Caching: leads are stored in session_state under a key scoped to the sheet
+    URL. On subsequent runs within the same session, the cached value is returned
+    immediately — no OAuth call, no double-read.
+    """
+    if session_state is None:
+        session_state = {}
+
+    raw_input = step_input.get_input_as_string() or ""
+
+    # ── Extract sheet URL from input for cache key ──────────────────────────
+    # The campaign manager sends: "Sheet: <url>\nDYNAMIC_FIELDS: ..."
+    sheet_url = ""
+    for line in raw_input.splitlines():
+        line = line.strip()
+        if line.lower().startswith("sheet:") or line.lower().startswith("sheet url:"):
+            sheet_url = line.split(":", 1)[1].strip()
+            break
+
+    if not sheet_url:
+        return StepOutput(
+            step_name="Step 1: Read Leads",
+            content="❌ Error: No Google Sheet URL provided. Please share the sheet URL to start the campaign.",
+            success=False,
+        )
+    leads_key = f"leads_{sheet_url}"
+
+    # ── Cache hit: return stored leads without re-reading the sheet ──────────
+    cached_leads = session_state.get(leads_key)
+    if cached_leads:
+        logger.info(f"[CACHED] Using cached leads from session_state (key={leads_key})")
+        return StepOutput(
+            step_name="Step 1: Read Leads",
+            content=cached_leads,
+            success=True,
+        )
+
+    # ── Cache miss: ask lead_reader_agent to read the sheet ──────────────────
+    logger.info(f"Step 1: no cached leads — reading from Google Sheet (key={leads_key})")
+    result = lead_reader_agent.run(raw_input)
+    output_content = result.content if result and result.content else ""
+
+    # Only cache valid leads — never cache error messages or empty responses
+    if output_content and "phone_number" in output_content:
+        session_state[leads_key] = output_content
+        logger.info(f"Leads cached to session_state (key={leads_key})")
+    else:
+        logger.warning(f"Step 1 output looks invalid — not caching: {output_content[:100]}")
+
+    return StepOutput(
+        content=output_content,
+        success=bool(output_content),
+    )
+
+
+def step2_submit_batch_call(
+    step_input: StepInput,
+    session_state: Optional[Dict[str, Any]] = None,
+) -> StepOutput:
+    """
+    Step 2: Submit batch call to ElevenLabs using leads from Step 1.
+    """
+    original_input = step_input.get_input_as_string() or ""
+    step1_content = step_input.get_last_step_content() or ""
+
+    # Extract campaign name from original workflow input
+    campaign_name = "Outbound Campaign"
+    for line in original_input.splitlines():
+        line = line.strip()
+        if line.lower().startswith("campaign:") or line.lower().startswith("campaign name:"):
+            campaign_name = line.split(":", 1)[1].strip()
+            break
+
+    message = (
+        f"CAMPAIGN: {campaign_name}\n"
+        f"LEADS (JSON array — pass ALL fields to submit_batch_call as-is):\n{step1_content}\n"
+        f"Submit batch call now."
+    )
+
+    result = calling_coordinator_agent.run(message)
+    output_content = result.content if result and result.content else ""
+
+    return StepOutput(
+        content=output_content,
+        success=bool(output_content),
+    )
+
+
+def step3_log_results(
+    step_input: StepInput,
+    session_state: Optional[Dict[str, Any]] = None,
+) -> StepOutput:
+    """
+    Step 3: Update Google Sheet with call outcomes from Step 2.
+    """
+    original_input = step_input.get_input_as_string() or ""
+    step2_content = step_input.get_last_step_content() or ""
+
+    # Extract sheet URL from original workflow input
+    sheet_url = ""
+    for line in original_input.splitlines():
+        line = line.strip()
+        if line.lower().startswith("sheet:") or line.lower().startswith("sheet url:"):
+            sheet_url = line.split(":", 1)[1].strip()
+            break
+
+    message = (
+        f"Sheet URL: {sheet_url}\n"
+        f"Call results from Step 2:\n{step2_content}\n"
+        f"Update the Google Sheet with call outcomes."
+    )
+
+    result = results_logger_agent.run(message)
+    output_content = result.content if result and result.content else ""
+
+    return StepOutput(
+        content=output_content,
+        success=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Internal Workflow: Outbound Calling Process
+#
+# Uses callable executor steps so Python code (not LLM prompts) controls
+# the session_state caching logic. Agno injects session_state automatically
+# into any executor function that declares it as a parameter.
 # ─────────────────────────────────────────────────────────────────────────
 
 _outbound_calling_workflow = Workflow(
     name="Outbound Calling Workflow",
-    description="""
-    Multi-step workflow for outbound calling campaigns:
-    1. Read and filter leads from Google Sheets
-    2. Submit batch calls to ElevenLabs
-    3. Update Google Sheets with call results
-    """,
+    description=(
+        "Multi-step workflow for outbound calling campaigns: "
+        "read leads (with session_state cache), submit batch calls, log results."
+    ),
     steps=[
         Step(
             name="Step 1: Read Leads",
-            agent=lead_reader_agent,
-            description="""
-            **STEP 1 of 3: Read and Filter Leads**
-
-            Your task:
-            1. Get Google Sheet URL from user (if not already provided)
-            2. Use read_sheet to fetch all leads
-            3. Filter for leads ready to call (status empty or 'not_contacted')
-            4. Validate phone numbers are in E.164 format
-            5. Output ONLY: one summary line + compact JSON array of ready leads
-
-            **CRITICAL - Keep output small. Step 2 receives your full response as context.**
-            Output format (nothing else after the JSON):
-            SUMMARY: X total, Y ready, Z skipped
-            JSON array with ONLY phone_number + the DYNAMIC_FIELDS specified by the user.
-            Example (if user chose restaurant_name): [{"phone_number":"+66...","restaurant_name":"..."},...]
-            Do NOT include any other columns — preserve the sheet; only send what ElevenLabs needs.
-
-            **STOP HERE** - Pass the filtered lead list to Step 2
-            End with: "Step 1 complete. Ready for Step 2: Batch Calling."
-            """,
+            executor=step1_read_leads,
+            description=(
+                "Read and filter leads from Google Sheet. "
+                "Uses session_state cache — sheet is read at most once per session."
+            ),
         ),
         Step(
             name="Step 2: Submit Batch Call",
-            agent=calling_coordinator_agent,
-            description="""
-            **STEP 2 of 3: Submit and Monitor Batch Call**
-
-            Your task:
-            1. Take the filtered leads from Step 1
-            2. Pass ALL fields from Step 1 leads to submit_batch_call — include every column (phone_number, language, restaurant_name, city, country, and any others). Do NOT hardcode or filter fields.
-            3. Submit batch call using submit_batch_call
-            4. Monitor batch status with get_batch_status
-            5. Wait for calls to complete
-            6. Collect call results
-
-            **STOP HERE** - Pass call results to Step 3
-            End with: "Step 2 complete. Ready for Step 3: Logging Results."
-            """,
+            executor=step2_submit_batch_call,
+            description="Submit batch call to ElevenLabs with the filtered leads from Step 1.",
         ),
         Step(
             name="Step 3: Log Results",
-            agent=results_logger_agent,
-            description="""
-            **STEP 3 of 3: Update Google Sheets**
-
-            Your task:
-            1. Take call results from Step 2
-            2. For each lead, update Google Sheet:
-               - Status: 'interested', 'not_interested', 'no_answer', etc.
-               - Call_Attempts: increment by 1
-               - Notes: what happened on the call
-            3. Use update_sheet in batch mode
-            4. Report: updated count, outcomes summary
-
-            **WORKFLOW COMPLETE**
-            End with: "✓ Campaign complete! All results logged to Google Sheet."
-            """,
+            executor=step3_log_results,
+            description="Update Google Sheet with call outcomes from Step 2.",
         ),
     ],
+    db=db,
 )
 
 
@@ -112,8 +223,8 @@ _outbound_calling_workflow = Workflow(
 workflow_tools = WorkflowTools(
     workflow=_outbound_calling_workflow,
     enable_run_workflow=True,  # Enable workflow execution
-    enable_think=False,  # Don't need internal thinking scratchpad
-    enable_analyze=False,  # Don't need result analysis (agent handles this)
+    enable_think=False,        # Don't need internal thinking scratchpad
+    enable_analyze=False,      # Don't need result analysis (agent handles this)
 )
 
 
@@ -149,15 +260,17 @@ campaign_manager = Agent(
         "3. (Optional) Campaign name",
         "",
         "## RUNNING THE CAMPAIGN",
-        "Once you have the sheet URL and DYNAMIC_FIELDS:",
-        "1. Pass DYNAMIC_FIELDS clearly in your message when triggering the workflow",
-        "   Example: 'Run campaign. Sheet: <url>. Dynamic fields for ElevenLabs: restaurant_name'",
-        "2. Use the 'Outbound Calling Workflow' tool to execute the campaign",
-        "2. The workflow will:",
-        "   - Read and filter leads (Step 1)",
-        "   - Submit batch calls (Step 2)",
-        "   - Update results in sheet (Step 3)",
-        "3. Keep user informed of progress at each step",
+        "Once you have the sheet URL, DYNAMIC_FIELDS, and optional campaign name, trigger the workflow.",
+        "Pass these three things as the workflow input (plain text, one per line):",
+        "  Sheet: <sheet_url>",
+        "  DYNAMIC_FIELDS: <comma-separated field names, e.g. restaurant_name>",
+        "  Campaign: <campaign_name>",
+        "The workflow handles lead caching automatically — you never need to pass lead data yourself.",
+        "The workflow will:",
+        "   - Read and filter leads from the sheet (Step 1) — cached after first read",
+        "   - Submit batch calls to ElevenLabs (Step 2)",
+        "   - Update results in the sheet (Step 3)",
+        "Keep the user informed of progress at each step.",
         "",
         "## PROGRESS UPDATES",
         "Communicate clearly:",
@@ -192,6 +305,12 @@ campaign_manager = Agent(
         "- All results logged to Google Sheet",
         "- Next steps",
         "",
+        "## MEMORY",
+        "You have agentic memory — use it to remember things that are useful ACROSS sessions.",
+        "REMEMBER (call update_user_memory): Google Sheet URLs the user has used before.",
+        "DO NOT REMEMBER: restaurant names, phone numbers, or lead details — that data lives in the sheet.",
+        "When starting a new session, check if you have a stored sheet URL and ask the user if they want to use the same sheet.",
+        "",
         "## COMMUNICATION STYLE",
         "- Be conversational and friendly",
         "- Use emojis for visual progress: 📊 📞 ✓ ⚠️",
@@ -199,12 +318,13 @@ campaign_manager = Agent(
         "- Celebrate success: 'Campaign complete! 🎉'",
         "- Be helpful and professional",
     ],
-    tools=[workflow_tools],  # Workflow equipped as tool via WorkflowTools
+    tools=[workflow_tools],       # Workflow equipped as tool via WorkflowTools
     pre_hooks=[inject_user_tools],  # Inject Google Sheets tools via OAuth
     db=db,
-    update_memory_on_run=True,  # Remember Sheet URLs and campaign details
+    update_memory_on_run=False,   # Disable auto-summaries that pollute cross-session memory
+    enable_agentic_memory=True,   # Use agentic memory for deliberate cross-session recall
     add_history_to_context=True,  # Main agent needs context for conversation
-    num_history_messages=3,  # FIX: Reduced from 10 — campaign results are large, 10 caused 4MB overflow
+    num_history_messages=3,       # Reduced: campaign results are large, high values cause overflow
     add_datetime_to_context=True,
     markdown=True,
 )
