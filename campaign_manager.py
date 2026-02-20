@@ -76,14 +76,21 @@ def step1_read_leads(
             sheet_url = line.split(":", 1)[1].strip()
             break
 
-    leads_key = f"leads_{sheet_url}" if sheet_url else "leads_unknown"
+    if not sheet_url:
+        return StepOutput(
+            step_name="Step 1: Read Leads",
+            content="❌ Error: No Google Sheet URL provided. Please share the sheet URL to start the campaign.",
+            success=False,
+        )
+    leads_key = f"leads_{sheet_url}"
 
     # ── Cache hit: return stored leads without re-reading the sheet ──────────
     cached_leads = session_state.get(leads_key)
     if cached_leads:
-        logger.info(f"Step 1: using cached leads from session_state (key={leads_key})")
+        logger.info(f"[CACHED] Using cached leads from session_state (key={leads_key})")
         return StepOutput(
-            content=f"[CACHED] {cached_leads}",
+            step_name="Step 1: Read Leads",
+            content=cached_leads,
             success=True,
         )
 
@@ -92,9 +99,12 @@ def step1_read_leads(
     result = lead_reader_agent.run(raw_input)
     output_content = result.content if result and result.content else ""
 
-    # Store in session_state so future runs in this session skip the re-read
-    session_state[leads_key] = output_content
-    logger.info(f"Step 1: leads cached to session_state (key={leads_key})")
+    # Only cache valid leads — never cache error messages or empty responses
+    if output_content and "phone_number" in output_content:
+        session_state[leads_key] = output_content
+        logger.info(f"Leads cached to session_state (key={leads_key})")
+    else:
+        logger.warning(f"Step 1 output looks invalid — not caching: {output_content[:100]}")
 
     return StepOutput(
         content=output_content,
@@ -111,10 +121,6 @@ def step2_submit_batch_call(
     """
     original_input = step_input.get_input_as_string() or ""
     step1_content = step_input.get_last_step_content() or ""
-
-    # Strip [CACHED] prefix if present (added by step1 for logging clarity)
-    if step1_content.startswith("[CACHED] "):
-        step1_content = step1_content[len("[CACHED] "):]
 
     # Extract campaign name from original workflow input
     campaign_name = "Outbound Campaign"
