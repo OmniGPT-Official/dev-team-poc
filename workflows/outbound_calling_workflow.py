@@ -10,7 +10,6 @@ from agents.calling_agents import (
     lead_reader_agent,
     calling_coordinator_agent,
     results_logger_agent,
-    campaign_coordinator_agent
 )
 
 
@@ -80,7 +79,7 @@ campaign_reporting_steps = Steps(
     steps=[
         Step(
             name="Generate Report",
-            agent=campaign_coordinator_agent,
+            agent=calling_coordinator_agent,
             description="Summarize campaign results and identify next actions",
         ),
     ],
@@ -153,7 +152,7 @@ simple_calling_workflow = Workflow(
     steps=[
         Step(
             name="Run Simple Campaign",
-            agent=campaign_coordinator_agent,
+            agent=calling_coordinator_agent,
             description="Run a basic calling campaign with all steps in one agent",
         ),
     ],
