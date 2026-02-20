@@ -70,7 +70,7 @@ _outbound_calling_workflow = Workflow(
 
             Your task:
             1. Take the filtered leads from Step 1
-            2. Format recipients for ElevenLabs: [{phone_number, restaurant_name, city, country}]
+            2. Pass ALL fields from Step 1 leads to submit_batch_call — include every column (phone_number, language, restaurant_name, city, country, and any others). Do NOT hardcode or filter fields.
             3. Submit batch call using submit_batch_call
             4. Monitor batch status with get_batch_status
             5. Wait for calls to complete

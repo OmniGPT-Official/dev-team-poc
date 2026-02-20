@@ -90,8 +90,16 @@ class ElevenLabsBatchCallingTools(Toolkit):
                 "message": "Set ELEVENLABS_AGENT_ID and ELEVENLABS_PHONE_NUMBER_ID env vars"
             }
 
-        # ElevenLabs API requires: { phone_number, conversation_initiation_client_data: { dynamic_variables: {...} } }
-        # Agents pass flat dicts like { phone_number, restaurant_name, city } — transform here.
+        # ElevenLabs API requires:
+        # {
+        #   phone_number,
+        #   conversation_initiation_client_data: {
+        #     conversation_config_override: { agent: { language: "en" } },
+        #     dynamic_variables: { restaurant_name, city, ... }
+        #   }
+        # }
+        # `language` is an Override field — must NOT be placed in dynamic_variables.
+        # All other non-phone fields go into dynamic_variables.
         formatted_recipients = []
         for r in recipients:
             if "phone_number" not in r:
@@ -100,14 +108,20 @@ class ElevenLabsBatchCallingTools(Toolkit):
                     "message": f"Recipient missing required phone_number field: {r}"
                 }
             recipient: Dict[str, Any] = {"phone_number": r["phone_number"]}
+            language = r.get("language")
             dynamic_vars = {
                 k: v for k, v in r.items()
-                if k != "phone_number" and v is not None and v != ""
+                if k not in ("phone_number", "language") and v is not None and v != ""
             }
-            if dynamic_vars:
-                recipient["conversation_initiation_client_data"] = {
-                    "dynamic_variables": dynamic_vars
+            conversation_data: Dict[str, Any] = {}
+            if language:
+                conversation_data["conversation_config_override"] = {
+                    "agent": {"language": language}
                 }
+            if dynamic_vars:
+                conversation_data["dynamic_variables"] = dynamic_vars
+            if conversation_data:
+                recipient["conversation_initiation_client_data"] = conversation_data
             formatted_recipients.append(recipient)
 
         try:
