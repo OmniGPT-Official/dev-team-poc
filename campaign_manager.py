@@ -21,6 +21,7 @@ Session-state caching (Bug fixes):
   replaced by a real Python conditional in the Step 1 executor function.
 """
 
+import json
 from typing import Optional, Dict, Any
 
 from agno.agent import Agent
@@ -86,13 +87,32 @@ def step1_read_leads(
 
     # ── Inline leads: campaign manager already read the sheet ────────────────
     # The campaign manager has OAuth access and reads the sheet during conversation.
-    # It passes the leads as compact JSON on a single LEADS: line so Step 1 never
-    # needs to re-read the sheet (which would fail — OAuth not available in executor context).
-    for line in raw_input.splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("leads:"):
-            inline_leads = stripped.split(":", 1)[1].strip()
-            if inline_leads and "phone_number" in inline_leads:
+    # It passes the leads as a LEADS: line (compact JSON) so Step 1 never needs to
+    # re-read the sheet (OAuth not available in executor context).
+    #
+    # Handles multi-line JSON: accumulates continuation lines until the array closes.
+    # Uses json.loads for structural validation — substring checks accept error strings.
+    # Fails loudly on invalid LEADS: line to avoid silent fallthrough to broken OAuth path.
+    lines = raw_input.splitlines()
+    leads_start = None
+    for i, ln in enumerate(lines):
+        if ln.strip().lower().startswith("leads:"):
+            leads_start = i
+            break
+
+    if leads_start is not None:
+        first = lines[leads_start].strip()
+        inline_leads = first.split(":", 1)[1].strip()
+        # Accumulate continuation lines if JSON didn't close on the same line
+        if inline_leads and not inline_leads.endswith("]"):
+            for continuation in lines[leads_start + 1:]:
+                inline_leads += continuation.strip()
+                if continuation.strip().endswith("]"):
+                    break
+        # Structural validation via json.loads — reject strings, error messages, wrong schema
+        try:
+            parsed = json.loads(inline_leads)
+            if isinstance(parsed, list) and parsed and "phone_number" in parsed[0]:
                 session_state[leads_key] = inline_leads
                 logger.info(f"Step 1: using inline leads from campaign manager (key={leads_key})")
                 return StepOutput(
@@ -100,7 +120,20 @@ def step1_read_leads(
                     content=inline_leads,
                     success=True,
                 )
-            break
+            else:
+                logger.error(f"Step 1: LEADS line present but schema invalid: {inline_leads[:200]}")
+                return StepOutput(
+                    step_name="Step 1: Read Leads",
+                    content="❌ Error: LEADS JSON must be a non-empty array with a phone_number field.",
+                    success=False,
+                )
+        except json.JSONDecodeError as e:
+            logger.error(f"Step 1: LEADS line is not valid JSON ({e}): {inline_leads[:200]}")
+            return StepOutput(
+                step_name="Step 1: Read Leads",
+                content=f"❌ Error: LEADS line could not be parsed as JSON: {e}",
+                success=False,
+            )
 
     # ── Cache hit: return stored leads without re-reading the sheet ──────────
     cached_leads = session_state.get(leads_key)
@@ -125,6 +158,7 @@ def step1_read_leads(
         logger.warning(f"Step 1 output looks invalid — not caching: {output_content[:100]}")
 
     return StepOutput(
+        step_name="Step 1: Read Leads",
         content=output_content,
         success=bool(output_content),
     )
@@ -150,7 +184,7 @@ def step2_submit_batch_call(
 
     message = (
         f"CAMPAIGN: {campaign_name}\n"
-        f"LEADS (JSON array — pass ALL fields to submit_batch_call as-is):\n{step1_content}\n"
+        f"LEADS (JSON array — pass exactly these fields to submit_batch_call as-is):\n{step1_content}\n"
         f"Submit batch call now."
     )
 
@@ -290,11 +324,14 @@ campaign_manager = Agent(
         "   - Drop all other columns (email, website, status, city, country unless user asked for them)",
         "3. Format the filtered leads as compact JSON (single line, no line breaks inside the array)",
         "4. Trigger the workflow with these four things (plain text, one per line):",
-        "  Sheet: <sheet_url>",
-        "  DYNAMIC_FIELDS: <comma-separated field names, e.g. restaurant_name>",
-        "  Campaign: <campaign_name>",
-        "  LEADS: <compact JSON array, e.g. [{\"phone_number\":\"+66...\",\"restaurant_name\":\"Pad Thai\"}]>",
-        "The LEADS line lets the workflow skip the sheet re-read (OAuth not available inside workflow steps).",
+        "  Sheet: https://docs.google.com/spreadsheets/d/YOUR_ID/edit",
+        "  DYNAMIC_FIELDS: restaurant_name",
+        "  Campaign: Bangkok Restaurants Feb 2026",
+        "  LEADS: [{\"phone_number\":\"+66620230022\",\"restaurant_name\":\"Pad Thai Padel\"},{\"phone_number\":\"+66821077730\",\"restaurant_name\":\"Alba Cookies\"}]",
+        "IMPORTANT — LEADS line rules:",
+        "  - The LEADS value MUST be a single line of compact JSON (no line breaks, no trailing text)",
+        "  - Only include phone_number + DYNAMIC_FIELDS (+ language if present in the sheet)",
+        "  - This lets the workflow skip the sheet re-read (OAuth not available inside workflow steps)",
         "The workflow will:",
         "   - Use your pre-read leads directly (Step 1)",
         "   - Submit batch calls to ElevenLabs (Step 2)",
