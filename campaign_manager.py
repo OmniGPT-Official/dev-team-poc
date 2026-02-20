@@ -56,7 +56,7 @@ _outbound_calling_workflow = Workflow(
             **CRITICAL - Keep output small. Step 2 receives your full response as context.**
             Output format (nothing else after the JSON):
             SUMMARY: X total, Y ready, Z skipped
-            [{"phone_number":"+66...","restaurant_name":"...","city":"...","country":"..."},...]
+            [{"phone_number":"+66...","language":"en","restaurant_name":"...","city":"...","country":"..."},...]
 
             **STOP HERE** - Pass the filtered lead list to Step 2
             End with: "Step 1 complete. Ready for Step 2: Batch Calling."
