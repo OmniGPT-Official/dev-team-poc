@@ -101,12 +101,11 @@ class ElevenLabsBatchCallingTools(Toolkit):
         # `language` is an Override field — must NOT be placed in dynamic_variables.
         # All other non-phone fields go into dynamic_variables.
         formatted_recipients = []
+        skipped_recipients = []
         for r in recipients:
             if "phone_number" not in r:
-                return {
-                    "error": "Invalid recipient",
-                    "message": f"Recipient missing required phone_number field: {r}"
-                }
+                skipped_recipients.append(str(r))
+                continue
             recipient: Dict[str, Any] = {"phone_number": r["phone_number"]}
             language = r.get("language")
             dynamic_vars = {
@@ -124,6 +123,12 @@ class ElevenLabsBatchCallingTools(Toolkit):
                 recipient["conversation_initiation_client_data"] = conversation_data
             formatted_recipients.append(recipient)
 
+        if not formatted_recipients:
+            return {
+                "error": "No valid recipients",
+                "message": f"All {len(recipients)} recipients were missing phone_number. Skipped: {skipped_recipients}"
+            }
+
         try:
             url = f"{self.base_url}/convai/batch-calling/submit"
             payload = {
@@ -137,13 +142,17 @@ class ElevenLabsBatchCallingTools(Toolkit):
             response.raise_for_status()
 
             data = response.json()
-            return {
+            result = {
                 "success": True,
                 "batch_id": data.get("id"),
                 "status": "submitted",
-                "total_recipients": len(recipients),
-                "message": f"Batch call submitted successfully with {len(recipients)} recipients"
+                "total_recipients": len(formatted_recipients),
+                "message": f"Batch call submitted successfully with {len(formatted_recipients)} recipients"
             }
+            if skipped_recipients:
+                result["skipped"] = len(skipped_recipients)
+                result["skipped_details"] = skipped_recipients
+            return result
 
         except requests.exceptions.HTTPError as e:
             error_body = None

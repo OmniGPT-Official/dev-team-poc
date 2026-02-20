@@ -56,7 +56,9 @@ _outbound_calling_workflow = Workflow(
             **CRITICAL - Keep output small. Step 2 receives your full response as context.**
             Output format (nothing else after the JSON):
             SUMMARY: X total, Y ready, Z skipped
-            [{"phone_number":"+66...","language":"en","restaurant_name":"...","city":"...","country":"..."},...]
+            JSON array with ONLY phone_number + the DYNAMIC_FIELDS specified by the user.
+            Example (if user chose restaurant_name): [{"phone_number":"+66...","restaurant_name":"..."},...]
+            Do NOT include any other columns — preserve the sheet; only send what ElevenLabs needs.
 
             **STOP HERE** - Pass the filtered lead list to Step 2
             End with: "Step 1 complete. Ready for Step 2: Batch Calling."
@@ -137,19 +139,20 @@ campaign_manager = Agent(
         "3. Ask: 'Please share your Google Sheet URL with the leads you want to call'",
         "",
         "## REQUIRED INFORMATION",
-        "You need:",
-        "- Google Sheet URL with leads",
-        "- (Optional) Campaign name",
-        "",
-        "The sheet should have columns:",
-        "- phone_number (E.164 format: +12025551234)",
-        "- restaurant_name or name",
-        "- city, country",
-        "- status (you'll update this)",
+        "You need (collect in this order, one question at a time):",
+        "1. Google Sheet URL with leads",
+        "2. Which columns to send to ElevenLabs as dynamic variables (beyond phone_number)",
+        "   - Ask: 'Which fields from your sheet should the AI agent use during the call? For example: restaurant_name, city, country. Your sheet will not be modified — only these fields are sent to ElevenLabs.'",
+        "   - The user may say just one field (e.g. 'restaurant_name') or several",
+        "   - Always include phone_number automatically — never ask about it",
+        "   - Save the user's answer as: DYNAMIC_FIELDS = [list of field names]",
+        "3. (Optional) Campaign name",
         "",
         "## RUNNING THE CAMPAIGN",
-        "Once you have the sheet URL:",
-        "1. Use the 'Outbound Calling Workflow' tool to execute the campaign",
+        "Once you have the sheet URL and DYNAMIC_FIELDS:",
+        "1. Pass DYNAMIC_FIELDS clearly in your message when triggering the workflow",
+        "   Example: 'Run campaign. Sheet: <url>. Dynamic fields for ElevenLabs: restaurant_name'",
+        "2. Use the 'Outbound Calling Workflow' tool to execute the campaign",
         "2. The workflow will:",
         "   - Read and filter leads (Step 1)",
         "   - Submit batch calls (Step 2)",
