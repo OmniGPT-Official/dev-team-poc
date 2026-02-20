@@ -71,6 +71,9 @@ class ImplementationState:
         self.todo_pending: list = []     # Steps still to run
         self.step_timings: dict = {}     # step_name → elapsed seconds
         self.migrations_run: bool = False  # True after run_migrations completes
+        self.deploy_success: bool = False  # True once a deploy completes without error
+        self.deploy_error: str = ""        # Last error message from a failed deploy
+        self.deploy_iteration: int = 0     # Counts deploy attempts (1 = first, 2–5 = retries)
 
 
 _state = ImplementationState()
@@ -180,7 +183,7 @@ def _log_progress_board(state: "ImplementationState"):
             ("Run Migrations",      state.migrations_run),
             ("Development",         state.iteration > 0),
             ("Code Review",         state.code_review_status == "approved" and state.iteration > 0),
-            ("Deploy to Vercel",    bool(state.deploy_url)),
+            ("Deploy to Vercel",    state.deploy_success),
             ("Validate Deployment", bool(state.deploy_url)),
             ("Update README",       bool(state.deploy_url)),
             ("Summary",             False),
@@ -1225,31 +1228,41 @@ def reviews_passed(outputs: List[StepOutput]) -> bool:
     return False
 
 
-def deploy_to_vercel(step_input: StepInput) -> StepOutput:
-    """Deploy to Vercel using the DevOps Engineer agent."""
+def deploy_attempt(step_input: StepInput) -> StepOutput:
+    """Deploy to Vercel — smart retry-aware deployer.
+
+    Iteration 1: creates the Vercel project + triggers initial deployment.
+    Iterations 2–5: only triggers a re-deployment (project already linked to GitHub).
+    Sets _state.deploy_success, _state.deploy_error, and _state.deploy_url.
+    """
     global _state
 
+    _state.deploy_iteration += 1
+    iteration = _state.deploy_iteration
+
     _log_step_header(
-        "DEPLOY TO VERCEL",
+        f"DEPLOY ATTEMPT ({iteration}/5)",
         f"Project: {_state.project_name} | {_state.github_owner}/{_state.github_repo}",
     )
     _log_progress_board(_state)
     _t0 = time.time()
-    _log("🚀", "DEPLOY", "Deploying to Vercel...")
-    _log("📋", "DEPLOY", f"Owner: {_state.github_owner}, Repo: {_state.github_repo}, Project: {_state.project_name}")
 
     # Verify Vercel token is available (per-user or env var)
     vercel_token = _get_vercel_token()
     if not vercel_token:
         _log("❌", "DEPLOY", "No Vercel token found (checked user_api_keys and VERCEL_TOKEN env var)")
-        return StepOutput(content="ERROR: No Vercel token available.", success=False)
+        _state.deploy_success = False
+        _state.deploy_error = "No Vercel token available."
+        return StepOutput(content="ERROR: No Vercel token available.", success=True)
 
-    # Set env var so the deployer agent's tools can use it
     os.environ["VERCEL_TOKEN"] = vercel_token
 
     from agents.devops_engineer import devops_engineer_agent
 
-    prompt = f"""Deploy this GitHub repository to Vercel using the 2-step process:
+    if iteration == 1:
+        # First attempt: full deploy — create project and link to GitHub
+        _log("🚀", "DEPLOY", "First deploy: creating Vercel project + triggering deployment...")
+        prompt = f"""Deploy this GitHub repository to Vercel using the 2-step process:
 
 **STEP 1: Create Vercel Project**
 Call `create_vercel_project` with:
@@ -1258,39 +1271,138 @@ Call `create_vercel_project` with:
 - github_owner: {_state.github_owner}
 - framework: null (let Vercel auto-detect)
 
-This will create the project and link it to GitHub.
+This will create the project and link it to GitHub for automatic deployments on git push.
 
 **STEP 2: Trigger Initial Deployment**
 Call `trigger_deployment` with:
 - project_name: {_state.project_name}
 - git_branch: main
 
-This will trigger the first deployment. Future git pushes will auto-deploy via GitHub webhooks.
-
 **CRITICAL**: You MUST call BOTH functions. Don't skip trigger_deployment!
 
-Return the deployment URL when done.
-"""
+Return the deployment URL when done."""
+    else:
+        # Retry: project already exists — just re-trigger
+        _log("🔄", "DEPLOY", f"Retry {iteration}/5: re-triggering deployment (project already linked)...")
+        prompt = f"""Re-trigger the Vercel deployment for an already-linked project.
 
-    _log("🤖", "DEPLOY", "Asking DevOps Engineer to deploy...")
+The Vercel project "{_state.project_name}" is already created and linked to GitHub.
+The Software Engineer has pushed fixes. Now re-trigger the build.
+
+Call `trigger_deployment` with:
+- project_name: {_state.project_name}
+- git_branch: main
+
+ONLY call trigger_deployment. Do NOT call create_vercel_project again.
+
+Return the deployment URL when done."""
+
     user_id = _get_user_id()
-    result = _run_with_heartbeat(devops_engineer_agent.arun(prompt, user_id=user_id), "DEPLOY", timeout_seconds=0)
+    result = _run_with_heartbeat(
+        devops_engineer_agent.arun(prompt, user_id=user_id), "DEPLOY", timeout_seconds=0
+    )
 
     _elapsed = round(time.time() - _t0, 1)
     _state.step_timings["Deploy to Vercel"] = _elapsed
 
     if result is None:
-        _log("", "DEPLOY", f"DevOps Engineer failed ({_elapsed}s)", level="error")
-        return StepOutput(content="ERROR: Deployment failed", success=False)
+        _log("", "DEPLOY", f"DevOps Engineer timed out or crashed ({_elapsed}s)", level="error")
+        _state.deploy_success = False
+        _state.deploy_error = "DevOps Engineer failed to respond."
+        return StepOutput(content="ERROR: Deployment agent failed", success=True)
 
-    # Check if deployment was successful by looking for URL or error in response
-    response = result.content.lower()
-    if "error" in response or "failed" in response:
-        _log("", "DEPLOY", f"Deployment failed: {result.content[:200]}", level="error")
-        return StepOutput(content=f"ERROR: {result.content}", success=False)
+    response_text = result.content
 
-    _log("", "DEPLOY", f"Deployment complete in {_elapsed}s", level="success")
+    # Detect failure: look for error keywords OR absence of a vercel URL
+    url_match = re.search(r'https://[^\s)>]+vercel\.app[^\s)>]*', response_text)
+    response_lower = response_text.lower()
+    has_error_keyword = any(kw in response_lower for kw in ("error", "failed", "failure", "command exited"))
+    has_url = bool(url_match)
+
+    if has_error_keyword or not has_url:
+        _state.deploy_success = False
+        _state.deploy_error = response_text[:2000]
+        _log("", "DEPLOY", f"Attempt {iteration} FAILED ({_elapsed}s): {response_text[:200]}", level="error")
+        return StepOutput(content=f"DEPLOY_FAILED: {response_text}", success=True)
+
+    # Success
+    _state.deploy_success = True
+    _state.deploy_url = url_match.group(0).rstrip("])")  # strip any trailing markdown chars
+    _state.deploy_error = ""
+    _log("", "DEPLOY", f"Attempt {iteration} SUCCEEDED in {_elapsed}s → {_state.deploy_url}", level="success")
+    return StepOutput(content=response_text, success=True)
+
+
+def fix_build_errors(step_input: StepInput) -> StepOutput:
+    """Software Engineer fixes the build error from the last failed deploy attempt.
+
+    No-op if the last deploy_attempt succeeded. Otherwise calls the Software Engineer
+    with the exact Vercel error so it can fix only the offending files.
+    """
+    global _state
+
+    if _state.deploy_success:
+        # Deploy already worked — nothing to fix
+        return StepOutput(content="Deploy succeeded — no fixes needed.", success=True)
+
+    iteration = _state.deploy_iteration
+    repo_url = f"https://github.com/{_state.github_owner}/{_state.github_repo}"
+
+    _log_step_header(
+        f"FIX BUILD ERRORS (attempt {iteration}/5)",
+        f"Repo: {repo_url}",
+    )
+    _log("🔧", "FIX", f"Software Engineer fixing build error from attempt {iteration}...")
+    _log("🔧", "FIX", f"Error preview: {_state.deploy_error[:300]}")
+
+    from agents.software_engineer import software_engineer_agent
+
+    prompt = (
+        f"You are the Software Engineer for: {_state.project_name}\n"
+        f"Repository: {repo_url}\n\n"
+        f"## Vercel Build Error (Deploy Attempt {iteration}/5)\n\n"
+        f"```\n{_state.deploy_error[:3000]}\n```\n\n"
+        "## Your Task — Fix ONLY the build error above:\n"
+        "1. Read the exact file(s) mentioned in the error using `get_file_contents`\n"
+        "2. Fix the specific issue. Common fixes:\n"
+        "   - `next.config.ts` → rename/recreate as `next.config.js` (Next.js does not support .ts config)\n"
+        "   - TypeScript type errors → fix the type annotation in the reported file\n"
+        "   - Missing package → add it to `package.json` dependencies\n"
+        "   - Bad import path → correct the import statement\n"
+        "   - `module not found` → check the file exists and the path is correct\n"
+        f"3. Commit with message: `fix: resolve build error (attempt {iteration})`\n\n"
+        "DO NOT create new features. DO NOT modify TASKS.md. Fix ONLY what is causing the build failure.\n"
+        "After committing, reply with: 'Fixed: <what you changed>'"
+    )
+
+    _t0 = time.time()
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(
+        software_engineer_agent.arun(prompt, user_id=user_id), "FIX", timeout_seconds=0
+    )
+    _elapsed = round(time.time() - _t0, 1)
+
+    if result is None:
+        _log("", "FIX", f"Software Engineer failed to fix errors ({_elapsed}s)", level="warn")
+        return StepOutput(content="WARNING: Could not fix build errors.", success=True)
+
+    _log("", "FIX", f"Fixes committed in {_elapsed}s: {result.content[:200]}", level="success")
     return StepOutput(content=result.content, success=True)
+
+
+def deployment_succeeded(outputs: List[StepOutput]) -> bool:
+    """End condition for the deployment_cycle loop.
+
+    Returns True (break) when deploy succeeded or max attempts exhausted.
+    """
+    if _state.deploy_success:
+        _log("🎉", "DEPLOY_LOOP", f"Deployment succeeded on attempt {_state.deploy_iteration}!")
+        return True
+    if _state.deploy_iteration >= 5:
+        _log("⏰", "DEPLOY_LOOP", "Max deploy attempts (5) reached — proceeding to validation")
+        return True
+    _log("🔄", "DEPLOY_LOOP", f"Attempt {_state.deploy_iteration} failed — SW Engineer will fix and retry...")
+    return False
 
 
 def validate_deployment_link(step_input: StepInput) -> StepOutput:
@@ -1301,14 +1413,17 @@ def validate_deployment_link(step_input: StepInput) -> StepOutput:
     _log_progress_board(_state)
     _t0 = time.time()
 
-    deploy_content = step_input.previous_step_content or ""
+    # Primary: URL is stored in state by deploy_attempt()
+    deploy_url = _state.deploy_url
 
-    # Extract Vercel URL
-    url_match = re.search(r'https://[^\s]+vercel\.app[^\s]*', deploy_content)
-    deploy_url = url_match.group(0) if url_match else ""
+    # Fallback: try to extract from previous step content (legacy path)
+    if not deploy_url:
+        deploy_content = step_input.previous_step_content or ""
+        url_match = re.search(r'https://[^\s)>]+vercel\.app[^\s)>]*', deploy_content)
+        deploy_url = url_match.group(0).rstrip("])") if url_match else ""
 
     if not deploy_url:
-        _log("", "VALIDATE_DEPLOY", "Could not extract Vercel URL from deployment response", level="warn")
+        _log("", "VALIDATE_DEPLOY", "Could not extract Vercel URL — deployment may have failed all retries", level="warn")
         return StepOutput(content="WARNING: Deployment completed but URL not extracted", success=True)
 
     _log("🔍", "VALIDATE_DEPLOY", f"Supervisor validating deployment: {deploy_url}")
@@ -1602,7 +1717,15 @@ new_project_steps = Steps(
             end_condition=reviews_passed,
             max_iterations=2,
         ),
-        Step(name="deploy", executor=deploy_to_vercel),
+        Loop(
+            name="deployment_cycle",
+            steps=[
+                Step(name="deploy_attempt", executor=deploy_attempt),
+                Step(name="fix_build_errors", executor=fix_build_errors),
+            ],
+            end_condition=deployment_succeeded,
+            max_iterations=5,
+        ),
         Step(name="validate_deployment", executor=validate_deployment_link),
         Step(name="summary", executor=create_summary),
     ]
