@@ -699,6 +699,20 @@ def plan_tasks(step_input: StepInput) -> StepOutput:
 
     tech_stack = _detect_tech_stack(_state.architecture_content)
 
+    # Extract a short description: first non-empty line that isn't a heading
+    _desc_lines = [
+        l.strip() for l in _state.architecture_content.splitlines()
+        if l.strip() and not l.strip().startswith("#")
+    ]
+    _short_desc = " ".join(_desc_lines[:2])[:200] if _desc_lines else "No description available."
+
+    _log("📌", "PLAN", "─── Project Overview ───────────────────────────────────────")
+    _log("📌", "PLAN", f"  Name   : {_state.project_name}")
+    _log("📌", "PLAN", f"  Stack  : {tech_stack.upper()}")
+    _log("📌", "PLAN", f"  Repo   : {repo_url}")
+    _log("📌", "PLAN", f"  Desc   : {_short_desc}")
+    _log("📌", "PLAN", "────────────────────────────────────────────────────────────")
+
     prompt = f"""You are planning the implementation of: {_state.project_name}
 Repository: {repo_url}
 Detected Stack: {tech_stack.upper()} (verify against the architecture document below)
