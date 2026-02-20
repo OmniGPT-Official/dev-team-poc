@@ -70,6 +70,7 @@ class ImplementationState:
         self.todo_completed: list = []   # Steps completed so far
         self.todo_pending: list = []     # Steps still to run
         self.step_timings: dict = {}     # step_name → elapsed seconds
+        self.migrations_run: bool = False  # True after run_migrations completes
 
 
 _state = ImplementationState()
@@ -165,6 +166,7 @@ def _log_progress_board(state: "ImplementationState"):
             ("Read Architecture",   bool(state.architecture_content)),
             ("Validate Repo",       bool(state.github_repo)),
             ("Plan Tasks",          tasks_planned),
+            ("Run Migrations",      state.migrations_run),
             ("Development",         state.iteration > 0),
             ("Code Review",         state.code_review_status == "approved" and state.iteration > 0),
             ("Summary",             False),
@@ -175,6 +177,7 @@ def _log_progress_board(state: "ImplementationState"):
             ("Create GitHub Repo",  bool(state.github_repo)),
             ("Validate Repo",       bool(state.github_repo)),
             ("Plan Tasks",          tasks_planned),
+            ("Run Migrations",      state.migrations_run),
             ("Development",         state.iteration > 0),
             ("Code Review",         state.code_review_status == "approved" and state.iteration > 0),
             ("Deploy to Vercel",    bool(state.deploy_url)),
@@ -756,6 +759,80 @@ Return confirmation with the number of tasks created and a brief list of task ti
 
     _log("", "PLAN", f"TASKS.md written to {repo_url} in {_elapsed}s", level="success")
     return StepOutput(content=f"Planning complete: {result.content[:600]}", success=True)
+
+
+def run_migrations(step_input: StepInput) -> StepOutput:
+    """Database Engineer reads architecture, writes SQL migration to GitHub, and applies it to Supabase.
+
+    Conditional: if the architecture document does not mention Supabase or a database schema,
+    this step is skipped silently and the workflow continues unblocked.
+    """
+    global _state
+
+    repo_url = f"https://github.com/{_state.github_owner}/{_state.github_repo}"
+    _log_step_header("RUN MIGRATIONS", f"Project: {_state.project_name} | {repo_url}")
+    _log_progress_board(_state)
+    _t0 = time.time()
+
+    # Only run if architecture mentions Supabase or a database schema
+    uses_supabase = bool(re.search(r'supabase', _state.architecture_content, re.IGNORECASE))
+    has_db_schema = bool(re.search(
+        r'(database|schema|migration|CREATE TABLE)',
+        _state.architecture_content, re.IGNORECASE
+    ))
+
+    if not (uses_supabase or has_db_schema):
+        _log("⏭️", "MIGRATIONS", "No database detected in architecture — skipping migrations")
+        return StepOutput(content="No database in architecture. Migrations skipped.", success=True)
+
+    from agents.database_engineer import database_engineer_agent
+
+    _log("📌", "MIGRATIONS", "─── Migration Overview ──────────────────────────────────────")
+    _log("📌", "MIGRATIONS", f"  Project  : {_state.project_name}")
+    _log("📌", "MIGRATIONS", f"  Repo     : {repo_url}")
+    _log("📌", "MIGRATIONS", f"  Database : Supabase (detected in architecture)")
+    _log("📌", "MIGRATIONS", "────────────────────────────────────────────────────────────")
+
+    prompt = (
+        f"You are the Database Engineer for: {_state.project_name}\n"
+        f"Repository: {repo_url}\n\n"
+        "## IMPORTANT — DO NOT CALL ANY TOOLS TO READ DOCUMENTS\n"
+        "The architecture document is already provided below. Do NOT call read_document, "
+        "get_document, or any Google Docs tool.\n\n"
+        f"## Architecture Document (already loaded — use this directly):\n"
+        f"{_state.architecture_content[:6000]}\n\n"
+        "## Your Task:\n"
+        "Use your database-migration skill to:\n"
+        "1. Extract the database schema from the architecture above\n"
+        "2. Write a single SQL migration file to GitHub:\n"
+        f"   Owner: \"{_state.github_owner}\"\n"
+        f"   Repo: \"{_state.github_repo}\"\n"
+        "   Path: \"supabase/migrations/20260220000000_initial_schema.sql\"\n"
+        "   Branch: \"main\"\n"
+        "   Commit message: \"chore: add initial database migration\"\n"
+        "3. Execute the migration against Supabase using the apply_migration or execute_sql MCP tool\n"
+        "4. Return: list of tables created and migration status (success/fail)"
+    )
+
+    _log("🗄️", "MIGRATIONS", "Database Engineer is generating and running migrations...")
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(
+        database_engineer_agent.arun(prompt, user_id=user_id), "MIGRATIONS", timeout_seconds=0
+    )
+
+    _elapsed = round(time.time() - _t0, 1)
+    _state.step_timings["Run Migrations"] = _elapsed
+
+    if result is None:
+        _log("", "MIGRATIONS", f"Migration step failed ({_elapsed}s) — continuing without migrations", level="warn")
+        return StepOutput(
+            content="WARNING: Migration step failed. Software Engineer will proceed without pre-run migrations.",
+            success=True
+        )
+
+    _state.migrations_run = True
+    _log("", "MIGRATIONS", f"Migrations complete in {_elapsed}s", level="success")
+    return StepOutput(content=f"Migrations complete: {result.content[:600]}", success=True)
 
 
 def development(step_input: StepInput) -> StepOutput:
@@ -1510,11 +1587,12 @@ SUPABASE_SERVICE_ROLE_KEY=<your Supabase service_role key>
 # Define grouped steps for NEW projects (full flow with repo creation + deployment)
 new_project_steps = Steps(
     name="new_project_path",
-    description="Complete workflow for new projects: create repo, plan tasks, implement, deploy, validate",
+    description="Complete workflow for new projects: create repo, plan tasks, run migrations, implement, deploy, validate",
     steps=[
         Step(name="create_repo", executor=create_github_repo),
         Step(name="validate_repo", executor=validate_repo_link),
         Step(name="plan_tasks", executor=plan_tasks),          # Lead Engineer writes TASKS.md to GitHub
+        Step(name="run_migrations", executor=run_migrations),  # Database Engineer applies schema to Supabase
         Loop(
             name="implementation_cycle",
             steps=[
@@ -1533,10 +1611,11 @@ new_project_steps = Steps(
 # Define grouped steps for EXISTING projects (skip repo creation + deployment)
 existing_project_steps = Steps(
     name="existing_project_path",
-    description="Workflow for existing projects: validate repo, plan tasks, implement, summary (skip creation + deployment)",
+    description="Workflow for existing projects: validate repo, plan tasks, run migrations, implement, summary (skip creation + deployment)",
     steps=[
         Step(name="validate_repo", executor=validate_repo_link),
         Step(name="plan_tasks", executor=plan_tasks),          # Lead Engineer writes TASKS.md to GitHub
+        Step(name="run_migrations", executor=run_migrations),  # Database Engineer applies schema to Supabase
         Loop(
             name="implementation_cycle",
             steps=[
