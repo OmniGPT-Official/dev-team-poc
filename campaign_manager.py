@@ -171,8 +171,11 @@ def step2_submit_batch_call(
     """
     Step 2: Submit batch call to ElevenLabs using leads from Step 1.
     """
+    logger.info("Step 2: starting batch call submission")
     original_input = step_input.get_input_as_string() or ""
     step1_content = step_input.get_last_step_content() or ""
+
+    logger.info(f"Step 2: step1_content length={len(step1_content)}, preview={step1_content[:120]}")
 
     # Extract campaign name from original workflow input
     campaign_name = "Outbound Campaign"
@@ -188,10 +191,21 @@ def step2_submit_batch_call(
         f"Submit batch call now."
     )
 
-    result = calling_coordinator_agent.run(message)
-    output_content = result.content if result and result.content else ""
+    logger.info(f"Step 2: calling calling_coordinator_agent with campaign='{campaign_name}'")
+    try:
+        result = calling_coordinator_agent.run(message)
+        output_content = result.content if result and result.content else ""
+        logger.info(f"Step 2: coordinator returned content length={len(output_content)}, preview={output_content[:120]}")
+    except Exception as e:
+        logger.error(f"Step 2: calling_coordinator_agent.run() raised exception: {e}")
+        return StepOutput(
+            step_name="Step 2: Submit Batch Call",
+            content=f"❌ Error in Step 2: {e}",
+            success=False,
+        )
 
     return StepOutput(
+        step_name="Step 2: Submit Batch Call",
         content=output_content,
         success=bool(output_content),
     )
@@ -204,8 +218,11 @@ def step3_log_results(
     """
     Step 3: Update Google Sheet with call outcomes from Step 2.
     """
+    logger.info("Step 3: starting results logging")
     original_input = step_input.get_input_as_string() or ""
     step2_content = step_input.get_last_step_content() or ""
+
+    logger.info(f"Step 3: step2_content length={len(step2_content)}, preview={step2_content[:120]}")
 
     # Extract sheet URL from original workflow input
     sheet_url = ""
@@ -215,16 +232,29 @@ def step3_log_results(
             sheet_url = line.split(":", 1)[1].strip()
             break
 
+    logger.info(f"Step 3: sheet_url='{sheet_url}'")
+
     message = (
         f"Sheet URL: {sheet_url}\n"
         f"Call results from Step 2:\n{step2_content}\n"
         f"Update the Google Sheet with call outcomes."
     )
 
-    result = results_logger_agent.run(message)
-    output_content = result.content if result and result.content else ""
+    logger.info("Step 3: calling results_logger_agent")
+    try:
+        result = results_logger_agent.run(message)
+        output_content = result.content if result and result.content else ""
+        logger.info(f"Step 3: logger returned content length={len(output_content)}, preview={output_content[:120]}")
+    except Exception as e:
+        logger.error(f"Step 3: results_logger_agent.run() raised exception: {e}")
+        return StepOutput(
+            step_name="Step 3: Log Results",
+            content=f"❌ Error in Step 3: {e}",
+            success=False,
+        )
 
     return StepOutput(
+        step_name="Step 3: Log Results",
         content=output_content,
         success=True,
     )
