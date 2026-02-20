@@ -47,8 +47,10 @@ Group the work into logical units. Common groupings:
 3. Root layout + global styles (app/layout.tsx, app/globals.css)
 4. One task per major page or feature component group
 5. API routes (one task per route group)
-6. Database migrations / schema files
-7. README (always last)
+6. README (always last)
+
+> **Note:** Do NOT include database migrations or schema creation as a task.
+> Migrations are handled separately by the Database Engineer before the Software Engineer starts.
 
 **For HTML/CSS/JS projects:**
 1. HTML structure (index.html)
@@ -123,6 +125,7 @@ Commit message: "chore: add implementation task list"
 - Include more than 5 files per task
 - Create tasks that depend on knowledge from later tasks
 - Skip the README task
+- **Include ANY database migration tasks** — `supabase/migrations/*.sql`, schema creation, `CREATE TABLE` scripts, or any Supabase migration steps. These are run by the Database Engineer in a separate step before the Software Engineer begins. The Software Engineer only writes application code on top of an already-existing schema.
 
 ---
 

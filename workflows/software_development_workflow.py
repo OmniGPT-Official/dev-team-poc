@@ -738,6 +738,12 @@ Each task must:
 - Be ordered so dependencies come before dependents
 - Have the README as the final task
 
+CRITICAL — DO NOT include any of the following as tasks:
+- Database migrations (supabase/migrations/*.sql)
+- Schema creation (CREATE TABLE scripts)
+- Any Supabase migration steps
+The database schema is already applied to Supabase by the Database Engineer before the Software Engineer begins. Write tasks for application code only.
+
 Write the result as TASKS.md to the repository root using create_or_update_file:
 - Owner: "{_state.github_owner}"
 - Repo: "{_state.github_repo}"
