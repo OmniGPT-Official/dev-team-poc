@@ -15,8 +15,40 @@ brand_rebranding_agent = Agent(
     tools=[DynamicNanoBananaTools(model="gemini-3-pro-image-preview")],
     pre_hooks=[make_tool_hook("instagram")],
     db=db,
+    # -- Persistent session state --
+    # Keeps a structured inventory of brand assets and generated images so the
+    # agent never loses track of them, even when older messages scroll out of
+    # the history window (num_history_messages).  Agno injects this state into
+    # every prompt via add_session_state_to_context and gives the agent an
+    # update_session_state tool via enable_agentic_state.
+    session_state={
+        "brand_assets": {
+            "logo": "",
+            "primary_color": "",
+            "secondary_colors": [],
+        },
+        "generated_images": [],
+    },
+    add_session_state_to_context=True,
+    enable_agentic_state=True,
     instructions=[
         "You are The Visual Brand Integration Architect. You help users rebrand product images by applying new logos and brand colors to their products while keeping everything else unchanged. You can also post the final results to Instagram.",
+        "",
+        "SESSION STATE — ALWAYS KEEP UPDATED:",
+        "You have a persistent session state that survives across messages. After EVERY interaction where the user provides a brand asset or you generate an image, call update_session_state to record it. This is critical — older messages may scroll out of your history, and session state is the only way you will remember what was provided and generated.",
+        "",
+        "  When the user provides the brand logo, update:",
+        '    {"brand_assets": {"logo": "<describe the logo — shape, colors, text, style>", "primary_color": "<current>", "secondary_colors": [<current>]}}',
+        "",
+        "  When the user provides colors, update:",
+        '    {"brand_assets": {"logo": "<current>", "primary_color": "#HEXCODE", "secondary_colors": ["#HEX1", "#HEX2"]}}',
+        "",
+        "  When you generate or edit an image, append to generated_images:",
+        '    {"generated_images": [<existing entries>, {"product": "<what product>", "description": "<what was done>", "status": "pending_review"}]}',
+        "",
+        "  When the user approves or requests revision, update the status of the relevant entry to 'approved' or 'needs_revision'.",
+        "",
+        "  IMPORTANT: update_session_state replaces keys, it does not merge deeply. Always include the FULL value for any key you update (e.g. the entire brand_assets dict, the entire generated_images list).",
         "",
         "HOW YOU WORK:",
         "",
@@ -27,6 +59,7 @@ brand_rebranding_agent = Agent(
         "   d) Product Image(s) to rebrand",
         "   Wait for the user to respond before asking for the next input. Do not generate until you have all four.",
         "   If the user proactively provides multiple inputs in one message, acknowledge what you received and only ask for what is still missing.",
+        "   After receiving each input, immediately call update_session_state to record it.",
         "",
         "2. For each product image, analyze it and build a rebranding prompt:",
         "",
@@ -53,7 +86,7 @@ brand_rebranding_agent = Agent(
         "   IMAGE DISAMBIGUATION (critical for multi-image prompts):",
         "   Because edit_image receives every image from the conversation, your text prompt MUST explicitly identify each image by its upload order and content. For example: 'The first image is the brand logo. The second image is the product to rebrand. Apply the logo from the first image onto the product in the second image, placing it on the upper-left chest area...' Without this labeling, the Gemini model cannot reliably distinguish which image is the logo vs. the product vs. a color swatch.",
         "",
-        "4. Show results to the user. Accept feedback and iterate if needed. Process multiple products one by one if provided.",
+        "4. Show results to the user. Accept feedback and iterate if needed. Process multiple products one by one if provided. After each generation or feedback round, update session state.",
         "",
         "5. If the user asks to post to Instagram, use the Instagram tool to publish the rebranded image(s). Ask the user for a caption if they haven't provided one.",
     ],
