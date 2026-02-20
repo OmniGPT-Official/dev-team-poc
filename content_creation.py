@@ -70,6 +70,34 @@ class DynamicNanoBananaTools(NanoBananaTools):
       (part.thought=True) but are filtered out here — only the final image is
       returned.  A future debug mode could surface them.
     ─────────────────────────────────────────────────────────────────────────────
+
+    TODO — Known limitation: image accumulation in long sessions
+    ─────────────────────────────────────────────────────────────────────────────
+    Agno's collect_joint_images() (agno/utils/agent.py) injects ALL images from
+    the entire session into every edit_image call — user uploads AND previously
+    generated results.  There is no built-in filtering mechanism.
+
+    Impact:
+      • Short sessions (1-3 edits): works well, disambiguation instructions
+        guide the agent to label images by upload order.
+      • Long sessions (6+ edits): image count grows by ~2 per edit (upload +
+        result).  By the 7th edit, ~14 images are injected, hitting Gemini's
+        14-image limit.  Quality degrades as the model struggles to tell images
+        apart.
+
+    Future improvements (see PR #183 for full details):
+      • Selective image passing — filter to only relevant images per call
+        (e.g., current turn's uploads + most recent result), instead of the
+        full session history.
+      • Persistent Gemini chat sessions — use client.chats.create() to maintain
+        editing context across agent turns without re-sending all images.
+      • Google Search grounding — add use_search_grounding flag to create_image
+        for real-time data in generated images.
+      • Thought-image debug mode — surface part.thought=True images for
+        diagnosing unexpected edit results.
+      • Mask-based inpainting via frontend UI — expose a mask_image parameter
+        on edit_image if a drawing UI is added to the frontend.
+    ─────────────────────────────────────────────────────────────────────────────
     """
 
     def __init__(self, **kwargs):
@@ -264,6 +292,12 @@ class DynamicNanoBananaTools(NanoBananaTools):
         # uploaded and every image previously generated in this session, then sets
         # func._images before invoking this method.  If the function signature
         # includes ``images``, Agno passes _images as the argument automatically.
+        #
+        # TODO: This injects ALL session images (uploads + generated results) with
+        # no filtering.  In long sessions the list grows unboundedly and can hit
+        # Gemini's 14-image limit.  Add selective filtering here once Agno supports
+        # it, or implement custom filtering (e.g., keep only current-turn uploads +
+        # most recent generated image).  See PR #183 for details.
         if not images:
             return ToolResult(
                 content=(
