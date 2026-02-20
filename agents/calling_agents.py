@@ -44,11 +44,12 @@ lead_reader_agent = Agent(
         "If phone number is missing or invalid, SKIP that lead",
         "",
         "## OUTPUT FORMAT",
-        "Provide:",
-        "- Total leads found in sheet",
-        "- Leads ready to call (count)",
-        "- Leads skipped (count and reasons)",
-        "- List each ready lead as: {phone_number, restaurant_name, city, country, email, website}",
+        "Your final response MUST be ONLY this compact structure — no raw data, no extra prose:",
+        "SUMMARY: X total, Y ready, Z skipped",
+        "Then a JSON array on a single line with ONLY the fields needed for calling:",
+        '[{"phone_number":"+1234567890","restaurant_name":"Joe\'s","city":"NYC","country":"US"},...]',
+        "Do NOT include raw sheet data, email, website, or any other columns.",
+        "Do NOT add explanations after the JSON — Step 2 reads this output directly.",
         "",
         "## ERROR HANDLING",
         "If read_sheet or update_sheet tools are not available, or Google Sheets access fails:",
@@ -87,8 +88,8 @@ calling_coordinator_agent = Agent(
     ],
     tools=[ElevenLabsBatchCallingTools()],  # Use custom toolkit for batch calling
     db=db,
-    add_history_to_context=False,  # FIX: Disable history to prevent context overflow in workflows
-    num_history_messages=5,  # FIX: Limit to last 5 messages as safety measure
+    add_history_to_context=False,  # No history — each step runs fresh
+    num_history_messages=0,  # FIX: 0 prevents DB history loading; 5 was still loading into context
     markdown=True,
 )
 
