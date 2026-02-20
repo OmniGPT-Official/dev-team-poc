@@ -44,25 +44,28 @@ _outbound_calling_workflow = Workflow(
             name="Step 1: Read Leads",
             agent=lead_reader_agent,
             description="""
-            **STEP 1 of 3: Read and Filter Leads**
+**STEP 1 of 3: Read and Filter Leads**
 
-            Your task:
-            1. Get Google Sheet URL from user (if not already provided)
-            2. Use read_sheet to fetch all leads
-            3. Filter for leads ready to call (status empty or 'not_contacted')
-            4. Validate phone numbers are in E.164 format
-            5. Output ONLY: one summary line + compact JSON array of ready leads
+FIRST — check your input for pre-provided lead data:
+- If your input contains 'LEADS_ALREADY_READ: [...]' → parse and use that JSON directly. Skip read_sheet entirely.
+- If no LEADS_ALREADY_READ in input → read the sheet using read_sheet tool with the Sheet URL from your input.
 
-            **CRITICAL - Keep output small. Step 2 receives your full response as context.**
-            Output format (nothing else after the JSON):
-            SUMMARY: X total, Y ready, Z skipped
-            JSON array with ONLY phone_number + the DYNAMIC_FIELDS specified by the user.
-            Example (if user chose restaurant_name): [{"phone_number":"+66...","restaurant_name":"..."},...]
-            Do NOT include any other columns — preserve the sheet; only send what ElevenLabs needs.
+Your task (whichever path):
+1. Use lead data (from input or read_sheet)
+2. Filter for leads ready to call (status empty or 'not_contacted')
+3. Validate phone numbers are in E.164 format
+4. Output ONLY: one summary line + compact JSON array of ready leads
 
-            **STOP HERE** - Pass the filtered lead list to Step 2
-            End with: "Step 1 complete. Ready for Step 2: Batch Calling."
-            """,
+**CRITICAL - Keep output small. Step 2 receives your full response as context.**
+Output format (nothing else after the JSON):
+SUMMARY: X total, Y ready, Z skipped
+JSON array with ONLY phone_number + the DYNAMIC_FIELDS specified by the user.
+Example (if user chose restaurant_name): [{"phone_number":"+66...","restaurant_name":"..."},...]
+Do NOT include any other columns — preserve the sheet; only send what ElevenLabs needs.
+
+**STOP HERE** - Pass the filtered lead list to Step 2
+End with: "Step 1 complete. Ready for Step 2: Batch Calling."
+""",
         ),
         Step(
             name="Step 2: Submit Batch Call",
@@ -159,6 +162,16 @@ campaign_manager = Agent(
         "   - Update results in sheet (Step 3)",
         "3. Keep user informed of progress at each step",
         "",
+        "## CARRYING DATA INTO THE WORKFLOW",
+        "When the user says 'start' or 'run campaign', you may already have the lead data from earlier in this conversation.",
+        "DO NOT make Step 1 re-read the sheet if you already read it. Instead:",
+        "1. Include the full lead list in your workflow trigger message",
+        "2. Format: 'LEADS_ALREADY_READ: [<the JSON array you already have>]'",
+        "3. Also include: SHEET_URL, DYNAMIC_FIELDS, CAMPAIGN_NAME",
+        "Example trigger message:",
+        "  Sheet: https://... | DYNAMIC_FIELDS: restaurant_name | LEADS_ALREADY_READ: [{\"phone_number\":\"+66...\",\"restaurant_name\":\"Pad Thai\"},...] | Campaign: Bangkok Feb 2026",
+        "This prevents double reads and OAuth failures on the second request.",
+        "",
         "## PROGRESS UPDATES",
         "Communicate clearly:",
         "- 'Reading leads from your sheet...'",
@@ -192,6 +205,12 @@ campaign_manager = Agent(
         "- All results logged to Google Sheet",
         "- Next steps",
         "",
+        "## MEMORY",
+        "You have agentic memory — use it to remember things that are useful ACROSS sessions.",
+        "REMEMBER (call update_user_memory): Google Sheet URLs the user has used before.",
+        "DO NOT REMEMBER: restaurant names, phone numbers, lead details — that data lives in the sheet.",
+        "When starting a new session, check if you have a stored sheet URL and ask the user if they want to use the same sheet.",
+        "",
         "## COMMUNICATION STYLE",
         "- Be conversational and friendly",
         "- Use emojis for visual progress: 📊 📞 ✓ ⚠️",
@@ -202,7 +221,8 @@ campaign_manager = Agent(
     tools=[workflow_tools],  # Workflow equipped as tool via WorkflowTools
     pre_hooks=[inject_user_tools],  # Inject Google Sheets tools via OAuth
     db=db,
-    update_memory_on_run=True,  # Remember Sheet URLs and campaign details
+    update_memory_on_run=False,  # Disable auto-summaries that pollute cross-session memory
+    enable_agentic_memory=True,  # Use agentic memory for deliberate cross-session recall
     add_history_to_context=True,  # Main agent needs context for conversation
     num_history_messages=3,  # FIX: Reduced from 10 — campaign results are large, 10 caused 4MB overflow
     add_datetime_to_context=True,

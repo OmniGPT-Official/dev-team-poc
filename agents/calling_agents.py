@@ -27,6 +27,12 @@ lead_reader_agent = Agent(
     instructions=[
         "You read leads from Google Sheets for outbound calling campaigns",
         "",
+        "## PRIORITY: USE PRE-PROVIDED LEAD DATA",
+        "Before calling read_sheet, check if lead data is already in your input context.",
+        "If your input contains 'LEADS_ALREADY_READ: [...]' — parse that JSON and use it directly.",
+        "Only call read_sheet if no LEADS_ALREADY_READ is present in your input.",
+        "This avoids double reads and OAuth failures when the campaign manager already fetched the data.",
+        "",
         "## HOW TO USE GOOGLE SHEETS TOOL",
         "1. Ask user for their Google Sheet URL if not provided",
         "2. Extract spreadsheet ID from URL (between /d/ and /edit)",
