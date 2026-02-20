@@ -84,6 +84,24 @@ def step1_read_leads(
         )
     leads_key = f"leads_{sheet_url}"
 
+    # ── Inline leads: campaign manager already read the sheet ────────────────
+    # The campaign manager has OAuth access and reads the sheet during conversation.
+    # It passes the leads as compact JSON on a single LEADS: line so Step 1 never
+    # needs to re-read the sheet (which would fail — OAuth not available in executor context).
+    for line in raw_input.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("leads:"):
+            inline_leads = stripped.split(":", 1)[1].strip()
+            if inline_leads and "phone_number" in inline_leads:
+                session_state[leads_key] = inline_leads
+                logger.info(f"Step 1: using inline leads from campaign manager (key={leads_key})")
+                return StepOutput(
+                    step_name="Step 1: Read Leads",
+                    content=inline_leads,
+                    success=True,
+                )
+            break
+
     # ── Cache hit: return stored leads without re-reading the sheet ──────────
     cached_leads = session_state.get(leads_key)
     if cached_leads:
@@ -259,15 +277,26 @@ campaign_manager = Agent(
         "   - Save the user's answer as: DYNAMIC_FIELDS = [list of field names]",
         "3. (Optional) Campaign name",
         "",
+        "## READING THE SHEET",
+        "When the user provides the Google Sheet URL, read it immediately using the read_sheet tool.",
+        "Show the user a summary table of leads found (phone_number + all columns).",
+        "Then ask which DYNAMIC_FIELDS to use for the call.",
+        "",
         "## RUNNING THE CAMPAIGN",
-        "Once you have the sheet URL, DYNAMIC_FIELDS, and optional campaign name, trigger the workflow.",
-        "Pass these three things as the workflow input (plain text, one per line):",
+        "Once you have read the sheet, confirmed DYNAMIC_FIELDS, and the user says go:",
+        "1. Filter the leads: keep only rows where status is empty or 'not_contacted'",
+        "2. For each lead, keep ONLY: phone_number + the DYNAMIC_FIELDS the user chose (e.g. restaurant_name)",
+        "   - Also keep 'language' if present in the sheet",
+        "   - Drop all other columns (email, website, status, city, country unless user asked for them)",
+        "3. Format the filtered leads as compact JSON (single line, no line breaks inside the array)",
+        "4. Trigger the workflow with these four things (plain text, one per line):",
         "  Sheet: <sheet_url>",
         "  DYNAMIC_FIELDS: <comma-separated field names, e.g. restaurant_name>",
         "  Campaign: <campaign_name>",
-        "The workflow handles lead caching automatically — you never need to pass lead data yourself.",
+        "  LEADS: <compact JSON array, e.g. [{\"phone_number\":\"+66...\",\"restaurant_name\":\"Pad Thai\"}]>",
+        "The LEADS line lets the workflow skip the sheet re-read (OAuth not available inside workflow steps).",
         "The workflow will:",
-        "   - Read and filter leads from the sheet (Step 1) — cached after first read",
+        "   - Use your pre-read leads directly (Step 1)",
         "   - Submit batch calls to ElevenLabs (Step 2)",
         "   - Update results in the sheet (Step 3)",
         "Keep the user informed of progress at each step.",
