@@ -557,6 +557,22 @@ Return the repository URL when done."""
         return StepOutput(content=f"Repository created at: {repo_url}", success=True)
 
 
+def _detect_tech_stack(content: str) -> str:
+    """Detect the primary tech stack from architecture document content.
+
+    Returns:
+        "nextjs"  — Next.js (with or without TypeScript / Tailwind / Supabase)
+        "react"   — React + Vite SPA (no Next.js)
+        "html"    — Simple HTML / CSS / JS static site
+    """
+    c = content.lower()
+    if re.search(r'\bnext\.?js\b', c):
+        return "nextjs"
+    if re.search(r'\breact\b', c) or re.search(r'\bvite\b', c):
+        return "react"
+    return "html"
+
+
 def _extract_code(response: str) -> str:
     """Extract code from agent response - handles markdown code blocks or raw code."""
     if not response:
@@ -685,9 +701,12 @@ def plan_tasks(step_input: StepInput) -> StepOutput:
 
     prompt = f"""You are planning the implementation of: {_state.project_name}
 Repository: {repo_url}
-Tech Stack: {tech_stack.upper()}
+Detected Stack: {tech_stack.upper()} (verify against the architecture document below)
 
-## Architecture Document:
+## IMPORTANT — DO NOT CALL ANY TOOLS TO READ DOCUMENTS
+The architecture document is already provided below. Do NOT call read_document, get_document, or any Google Docs tool. The only tool you should call is create_or_update_file to write TASKS.md to GitHub.
+
+## Architecture Document (already loaded — use this directly):
 {_state.architecture_content[:6000]}
 
 ## Your Task:
@@ -699,7 +718,7 @@ Each task must:
 - Be ordered so dependencies come before dependents
 - Have the README as the final task
 
-Write the result as TASKS.md to the repository root:
+Write the result as TASKS.md to the repository root using create_or_update_file:
 - Owner: "{_state.github_owner}"
 - Repo: "{_state.github_repo}"
 - Path: "TASKS.md"
