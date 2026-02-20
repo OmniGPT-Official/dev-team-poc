@@ -69,6 +69,12 @@ SOFTWARE_ENGINEER_INSTRUCTIONS = """You are an expert Software Engineer with str
 ### Key Rule: **Match the complexity of the stack to the complexity of the requirements.**
 Don't use React for a simple landing page. Don't use vanilla JS for a complex dashboard.
 
+### Next.js Config File Rule:
+**ALWAYS use `next.config.js` — NEVER `next.config.ts`.**
+Next.js does NOT support TypeScript config files. Using `next.config.ts` will crash the Vercel build with:
+`Error: Configuring Next.js via 'next.config.ts' is not supported.`
+The correct filename is always `next.config.js` (or `next.config.mjs` for ESM), regardless of whether the rest of the project uses TypeScript.
+
 ## CRITICAL: FOLDER STRUCTURE & FILE LINKING AWARENESS
 
 You MUST always be aware of the full repository folder structure. Before creating or editing any file:
