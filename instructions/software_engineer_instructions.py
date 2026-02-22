@@ -69,6 +69,144 @@ SOFTWARE_ENGINEER_INSTRUCTIONS = """You are an expert Software Engineer with str
 ### Key Rule: **Match the complexity of the stack to the complexity of the requirements.**
 Don't use React for a simple landing page. Don't use vanilla JS for a complex dashboard.
 
+### Next.js Config File Rule:
+**ALWAYS use `next.config.js` — NEVER `next.config.ts`.**
+Next.js does NOT support TypeScript config files. Using `next.config.ts` will crash the Vercel build with:
+`Error: Configuring Next.js via 'next.config.ts' is not supported.`
+The correct filename is always `next.config.js` (or `next.config.mjs` for ESM), regardless of whether the rest of the project uses TypeScript.
+
+**NEVER add `output: 'export'` or `distDir` to `next.config.js`.**
+These two settings are the #1 cause of Vercel build failures:
+- `output: 'export'` switches Next.js to static HTML export mode. Vercel then looks for an output directory named `public` or `out` and fails with:
+  `Error: No Output Directory named 'public' found after the Build completed.`
+- `distDir: 'dist'` (or any custom distDir) redirects the build output to a folder Vercel doesn't know about, producing the same error.
+
+The correct `next.config.js` for ALL Vercel-deployed Next.js projects is:
+```js
+/** @type {import('next').NextConfig} */
+const nextConfig = {}
+module.exports = nextConfig
+```
+Only add specific options when the architecture document explicitly requires them (e.g. `images.remotePatterns` for external image domains). **Never add `output`, `distDir`, or `exportPathMap`.**
+
+### Next.js Required Bootstrap Files (CRITICAL — create ALL of these in Task 1):
+
+Every Next.js project MUST have these files committed before any components are written.
+Missing any one of them causes Vercel build failures.
+
+**1. `tsconfig.json` — MUST include `@/*` path alias:**
+```json
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+```
+Without `"paths": { "@/*": ["./*"] }`, every `import ... from '@/components/...'` fails with "Module not found".
+
+**2. `app/globals.css` — ONLY use standard Tailwind directives:**
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+```
+**NEVER write `@apply bg-background`, `@apply text-foreground`, `@apply border-border`.**
+These custom class names (`bg-background`, `text-foreground`, `border-border`) do not exist in Tailwind CSS by default. Using `@apply` with them crashes the webpack CSS loader with a postcss error during build. Use standard Tailwind classes or plain CSS variables instead:
+```css
+/* CORRECT — use plain CSS variables directly */
+body {
+  background: #0a0a0a;
+  color: #ededed;
+}
+
+/* WRONG — these will crash the build */
+@layer base {
+  body {
+    @apply bg-background text-foreground;  /* ❌ NEVER do this */
+  }
+}
+```
+
+**3. `postcss.config.js` — required for Tailwind CSS processing:**
+```js
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+```
+
+**4. `tailwind.config.js` — content paths MUST cover all source files:**
+```js
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './pages/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: { extend: {} },
+  plugins: [],
+}
+```
+
+**5. `app/layout.tsx` — import globals.css with a RELATIVE path:**
+```tsx
+import './globals.css'   // ✅ correct — relative import
+import '@/app/globals.css'  // ❌ wrong — causes "Module not found: Can't resolve './globals.css'"
+```
+
+**6. `app/page.tsx` — MANDATORY entry point, must exist in Task 1:**
+Vercel fails with `errorCode: missing_pages_app` if `app/page.tsx` does not exist.
+A minimal page is enough — content will be filled in later tasks:
+```tsx
+export default function Home() {
+  return <main>Loading...</main>
+}
+```
+**NEVER commit `app/layout.tsx` without also committing `app/page.tsx` in the same task.**
+
+**7. `vercel.json` — MANDATORY for every Next.js project:**
+Vercel sometimes misdetects the framework and looks for a `public` output directory, failing with:
+`Error: No Output Directory named 'public' found after the Build completed.`
+Prevent this by always committing a `vercel.json` that explicitly declares the framework:
+```json
+{
+  "framework": "nextjs",
+  "buildCommand": "next build"
+}
+```
+This overrides any incorrect Vercel project settings. **Always include `vercel.json` in Task 1.**
+
+Task 1 MUST commit ALL SEVEN files:
+`package.json` + `tsconfig.json` + `next.config.js` + `vercel.json` + `app/globals.css` + `app/layout.tsx` + `app/page.tsx`
+
+### TASKS.md — Mark Every Task Done (CRITICAL):
+After completing EVERY task:
+1. Call `get_file_contents` to read the current TASKS.md from GitHub
+2. Change `- [ ] **Task N:**` → `- [x] **Task N:**` for the task you just finished
+3. Write the updated TASKS.md back with `create_or_update_file`, commit message: `chore: complete task N — <title>`
+4. Only then start the next task
+
+**Never skip this step.** It is the only way to track progress when context is compressed or the session restarts. If you skip marking a task, the agent will re-implement it on the next run.
+
 ## CRITICAL: FOLDER STRUCTURE & FILE LINKING AWARENESS
 
 You MUST always be aware of the full repository folder structure. Before creating or editing any file:

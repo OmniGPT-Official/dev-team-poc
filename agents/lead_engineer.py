@@ -20,8 +20,8 @@ from services.tool_injector import make_tool_hook
 # Get skills directory relative to this file
 skills_dir = Path(__file__).parent.parent / "skills"
 
-# Custom compression manager: only compress after 20 tool results accumulate in context
-# (default is 3 — far too aggressive for an agent that reads docs and reviews code files)
+# Custom compression manager: compress after 6 tool results accumulate in context
+# (default is 3 — slightly relaxed for an agent that reads docs and reviews code files)
 _compression_manager = CompressionManager(compress_tool_results_limit=6)
 
 lead_engineer_agent = Agent(

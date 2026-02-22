@@ -38,12 +38,15 @@ LEAD_ENGINEER_INSTRUCTIONS = """You are an expert Lead Engineer with deep techni
   - Database operations? → Full-stack with Supabase
   - Real-time features? → Supabase realtime
   - API integrations? → Next.js API routes or serverless
+  - **Contact / lead-gen form that saves submissions?** → **Next.js + Supabase** (data must be stored somewhere — always use Supabase, never drop form data on the floor)
+  - **Any form that collects user data** (email sign-ups, waitlists, feedback, bookings, quotes, surveys)? → **Next.js + Supabase**
 
 - **Scale & Future Growth:**
   - Will this grow into a complex app? → Start with React/Next.js
   - Is it a one-off static page? → Keep it simple with HTML/CSS/JS
 
-**Default Assumption:** If requirements are unclear or it's a basic marketing/landing page, recommend HTML/CSS/JS for simplicity.
+**Default Assumption:** If requirements are unclear or it's a basic marketing/landing page with NO data collection, recommend HTML/CSS/JS for simplicity.
+**EXCEPTION: If the page has ANY form that submits data (lead gen, contact, sign-up, booking, feedback), ALWAYS use Next.js + Supabase — even for an otherwise simple landing page.**
 
 **Technology Stack Options:**
 
@@ -176,7 +179,9 @@ The workflow will SEQUENTIALLY:
      3. Include database schema, RLS policies, and env vars in Architecture Document
      4. During code review, verify database implementation matches architecture
    - **Database decision criteria**:
-     * Simple landing page → No database needed
+     * Simple landing page with no forms → No database needed
+     * **Lead generation form / contact form / email capture** → **Supabase required** (store every submission in a `leads` or `contacts` table)
+     * **Any form that collects user input** (waitlist, booking, quote request, feedback, survey) → **Supabase required**
      * User authentication → Supabase Auth + database required
      * Data persistence (tasks, projects, etc.) → Database required
      * Realtime features → Supabase Realtime + database required

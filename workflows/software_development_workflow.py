@@ -70,6 +70,11 @@ class ImplementationState:
         self.todo_completed: list = []   # Steps completed so far
         self.todo_pending: list = []     # Steps still to run
         self.step_timings: dict = {}     # step_name → elapsed seconds
+        self.migrations_run: bool = False  # True after run_migrations completes
+        self.deploy_success: bool = False  # True once a deploy completes without error
+        self.deploy_error: str = ""        # Last error message from a failed deploy
+        self.deploy_iteration: int = 0     # Counts deploy attempts (1 = first, 2–5 = retries)
+        self.session_id: str = ""          # Unique ID per workflow run — isolates agent DB sessions
 
 
 _state = ImplementationState()
@@ -165,6 +170,7 @@ def _log_progress_board(state: "ImplementationState"):
             ("Read Architecture",   bool(state.architecture_content)),
             ("Validate Repo",       bool(state.github_repo)),
             ("Plan Tasks",          tasks_planned),
+            ("Run Migrations",      state.migrations_run),
             ("Development",         state.iteration > 0),
             ("Code Review",         state.code_review_status == "approved" and state.iteration > 0),
             ("Summary",             False),
@@ -175,9 +181,10 @@ def _log_progress_board(state: "ImplementationState"):
             ("Create GitHub Repo",  bool(state.github_repo)),
             ("Validate Repo",       bool(state.github_repo)),
             ("Plan Tasks",          tasks_planned),
+            ("Run Migrations",      state.migrations_run),
             ("Development",         state.iteration > 0),
             ("Code Review",         state.code_review_status == "approved" and state.iteration > 0),
-            ("Deploy to Vercel",    bool(state.deploy_url)),
+            ("Deploy to Vercel",    state.deploy_success),
             ("Validate Deployment", bool(state.deploy_url)),
             ("Update README",       bool(state.deploy_url)),
             ("Summary",             False),
@@ -191,6 +198,42 @@ def _log_progress_board(state: "ImplementationState"):
         timing = timing_info.get(name, "")
         print(f"     {icon}  {name}{timing}")
     print()
+
+
+def _log_tasks_board(gh, owner: str, repo: str, phase: str = "") -> tuple:
+    """Read TASKS.md from GitHub and print a visual task board.
+
+    Shows all tasks with their completion status (✅ done / ⏳ pending).
+    Returns (pending_list, done_list) — both are lists of raw task line strings.
+    Returns ([], []) if TASKS.md is not found or unreadable.
+    """
+    import json as _json
+    try:
+        raw_str = gh.get_file_contents(owner=owner, repo=repo, path="TASKS.md")
+        if not raw_str or not raw_str.strip():
+            _log("ℹ️", "DEV", "TASKS.md not found or empty — no task board available")
+            return [], []
+        raw = _json.loads(raw_str)
+        content = raw.get("content", "") if isinstance(raw, dict) else ""
+        if not content:
+            _log("ℹ️", "DEV", "TASKS.md not found or empty — no task board available")
+            return [], []
+
+        pending = re.findall(r'^- \[ \].+', content, re.MULTILINE)
+        done    = re.findall(r'^- \[x\].+', content, re.IGNORECASE | re.MULTILINE)
+        total   = len(pending) + len(done)
+
+        phase_label = f" [{phase}]" if phase else ""
+        _log("📋", "DEV", f"──── Task Board{phase_label}:  {len(done)}/{total} complete  ──────────────────────────────")
+        for t in done:
+            _log("   ", "DEV", f"  ✅  {t.strip()}")
+        for t in pending:
+            _log("   ", "DEV", f"  ⏳  {t.strip()}")
+        _log("📋", "DEV", "──────────────────────────────────────────────────────────────────────")
+        return pending, done
+    except Exception as e:
+        _log("⚠️", "DEV", f"Could not read TASKS.md for task board: {e}")
+        return [], []
 
 
 def parse_input_urls(input_str: str) -> dict:
@@ -253,8 +296,8 @@ def _extract_project_name(content: str) -> str:
 
 
 def _generate_repo_name(project_name: str = None) -> str:
-    """Generate unique repository name."""
-    suffix = ''.join(random.choices(string.digits, k=5))
+    """Generate unique repository name with a 7-digit suffix to avoid conflicts."""
+    suffix = ''.join(random.choices(string.digits, k=7))
     if project_name:
         safe = re.sub(r'[^\w-]', '-', project_name.lower())[:25]
         return f"{safe}-{suffix}"
@@ -378,6 +421,7 @@ def read_architecture(step_input: StepInput) -> StepOutput:
     """Step 1: Read Architecture from Google Docs. Detects existing vs new project."""
     global _state
     _state = ImplementationState()  # Fresh state
+    _state.session_id = f"wf-{''.join(random.choices(string.ascii_lowercase + string.digits, k=12))}"
 
     _log_step_header("READ ARCHITECTURE", "Reading project spec from Google Docs")
     _t0 = time.time()
@@ -538,7 +582,7 @@ Return the repository URL when done."""
     _log("🤖", "REPO", "Asking DevOps Engineer to create repo...")
     user_id = _get_user_id()
     result = _run_with_heartbeat(
-        devops_engineer_agent.arun(prompt, user_id=user_id), "REPO-CREATE", timeout_seconds=0
+        devops_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "REPO-CREATE", timeout_seconds=0
     )
 
     if result is None:
@@ -557,6 +601,22 @@ Return the repository URL when done."""
         return StepOutput(content=f"Repository created at: {repo_url}", success=True)
 
 
+def _detect_tech_stack(content: str) -> str:
+    """Detect the primary tech stack from architecture document content.
+
+    Returns:
+        "nextjs"  — Next.js (with or without TypeScript / Tailwind / Supabase)
+        "react"   — React + Vite SPA (no Next.js)
+        "html"    — Simple HTML / CSS / JS static site
+    """
+    c = content.lower()
+    if re.search(r'\bnext\.?js\b', c):
+        return "nextjs"
+    if re.search(r'\breact\b', c) or re.search(r'\bvite\b', c):
+        return "react"
+    return "html"
+
+
 def _extract_code(response: str) -> str:
     """Extract code from agent response - handles markdown code blocks or raw code."""
     if not response:
@@ -571,7 +631,7 @@ def _extract_code(response: str) -> str:
     return response.strip()
 
 
-def _generate_file_content(agent, file_type: str, project_name: str, architecture: str) -> str:
+def _generate_file_content(agent, file_type: str, project_name: str, architecture: str, session_id: str = "") -> str:
     """Ask agent to generate code for a specific file type."""
 
     # Shared context so every file knows the exact folder structure
@@ -592,7 +652,7 @@ def _generate_file_content(agent, file_type: str, project_name: str, architectur
         "html": f"""Generate a complete index.html file for: {project_name}
 
 Based on this architecture:
-{architecture[:3000]}
+{architecture}
 {folder_context}
 
 Requirements:
@@ -617,7 +677,7 @@ This file will be saved at: css/styles.css
 It is linked from index.html as: <link rel="stylesheet" href="css/styles.css">
 
 Based on this architecture:
-{architecture[:2000]}
+{architecture}
 {folder_context}
 
 Requirements:
@@ -639,7 +699,7 @@ This file will be saved at: js/script.js
 It is linked from index.html as: <script src="js/script.js"></script>
 
 Based on this architecture:
-{architecture[:1500]}
+{architecture}
 {folder_context}
 
 Requirements:
@@ -659,7 +719,7 @@ Output ONLY the JavaScript code, nothing else. Start with // or 'use strict'"""
         return ""
 
     user_id = _get_user_id()
-    result = _run_with_heartbeat(agent.arun(prompt, user_id=user_id), f"DEV-{file_type.upper()}", timeout_seconds=0)
+    result = _run_with_heartbeat(agent.arun(prompt, user_id=user_id, session_id=session_id), f"DEV-{file_type.upper()}", timeout_seconds=0)
     if result and result.content:
         return _extract_code(result.content)
     return ""
@@ -683,12 +743,29 @@ def plan_tasks(step_input: StepInput) -> StepOutput:
 
     tech_stack = _detect_tech_stack(_state.architecture_content)
 
+    # Extract a short description: first non-empty line that isn't a heading
+    _desc_lines = [
+        l.strip() for l in _state.architecture_content.splitlines()
+        if l.strip() and not l.strip().startswith("#")
+    ]
+    _short_desc = " ".join(_desc_lines[:2])[:200] if _desc_lines else "No description available."
+
+    _log("📌", "PLAN", "─── Project Overview ───────────────────────────────────────")
+    _log("📌", "PLAN", f"  Name   : {_state.project_name}")
+    _log("📌", "PLAN", f"  Stack  : {tech_stack.upper()}")
+    _log("📌", "PLAN", f"  Repo   : {repo_url}")
+    _log("📌", "PLAN", f"  Desc   : {_short_desc}")
+    _log("📌", "PLAN", "────────────────────────────────────────────────────────────")
+
     prompt = f"""You are planning the implementation of: {_state.project_name}
 Repository: {repo_url}
-Tech Stack: {tech_stack.upper()}
+Detected Stack: {tech_stack.upper()} (verify against the architecture document below)
 
-## Architecture Document:
-{_state.architecture_content[:6000]}
+## IMPORTANT — DO NOT CALL ANY TOOLS TO READ DOCUMENTS
+The architecture document is already provided below. Do NOT call read_document, get_document, or any Google Docs tool. The only tool you should call is create_or_update_file to write TASKS.md to GitHub.
+
+## Architecture Document (already loaded — use this directly):
+{_state.architecture_content}
 
 ## Your Task:
 Use your project-planning skill to break this architecture into 5-15 ordered, concrete implementation tasks.
@@ -699,7 +776,20 @@ Each task must:
 - Be ordered so dependencies come before dependents
 - Have the README as the final task
 
-Write the result as TASKS.md to the repository root:
+CRITICAL — DO NOT include any of the following as tasks:
+- Database migrations (supabase/migrations/*.sql)
+- Schema creation (CREATE TABLE scripts)
+- Any Supabase migration steps
+- Setting up environment variables in Vercel or any external service
+- Creating .env files with real secret values
+The database schema is already applied to Supabase by the Database Engineer.
+Environment variables are set by the user in Vercel after deployment — NOT by the Software Engineer.
+
+For Supabase integration, the only code task is:
+  "Create lib/supabase.ts — Supabase client using process.env.NEXT_PUBLIC_SUPABASE_URL and process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY"
+Never title a task "Set up env vars" or "Configure environment variables" — the SW Engineer writes code that READS from process.env, nothing more.
+
+Write the result as TASKS.md to the repository root using create_or_update_file:
 - Owner: "{_state.github_owner}"
 - Repo: "{_state.github_repo}"
 - Path: "TASKS.md"
@@ -711,7 +801,7 @@ Return confirmation with the number of tasks created and a brief list of task ti
     _log("📋", "PLAN", "Lead Engineer is breaking architecture into tasks...")
     user_id = _get_user_id()
     result = _run_with_heartbeat(
-        lead_engineer_agent.arun(prompt, user_id=user_id), "PLAN", timeout_seconds=0
+        lead_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "PLAN", timeout_seconds=0
     )
 
     _elapsed = round(time.time() - _t0, 1)
@@ -723,6 +813,80 @@ Return confirmation with the number of tasks created and a brief list of task ti
 
     _log("", "PLAN", f"TASKS.md written to {repo_url} in {_elapsed}s", level="success")
     return StepOutput(content=f"Planning complete: {result.content[:600]}", success=True)
+
+
+def run_migrations(step_input: StepInput) -> StepOutput:
+    """Database Engineer reads architecture, writes SQL migration to GitHub, and applies it to Supabase.
+
+    Conditional: if the architecture document does not mention Supabase or a database schema,
+    this step is skipped silently and the workflow continues unblocked.
+    """
+    global _state
+
+    repo_url = f"https://github.com/{_state.github_owner}/{_state.github_repo}"
+    _log_step_header("RUN MIGRATIONS", f"Project: {_state.project_name} | {repo_url}")
+    _log_progress_board(_state)
+    _t0 = time.time()
+
+    # Only run if architecture mentions Supabase or a database schema
+    uses_supabase = bool(re.search(r'supabase', _state.architecture_content, re.IGNORECASE))
+    has_db_schema = bool(re.search(
+        r'(database|schema|migration|CREATE TABLE)',
+        _state.architecture_content, re.IGNORECASE
+    ))
+
+    if not (uses_supabase or has_db_schema):
+        _log("⏭️", "MIGRATIONS", "No database detected in architecture — skipping migrations")
+        return StepOutput(content="No database in architecture. Migrations skipped.", success=True)
+
+    from agents.database_engineer import database_engineer_agent
+
+    _log("📌", "MIGRATIONS", "─── Migration Overview ──────────────────────────────────────")
+    _log("📌", "MIGRATIONS", f"  Project  : {_state.project_name}")
+    _log("📌", "MIGRATIONS", f"  Repo     : {repo_url}")
+    _log("📌", "MIGRATIONS", f"  Database : Supabase (detected in architecture)")
+    _log("📌", "MIGRATIONS", "────────────────────────────────────────────────────────────")
+
+    prompt = (
+        f"You are the Database Engineer for: {_state.project_name}\n"
+        f"Repository: {repo_url}\n\n"
+        "## IMPORTANT — DO NOT CALL ANY TOOLS TO READ DOCUMENTS\n"
+        "The architecture document is already provided below. Do NOT call read_document, "
+        "get_document, or any Google Docs tool.\n\n"
+        f"## Architecture Document (already loaded — use this directly):\n"
+        f"{_state.architecture_content}\n\n"
+        "## Your Task:\n"
+        "Use your database-migration skill to:\n"
+        "1. Extract the database schema from the architecture above\n"
+        "2. Write a single SQL migration file to GitHub:\n"
+        f"   Owner: \"{_state.github_owner}\"\n"
+        f"   Repo: \"{_state.github_repo}\"\n"
+        "   Path: \"supabase/migrations/20260220000000_initial_schema.sql\"\n"
+        "   Branch: \"main\"\n"
+        "   Commit message: \"chore: add initial database migration\"\n"
+        "3. Execute the migration against Supabase using the apply_migration or execute_sql MCP tool\n"
+        "4. Return: list of tables created and migration status (success/fail)"
+    )
+
+    _log("🗄️", "MIGRATIONS", "Database Engineer is generating and running migrations...")
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(
+        database_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "MIGRATIONS", timeout_seconds=0
+    )
+
+    _elapsed = round(time.time() - _t0, 1)
+    _state.step_timings["Run Migrations"] = _elapsed
+
+    if result is None:
+        _log("", "MIGRATIONS", f"Migration step failed ({_elapsed}s) — continuing without migrations", level="warn")
+        return StepOutput(
+            content="WARNING: Migration step failed. Software Engineer will proceed without pre-run migrations.",
+            success=True
+        )
+
+    _state.migrations_run = True
+    _log("", "MIGRATIONS", f"Migrations complete in {_elapsed}s", level="success")
+    return StepOutput(content=f"Migrations complete: {result.content[:600]}", success=True)
 
 
 def development(step_input: StepInput) -> StepOutput:
@@ -753,7 +917,10 @@ def development(step_input: StepInput) -> StepOutput:
     import json
 
     gh = _get_github_tools()
+    # Only inject architecture on the first iteration — retries read tasks from TASKS.md
+    # and don't need the full architecture text, saving 3000 tokens per retry cycle.
     arch_content = _state.architecture_content
+    _include_arch = (_state.iteration == 1)  # True only on first dev cycle
     files_created = []
 
     # =====================================================================
@@ -762,19 +929,24 @@ def development(step_input: StepInput) -> StepOutput:
     if _state.is_existing_repo:
         _log("💻", "DEV", f"Iteration {_state.iteration} — Executing tasks from TASKS.md on EXISTING repo...")
 
+        # ── Show task board BEFORE the agent runs ────────────────────────────
+        _log("📋", "DEV", "Reading TASKS.md before development starts...")
+        pending_before, done_before = _log_tasks_board(gh, _state.github_owner, _state.github_repo, "BEFORE")
+        if pending_before:
+            _log("🤖", "DEV", f"Software Engineer will implement {len(pending_before)} pending task(s)...")
+        else:
+            _log("ℹ️", "DEV", "All tasks already marked done — agent will confirm and report")
+
+        arch_section = (
+            f"\n## Architecture Reference (iteration 1 only — tasks are already in TASKS.md):\n{arch_content}\n\n---\n"
+            if _include_arch else ""
+        )
         prompt = f"""## Session Context (survives context compression — always trust this over history)
 - Project: {_state.project_name}  |  Iteration: {_state.iteration}
 - Repo: https://github.com/{_state.github_owner}/{_state.github_repo}
 - Type: EXISTING project update
 - What's next after this step: code review → summary
-
----
-
-## Architecture Reference (for context — your tasks are already in TASKS.md):
-{arch_content[:3000]}
-
----
-
+{arch_section}
 ## YOUR PROCESS — follow EXACTLY, one task at a time:
 
 1. Call `get_file_contents` to read TASKS.md from the repo root
@@ -790,35 +962,64 @@ def development(step_input: StepInput) -> StepOutput:
 Owner: "{_state.github_owner}" | Repo: "{_state.github_repo}" | Branch: "main"
 Commit messages: "feat:", "fix:", "update:", "refactor:" (conventional commits)
 
+CRITICAL — Environment Variables:
+- Do NOT configure env vars in Vercel or any external service
+- Do NOT call any Vercel env var tools
+- Just write code that reads from process.env — the user sets values in Vercel manually
+- A task titled "Supabase client" or "env vars" means: write lib/supabase.ts only
+
 When all tasks are done, list every file you modified."""
 
         _log("🤖", "DEV", "Software Engineer executing tasks from TASKS.md...")
         user_id = _get_user_id()
         result = _run_with_heartbeat(
-            software_engineer_agent.arun(prompt, user_id=user_id), "DEV-UPDATE", timeout_seconds=0
+            software_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "DEV-UPDATE", timeout_seconds=0
         )
 
         _elapsed = round(time.time() - _t0, 1)
         _state.step_timings["Development"] = _elapsed
+
+        # ── Show task board AFTER the agent runs ─────────────────────────────
+        _log("📋", "DEV", "Re-reading TASKS.md after development run...")
+        pending_after, done_after = _log_tasks_board(gh, _state.github_owner, _state.github_repo, "AFTER")
+        newly_done = len(done_after) - len(done_before)
+        if newly_done > 0:
+            _log("✅", "DEV", f"{newly_done} task(s) completed this iteration ({len(done_after)}/{len(pending_after) + len(done_after)} total done)")
+        if pending_after:
+            _log("⚠️", "DEV", f"{len(pending_after)} task(s) still pending — code review will request another iteration")
+
         if result and result.content:
-            _log("", "DEV", f"Tasks completed in {_elapsed}s", level="success")
+            _log("", "DEV", f"Development complete in {_elapsed}s", level="success")
             return StepOutput(content=f"Updated existing repo: {result.content[:500]}", success=True)
         else:
             _log("", "DEV", "Agent failed to produce updates", level="error")
             return StepOutput(content="ERROR: Agent failed to update existing repo", success=False)
 
     # =====================================================================
-    # NEW PROJECT — generate files from scratch
+    # NEW PROJECT — detect stack, then execute tasks from TASKS.md
     # =====================================================================
+    tech_stack = _detect_tech_stack(arch_content)
+    _log("🔍", "DEV", f"Detected stack: {tech_stack.upper()}")
     _log("💻", "DEV", f"Iteration {_state.iteration} - Implementing NEW project code...")
 
     # ─────────────────────────────────────────────────────────────────────
-    # FRAMEWORK PROJECTS (Next.js / React) — full agent-driven implementation
-    # The agent reads the architecture document and creates ALL necessary files.
+    # FRAMEWORK PROJECTS (Next.js / React) — task-driven implementation
     # ─────────────────────────────────────────────────────────────────────
     if tech_stack in ("nextjs", "react"):
         _log("🤖", "DEV", f"Task-driven {tech_stack.upper()} implementation — reading TASKS.md...")
 
+        # ── Show task board BEFORE the agent runs ────────────────────────────
+        _log("📋", "DEV", "Reading TASKS.md before development starts...")
+        pending_before, done_before = _log_tasks_board(gh, _state.github_owner, _state.github_repo, "BEFORE")
+        if pending_before:
+            _log("🤖", "DEV", f"Software Engineer will implement {len(pending_before)} pending task(s)...")
+        else:
+            _log("ℹ️", "DEV", "All tasks already marked done — agent will confirm and report")
+
+        arch_section = (
+            f"\n## Architecture Reference (iteration 1 only — tasks are already in TASKS.md):\n{arch_content}\n\n---\n"
+            if _include_arch else ""
+        )
         prompt = f"""## Session Context (survives context compression — always trust this over history)
 - Project: {_state.project_name}  |  Stack: {tech_stack.upper()}  |  Iteration: {_state.iteration}
 - Repo: https://github.com/{_state.github_owner}/{_state.github_repo}
@@ -827,10 +1028,16 @@ When all tasks are done, list every file you modified."""
 
 Stack-specific reminder:
 {"Do NOT create index.html, css/styles.css, or js/script.js — this is a Next.js app. Use app/ directory." if tech_stack == "nextjs" else "Do NOT create a static index.html at root — this is a Vite React app. Use src/ directory."}
-All Supabase env vars must reference environment variables (process.env.NEXT_PUBLIC_SUPABASE_URL etc.) — never hardcode.
 
----
-
+CRITICAL — Environment Variables:
+- Do NOT configure env vars in Vercel or any external service
+- Do NOT call any Vercel env var tools (update_project_env_vars, etc.)
+- Do NOT create .env or .env.local files with real values
+- Just write code that reads from process.env, e.g.:
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+- The user will add the actual env var values to Vercel manually after deployment
+- A task titled "Supabase client" or "env vars" means: write lib/supabase.ts only
+{arch_section}
 ## YOUR PROCESS — follow EXACTLY, one task at a time:
 
 1. Call `get_file_contents` to read TASKS.md from the repo root
@@ -849,13 +1056,23 @@ When all tasks are done, list every file you created."""
 
         user_id = _get_user_id()
         result = _run_with_heartbeat(
-            software_engineer_agent.arun(prompt, user_id=user_id), "DEV-FRAMEWORK", timeout_seconds=0
+            software_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "DEV-FRAMEWORK", timeout_seconds=0
         )
 
         _elapsed = round(time.time() - _t0, 1)
         _state.step_timings["Development"] = _elapsed
+
+        # ── Show task board AFTER the agent runs ─────────────────────────────
+        _log("📋", "DEV", "Re-reading TASKS.md after development run...")
+        pending_after, done_after = _log_tasks_board(gh, _state.github_owner, _state.github_repo, "AFTER")
+        newly_done = len(done_after) - len(done_before)
+        if newly_done > 0:
+            _log("✅", "DEV", f"{newly_done} task(s) completed this iteration ({len(done_after)}/{len(pending_after) + len(done_after)} total done)")
+        if pending_after:
+            _log("⚠️", "DEV", f"{len(pending_after)} task(s) still pending — code review will request another iteration")
+
         if result and result.content:
-            _log("", "DEV", f"Tasks completed in {_elapsed}s", level="success")
+            _log("", "DEV", f"Development complete in {_elapsed}s", level="success")
             return StepOutput(content=f"Implemented {tech_stack.upper()} project: {result.content[:500]}", success=True)
         else:
             _log("", "DEV", "Agent failed to implement framework project", level="error")
@@ -867,7 +1084,7 @@ When all tasks are done, list every file you created."""
     _log("📄", "DEV", "Static HTML/CSS/JS stack — generating files directly...")
     files_created = []
 
-    html_code = _generate_html_file_content(software_engineer_agent, "html", _state.project_name, arch_content)
+    html_code = _generate_file_content(software_engineer_agent, "html", _state.project_name, arch_content, session_id=_state.session_id)
     if html_code and len(html_code) > 100:
         res = json.loads(gh.create_or_update_file(
             owner=_state.github_owner,
@@ -887,7 +1104,7 @@ When all tasks are done, list every file you created."""
 
     # --- Generate and create css/styles.css ---
     _log("🎨", "DEV", "Generating css/styles.css...")
-    css_code = _generate_file_content(software_engineer_agent, "css", _state.project_name, arch_content)
+    css_code = _generate_file_content(software_engineer_agent, "css", _state.project_name, arch_content, session_id=_state.session_id)
 
     if css_code and len(css_code) > 50:
         res = json.loads(gh.create_or_update_file(
@@ -908,7 +1125,7 @@ When all tasks are done, list every file you created."""
 
     # --- Generate and create js/script.js ---
     _log("⚡", "DEV", "Generating js/script.js...")
-    js_code = _generate_file_content(software_engineer_agent, "js", _state.project_name, arch_content)
+    js_code = _generate_file_content(software_engineer_agent, "js", _state.project_name, arch_content, session_id=_state.session_id)
 
     if js_code and len(js_code) > 20:
         res = json.loads(gh.create_or_update_file(
@@ -933,7 +1150,7 @@ When all tasks are done, list every file you created."""
 Repository: https://github.com/{_state.github_owner}/{_state.github_repo}
 
 Based on this architecture:
-{arch_content[:3000]}
+{arch_content}
 
 The README.md MUST include ALL of these sections:
 
@@ -958,7 +1175,7 @@ Output ONLY the markdown content. Start with # {_state.project_name}"""
 
     user_id = _get_user_id()
     readme_result = _run_with_heartbeat(
-        software_engineer_agent.arun(readme_prompt, user_id=user_id), "DEV-README", timeout_seconds=0
+        software_engineer_agent.arun(readme_prompt, user_id=user_id, session_id=_state.session_id), "DEV-README", timeout_seconds=0
     )
     if readme_result and readme_result.content:
         readme_content = readme_result.content.strip()
@@ -1028,7 +1245,16 @@ def validate_repo_link(step_input: StepInput) -> StepOutput:
 
 
 def code_review(step_input: StepInput) -> StepOutput:
-    """Lead Engineer reviews code - auto-approves if code files exist."""
+    """Lead Engineer reviews code — two-gate check before proceeding to deployment:
+
+    Gate 1: Application code files (or app/ dirs) must exist in the repo.
+            Config-only files (next.config.js, tsconfig.json, etc.) do NOT count.
+    Gate 2: TASKS.md must exist and every task must be marked `- [x]`.
+            Any `- [ ]` task means the Software Engineer isn't done yet.
+
+    CHANGES_REQUESTED on any failed gate → implementation loop retries.
+    APPROVED only when both gates pass.
+    """
     global _state
 
     _log_step_header(
@@ -1037,149 +1263,323 @@ def code_review(step_input: StepInput) -> StepOutput:
     )
     _log_progress_board(_state)
     _t0 = time.time()
-    _log("👀", "CODE_REVIEW", "Checking project files...")
 
-    # First, verify files exist directly (don't rely on agent)
     import json
 
     gh = _get_github_tools()
+
+    # ── Gate 1: Application code exists (not just config/tooling files) ──────
+    _log("👀", "CODE_REVIEW", "Gate 1 — checking for application code files...")
     files = json.loads(gh.list_repository_files(_state.github_owner, _state.github_repo))
 
-    # Check for actual code files
+    # Config-only filenames that are NOT application code.
+    # A repo with only these files fails Vercel with missing_pages_app.
+    _CONFIG_ONLY = {
+        'next.config.js', 'next.config.mjs', 'next.config.ts',
+        'tailwind.config.js', 'tailwind.config.ts',
+        'postcss.config.js', 'postcss.config.mjs',
+        'vite.config.js', 'vite.config.ts',
+        'jest.config.js', 'jest.config.ts',
+        'tsconfig.json', 'package.json', 'package-lock.json',
+        'yarn.lock', '.eslintrc.js', '.eslintrc.json', '.prettierrc',
+        'README.md', 'TASKS.md', '.gitignore', '.env.example',
+    }
+
     code_files = []
+    app_dirs = []
     if isinstance(files, list):
-        code_files = [f for f in files if isinstance(f, dict) and
-                      f.get('name', '').endswith(('.html', '.css', '.js', '.tsx', '.jsx', '.py', '.ts'))]
+        for f in files:
+            if not isinstance(f, dict):
+                continue
+            name  = f.get('name', '')
+            ftype = f.get('type', 'file')
+            if ftype == 'dir' and name in ('app', 'pages', 'src', 'components', 'lib'):
+                app_dirs.append(name)
+            elif (name.endswith(('.html', '.css', '.tsx', '.jsx', '.py'))
+                  or (name.endswith(('.js', '.ts')) and name not in _CONFIG_ONLY)):
+                code_files.append(f)
 
-    if not code_files:
-        _log("", "CODE_REVIEW", "No code files found - requesting implementation", level="warn")
+    has_code = bool(code_files) or bool(app_dirs)
+
+    if not has_code:
+        _log("", "CODE_REVIEW", "Gate 1 FAILED — no application code (config files don't count)", level="warn")
         _state.code_review_status = "changes_requested"
-        return StepOutput(content="CHANGES_REQUESTED: No code files found. Create index.html, styles.css, etc.", success=True)
+        return StepOutput(
+            content="CHANGES_REQUESTED: No application code found. "
+                    "For Next.js: create app/page.tsx. For HTML: create index.html.",
+            success=True,
+        )
 
-    # Code files exist - auto-approve
-    file_names = [f['name'] for f in code_files]
-    _state.step_timings["Code Review"] = round(time.time() - _t0, 1)
-    _log("", "CODE_REVIEW", f"APPROVED — {len(code_files)} code files found: {', '.join(file_names)}", level="success")
-    _state.code_review_status = "approved"
-    return StepOutput(content=f"APPROVED ✓ Found {len(code_files)} code files: {', '.join(file_names)}", success=True)
+    file_names = [f['name'] for f in code_files] + [f"{d}/" for d in app_dirs]
+    _log("✅", "CODE_REVIEW", f"Gate 1 PASSED — application code present: {', '.join(file_names)}")
 
+    # ── Gate 2: All TASKS.md tasks must be done ───────────────────────────────
+    _log("📋", "CODE_REVIEW", "Gate 2 — reading TASKS.md to verify all tasks are complete...")
+    tasks_content = ""
+    done_tasks: list = []
+    pending_tasks: list = []
+    total_tasks = 0
 
-def code_review_with_agent(step_input: StepInput) -> StepOutput:
-    """Original agent-based code review (kept for reference)."""
-    global _state
+    try:
+        raw_str = gh.get_file_contents(
+            owner=_state.github_owner, repo=_state.github_repo, path="TASKS.md"
+        )
+        if raw_str and raw_str.strip():
+            raw = json.loads(raw_str)
+            if isinstance(raw, dict) and raw.get("content"):
+                tasks_content = raw["content"]
+    except Exception as e:
+        _log("⚠️", "CODE_REVIEW", f"Could not read TASKS.md ({e}) — skipping task check")
 
-    from agents.lead_engineer import lead_engineer_agent
+    if tasks_content:
+        pending_tasks = re.findall(r'^- \[ \].+', tasks_content, re.MULTILINE)
+        done_tasks    = re.findall(r'^- \[x\].+', tasks_content, re.IGNORECASE | re.MULTILINE)
+        total_tasks   = len(pending_tasks) + len(done_tasks)
 
-    prompt = f"""Review code in {_state.github_owner}/{_state.github_repo}.
+        _log("📋", "CODE_REVIEW", f"── Task Completion: {len(done_tasks)}/{total_tasks} ────────────────────────────────────")
+        for t in done_tasks:
+            _log("   ", "CODE_REVIEW", f"  ✅  {t.strip()}")
+        for t in pending_tasks:
+            _log("   ", "CODE_REVIEW", f"  ⏳  {t.strip()}")
+        _log("📋", "CODE_REVIEW", "────────────────────────────────────────────────────────────────────────")
 
-1. Call: list_repository_files(owner="{_state.github_owner}", repo="{_state.github_repo}")
-2. Read main files with get_file_contents
-3. Reply: APPROVED ✓ or CHANGES_REQUESTED: [issues]
-"""
+        if pending_tasks:
+            _state.code_review_status = "changes_requested"
+            _log("", "CODE_REVIEW",
+                 f"Gate 2 FAILED — {len(pending_tasks)}/{total_tasks} task(s) still incomplete — requesting another dev iteration",
+                 level="warn")
+            pending_list = "\n".join(f"  {t.strip()}" for t in pending_tasks)
+            return StepOutput(
+                content=f"CHANGES_REQUESTED: {len(pending_tasks)} task(s) not yet implemented:\n{pending_list}",
+                success=True,
+            )
 
-    user_id = _get_user_id()
-    result = _run_with_heartbeat(lead_engineer_agent.arun(prompt, user_id=user_id), "CODE_REVIEW", timeout_seconds=90)
-
-    if result is None:
-        # Timeout/error — auto-approve since reviews are lenient by policy
-        _state.code_review_status = "approved"
-        _log("✅", "CODE_REVIEW", "Auto-approved (timeout/error)")
-        return StepOutput(content="Code Review: approved (auto)", success=True)
-
-    content = result.content.lower()
-
-    if "changes_requested" in content or "critical" in content:
-        _state.code_review_status = "changes_requested"
-        _log("⚠️", "CODE_REVIEW", "Changes requested")
+        _log("✅", "CODE_REVIEW", f"Gate 2 PASSED — all {total_tasks} TASKS.md tasks complete")
     else:
-        _state.code_review_status = "approved"
-        _log("✅", "CODE_REVIEW", "Approved")
+        _log("ℹ️", "CODE_REVIEW", "No TASKS.md found — Gate 2 skipped (proceeding on code files alone)")
 
-    return StepOutput(content=f"Code Review: {_state.code_review_status}", success=True)
+    # ── Both gates passed → APPROVED ─────────────────────────────────────────
+    _state.step_timings["Code Review"] = round(time.time() - _t0, 1)
+    tasks_summary = f"{len(done_tasks)}/{total_tasks} tasks done" if tasks_content else "no TASKS.md"
+    _log("", "CODE_REVIEW",
+         f"APPROVED ✓  {len(file_names)} code file(s) | {tasks_summary} | {_state.step_timings['Code Review']}s",
+         level="success")
+    _state.code_review_status = "approved"
+    return StepOutput(
+        content=f"APPROVED ✓  {len(file_names)} code file(s) + {tasks_summary}",
+        success=True,
+    )
+
+
+
+_IMPL_MAX_ITERATIONS = 5  # Max development iterations before forcing proceed
 
 
 def reviews_passed(outputs: List[StepOutput]) -> bool:
-    """Check if review passed. Returns True to break loop."""
+    """End condition for the implementation loop.
+
+    Returns True (break) only when:
+    - Code review is APPROVED (Gate 1 + Gate 2 both passed), OR
+    - We've exhausted all _IMPL_MAX_ITERATIONS attempts (safety valve)
+
+    Gate 2 (TASKS.md check) blocks approval until every task is [x],
+    so this naturally keeps the loop running until all work is done.
+    """
     global _state
 
     if _state.code_review_status == "approved":
-        _log("🎉", "LOOP", "Code review passed!")
+        _log("🎉", "LOOP", f"All tasks complete + code approved after {_state.iteration} iteration(s)!")
         return True
 
-    if _state.iteration >= 2:
-        _log("⏰", "LOOP", "Max iterations reached - proceeding to deploy")
+    if _state.iteration >= _IMPL_MAX_ITERATIONS:
+        _log("⏰", "LOOP", f"Max {_IMPL_MAX_ITERATIONS} iterations reached — proceeding despite incomplete tasks")
         return True
 
-    _log("🔄", "LOOP", f"Iteration {_state.iteration} - needs revision")
+    _log("🔄", "LOOP", f"Iteration {_state.iteration} — tasks still pending, running another dev cycle...")
     return False
 
 
-def deploy_to_vercel(step_input: StepInput) -> StepOutput:
-    """Deploy to Vercel using the DevOps Engineer agent."""
+def deploy_attempt(step_input: StepInput) -> StepOutput:
+    """Deploy to Vercel — smart retry-aware deployer.
+
+    Iteration 1: creates the Vercel project + triggers initial deployment.
+    Iterations 2–5: only triggers a re-deployment (project already linked to GitHub).
+    Sets _state.deploy_success, _state.deploy_error, and _state.deploy_url.
+    """
     global _state
 
+    _state.deploy_iteration += 1
+    iteration = _state.deploy_iteration
+
     _log_step_header(
-        "DEPLOY TO VERCEL",
+        f"DEPLOY ATTEMPT ({iteration}/5)",
         f"Project: {_state.project_name} | {_state.github_owner}/{_state.github_repo}",
     )
     _log_progress_board(_state)
     _t0 = time.time()
-    _log("🚀", "DEPLOY", "Deploying to Vercel...")
-    _log("📋", "DEPLOY", f"Owner: {_state.github_owner}, Repo: {_state.github_repo}, Project: {_state.project_name}")
 
     # Verify Vercel token is available (per-user or env var)
     vercel_token = _get_vercel_token()
     if not vercel_token:
         _log("❌", "DEPLOY", "No Vercel token found (checked user_api_keys and VERCEL_TOKEN env var)")
-        return StepOutput(content="ERROR: No Vercel token available.", success=False)
+        _state.deploy_success = False
+        _state.deploy_error = "No Vercel token available."
+        return StepOutput(content="ERROR: No Vercel token available.", success=True)
 
-    # Set env var so the deployer agent's tools can use it
     os.environ["VERCEL_TOKEN"] = vercel_token
 
     from agents.devops_engineer import devops_engineer_agent
 
-    prompt = f"""Deploy this GitHub repository to Vercel using the 2-step process:
+    # Use the GitHub repo name as the Vercel project name — it contains the unique suffix
+    # (e.g. "scent-stories-0586721") so it never conflicts with pre-existing Vercel projects.
+    vercel_project_name = _state.github_repo
+
+    if iteration == 1:
+        # First attempt: full deploy — create project and link to GitHub
+        _log("🚀", "DEPLOY", f"First deploy: creating Vercel project '{vercel_project_name}' + triggering deployment...")
+        prompt = f"""Deploy this GitHub repository to Vercel using the 2-step process:
 
 **STEP 1: Create Vercel Project**
 Call `create_vercel_project` with:
-- project_name: {_state.project_name}
+- project_name: {vercel_project_name}
 - github_repo: {_state.github_repo}
 - github_owner: {_state.github_owner}
 - framework: null (let Vercel auto-detect)
 
-This will create the project and link it to GitHub.
+The project_name MUST be exactly "{vercel_project_name}" (includes the unique identifier).
+This will create the project and link it to GitHub for automatic deployments on git push.
 
 **STEP 2: Trigger Initial Deployment**
 Call `trigger_deployment` with:
-- project_name: {_state.project_name}
+- project_name: {vercel_project_name}
 - git_branch: main
-
-This will trigger the first deployment. Future git pushes will auto-deploy via GitHub webhooks.
 
 **CRITICAL**: You MUST call BOTH functions. Don't skip trigger_deployment!
 
-Return the deployment URL when done.
-"""
+Return the deployment URL when done."""
+    else:
+        # Retry: project already exists — just re-trigger
+        _log("🔄", "DEPLOY", f"Retry {iteration}/5: re-triggering deployment (project already linked)...")
+        prompt = f"""Re-trigger the Vercel deployment for an already-linked project.
 
-    _log("🤖", "DEPLOY", "Asking DevOps Engineer to deploy...")
+The Vercel project "{vercel_project_name}" is already created and linked to GitHub.
+The Software Engineer has pushed fixes. Now re-trigger the build.
+
+Call `trigger_deployment` with:
+- project_name: {vercel_project_name}
+- git_branch: main
+
+ONLY call trigger_deployment. Do NOT call create_vercel_project again.
+
+Return the deployment URL when done."""
+
     user_id = _get_user_id()
-    result = _run_with_heartbeat(devops_engineer_agent.arun(prompt, user_id=user_id), "DEPLOY", timeout_seconds=0)
+    result = _run_with_heartbeat(
+        devops_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "DEPLOY", timeout_seconds=0
+    )
 
     _elapsed = round(time.time() - _t0, 1)
     _state.step_timings["Deploy to Vercel"] = _elapsed
 
     if result is None:
-        _log("", "DEPLOY", f"DevOps Engineer failed ({_elapsed}s)", level="error")
-        return StepOutput(content="ERROR: Deployment failed", success=False)
+        _log("", "DEPLOY", f"DevOps Engineer timed out or crashed ({_elapsed}s)", level="error")
+        _state.deploy_success = False
+        _state.deploy_error = "DevOps Engineer failed to respond."
+        return StepOutput(content="ERROR: Deployment agent failed", success=True)
 
-    # Check if deployment was successful by looking for URL or error in response
-    response = result.content.lower()
-    if "error" in response or "failed" in response:
-        _log("", "DEPLOY", f"Deployment failed: {result.content[:200]}", level="error")
-        return StepOutput(content=f"ERROR: {result.content}", success=False)
+    response_text = result.content
 
-    _log("", "DEPLOY", f"Deployment complete in {_elapsed}s", level="success")
+    # Detect failure: look for error keywords OR absence of a vercel URL
+    # Regex excludes markdown characters [ ] ( ) so "[url](url)" doesn't bleed into the match
+    url_match = re.search(r'https://[^\s\[\]()\>]+vercel\.app[^\s\[\]()\>]*', response_text)
+    response_lower = response_text.lower()
+    has_error_keyword = any(kw in response_lower for kw in ("error", "failed", "failure", "command exited"))
+    has_url = bool(url_match)
+
+    if has_error_keyword or not has_url:
+        _state.deploy_success = False
+        _state.deploy_error = response_text[:2000]
+        _log("", "DEPLOY", f"Attempt {iteration} FAILED ({_elapsed}s): {response_text[:200]}", level="error")
+        return StepOutput(content=f"DEPLOY_FAILED: {response_text}", success=True)
+
+    # Success
+    _state.deploy_success = True
+    _state.deploy_url = url_match.group(0)  # markdown chars already excluded by regex
+    _state.deploy_error = ""
+    _log("", "DEPLOY", f"Attempt {iteration} SUCCEEDED in {_elapsed}s → {_state.deploy_url}", level="success")
+    return StepOutput(content=response_text, success=True)
+
+
+def fix_build_errors(step_input: StepInput) -> StepOutput:
+    """Software Engineer fixes the build error from the last failed deploy attempt.
+
+    No-op if the last deploy_attempt succeeded. Otherwise calls the Software Engineer
+    with the exact Vercel error so it can fix only the offending files.
+    """
+    global _state
+
+    if _state.deploy_success:
+        # Deploy already worked — nothing to fix
+        return StepOutput(content="Deploy succeeded — no fixes needed.", success=True)
+
+    iteration = _state.deploy_iteration
+    repo_url = f"https://github.com/{_state.github_owner}/{_state.github_repo}"
+
+    _log_step_header(
+        f"FIX BUILD ERRORS (attempt {iteration}/5)",
+        f"Repo: {repo_url}",
+    )
+    _log("🔧", "FIX", f"Software Engineer fixing build error from attempt {iteration}...")
+    _log("🔧", "FIX", f"Error preview: {_state.deploy_error[:300]}")
+
+    from agents.software_engineer import software_engineer_agent
+
+    prompt = (
+        f"You are the Software Engineer for: {_state.project_name}\n"
+        f"Repository: {repo_url}\n\n"
+        f"## Vercel Build Error (Deploy Attempt {iteration}/5)\n\n"
+        f"```\n{_state.deploy_error[:3000]}\n```\n\n"
+        "## Your Task — Fix ONLY the build error above:\n"
+        "1. Read the exact file(s) mentioned in the error using `get_file_contents`\n"
+        "2. Fix the specific issue. Common fixes:\n"
+        "   - `next.config.ts` → rename/recreate as `next.config.js` (Next.js does not support .ts config)\n"
+        "   - TypeScript type errors → fix the type annotation in the reported file\n"
+        "   - Missing package → add it to `package.json` dependencies\n"
+        "   - Bad import path → correct the import statement\n"
+        "   - `module not found` → check the file exists and the path is correct\n"
+        f"3. Commit with message: `fix: resolve build error (attempt {iteration})`\n\n"
+        "DO NOT create new features. DO NOT modify TASKS.md. Fix ONLY what is causing the build failure.\n"
+        "After committing, reply with: 'Fixed: <what you changed>'"
+    )
+
+    _t0 = time.time()
+    user_id = _get_user_id()
+    result = _run_with_heartbeat(
+        software_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "FIX", timeout_seconds=0
+    )
+    _elapsed = round(time.time() - _t0, 1)
+
+    if result is None:
+        _log("", "FIX", f"Software Engineer failed to fix errors ({_elapsed}s)", level="warn")
+        return StepOutput(content="WARNING: Could not fix build errors.", success=True)
+
+    _log("", "FIX", f"Fixes committed in {_elapsed}s: {result.content[:200]}", level="success")
     return StepOutput(content=result.content, success=True)
+
+
+def deployment_succeeded(outputs: List[StepOutput]) -> bool:
+    """End condition for the deployment_cycle loop.
+
+    Returns True (break) when deploy succeeded or max attempts exhausted.
+    """
+    if _state.deploy_success:
+        _log("🎉", "DEPLOY_LOOP", f"Deployment succeeded on attempt {_state.deploy_iteration}!")
+        return True
+    if _state.deploy_iteration >= 5:
+        _log("⏰", "DEPLOY_LOOP", "Max deploy attempts (5) reached — proceeding to validation")
+        return True
+    _log("🔄", "DEPLOY_LOOP", f"Attempt {_state.deploy_iteration} failed — SW Engineer will fix and retry...")
+    return False
 
 
 def validate_deployment_link(step_input: StepInput) -> StepOutput:
@@ -1190,14 +1590,17 @@ def validate_deployment_link(step_input: StepInput) -> StepOutput:
     _log_progress_board(_state)
     _t0 = time.time()
 
-    deploy_content = step_input.previous_step_content or ""
+    # Primary: URL is stored in state by deploy_attempt()
+    deploy_url = _state.deploy_url
 
-    # Extract Vercel URL
-    url_match = re.search(r'https://[^\s]+vercel\.app[^\s]*', deploy_content)
-    deploy_url = url_match.group(0) if url_match else ""
+    # Fallback: try to extract from previous step content (legacy path)
+    if not deploy_url:
+        deploy_content = step_input.previous_step_content or ""
+        url_match = re.search(r'https://[^\s\[\]()\>]+vercel\.app[^\s\[\]()\>]*', deploy_content)
+        deploy_url = url_match.group(0) if url_match else ""
 
     if not deploy_url:
-        _log("", "VALIDATE_DEPLOY", "Could not extract Vercel URL from deployment response", level="warn")
+        _log("", "VALIDATE_DEPLOY", "Could not extract Vercel URL — deployment may have failed all retries", level="warn")
         return StepOutput(content="WARNING: Deployment completed but URL not extracted", success=True)
 
     _log("🔍", "VALIDATE_DEPLOY", f"Supervisor validating deployment: {deploy_url}")
@@ -1476,11 +1879,12 @@ SUPABASE_SERVICE_ROLE_KEY=<your Supabase service_role key>
 # Define grouped steps for NEW projects (full flow with repo creation + deployment)
 new_project_steps = Steps(
     name="new_project_path",
-    description="Complete workflow for new projects: create repo, plan tasks, implement, deploy, validate",
+    description="Complete workflow for new projects: create repo, plan tasks, run migrations, implement, deploy, validate",
     steps=[
         Step(name="create_repo", executor=create_github_repo),
         Step(name="validate_repo", executor=validate_repo_link),
         Step(name="plan_tasks", executor=plan_tasks),          # Lead Engineer writes TASKS.md to GitHub
+        Step(name="run_migrations", executor=run_migrations),  # Database Engineer applies schema to Supabase
         Loop(
             name="implementation_cycle",
             steps=[
@@ -1488,9 +1892,17 @@ new_project_steps = Steps(
                 Step(name="code_review", executor=code_review),
             ],
             end_condition=reviews_passed,
-            max_iterations=2,
+            max_iterations=_IMPL_MAX_ITERATIONS,
         ),
-        Step(name="deploy", executor=deploy_to_vercel),
+        Loop(
+            name="deployment_cycle",
+            steps=[
+                Step(name="deploy_attempt", executor=deploy_attempt),
+                Step(name="fix_build_errors", executor=fix_build_errors),
+            ],
+            end_condition=deployment_succeeded,
+            max_iterations=5,
+        ),
         Step(name="validate_deployment", executor=validate_deployment_link),
         Step(name="summary", executor=create_summary),
     ]
@@ -1499,10 +1911,11 @@ new_project_steps = Steps(
 # Define grouped steps for EXISTING projects (skip repo creation + deployment)
 existing_project_steps = Steps(
     name="existing_project_path",
-    description="Workflow for existing projects: validate repo, plan tasks, implement, summary (skip creation + deployment)",
+    description="Workflow for existing projects: validate repo, plan tasks, run migrations, implement, summary (skip creation + deployment)",
     steps=[
         Step(name="validate_repo", executor=validate_repo_link),
         Step(name="plan_tasks", executor=plan_tasks),          # Lead Engineer writes TASKS.md to GitHub
+        Step(name="run_migrations", executor=run_migrations),  # Database Engineer applies schema to Supabase
         Loop(
             name="implementation_cycle",
             steps=[
@@ -1510,7 +1923,7 @@ existing_project_steps = Steps(
                 Step(name="code_review", executor=code_review),
             ],
             end_condition=reviews_passed,
-            max_iterations=2,
+            max_iterations=_IMPL_MAX_ITERATIONS,
         ),
         Step(name="summary", executor=create_summary),
     ]
