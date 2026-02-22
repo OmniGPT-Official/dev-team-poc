@@ -1374,19 +1374,30 @@ def code_review_with_agent(step_input: StepInput) -> StepOutput:
     return StepOutput(content=f"Code Review: {_state.code_review_status}", success=True)
 
 
+_IMPL_MAX_ITERATIONS = 5  # Max development iterations before forcing proceed
+
+
 def reviews_passed(outputs: List[StepOutput]) -> bool:
-    """Check if review passed. Returns True to break loop."""
+    """End condition for the implementation loop.
+
+    Returns True (break) only when:
+    - Code review is APPROVED (Gate 1 + Gate 2 both passed), OR
+    - We've exhausted all _IMPL_MAX_ITERATIONS attempts (safety valve)
+
+    Gate 2 (TASKS.md check) blocks approval until every task is [x],
+    so this naturally keeps the loop running until all work is done.
+    """
     global _state
 
     if _state.code_review_status == "approved":
-        _log("🎉", "LOOP", "Code review passed!")
+        _log("🎉", "LOOP", f"All tasks complete + code approved after {_state.iteration} iteration(s)!")
         return True
 
-    if _state.iteration >= 2:
-        _log("⏰", "LOOP", "Max iterations reached - proceeding to deploy")
+    if _state.iteration >= _IMPL_MAX_ITERATIONS:
+        _log("⏰", "LOOP", f"Max {_IMPL_MAX_ITERATIONS} iterations reached — proceeding despite incomplete tasks")
         return True
 
-    _log("🔄", "LOOP", f"Iteration {_state.iteration} - needs revision")
+    _log("🔄", "LOOP", f"Iteration {_state.iteration} — tasks still pending, running another dev cycle...")
     return False
 
 
@@ -1883,7 +1894,7 @@ new_project_steps = Steps(
                 Step(name="code_review", executor=code_review),
             ],
             end_condition=reviews_passed,
-            max_iterations=2,
+            max_iterations=_IMPL_MAX_ITERATIONS,
         ),
         Loop(
             name="deployment_cycle",
@@ -1914,7 +1925,7 @@ existing_project_steps = Steps(
                 Step(name="code_review", executor=code_review),
             ],
             end_condition=reviews_passed,
-            max_iterations=2,
+            max_iterations=_IMPL_MAX_ITERATIONS,
         ),
         Step(name="summary", executor=create_summary),
     ]
