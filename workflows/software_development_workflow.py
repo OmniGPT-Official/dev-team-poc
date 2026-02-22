@@ -208,7 +208,11 @@ def _log_tasks_board(gh, owner: str, repo: str, phase: str = "") -> tuple:
     """
     import json as _json
     try:
-        raw = _json.loads(gh.get_file_contents(owner=owner, repo=repo, path="TASKS.md"))
+        raw_str = gh.get_file_contents(owner=owner, repo=repo, path="TASKS.md")
+        if not raw_str or not raw_str.strip():
+            _log("ℹ️", "DEV", "TASKS.md not found or empty — no task board available")
+            return [], []
+        raw = _json.loads(raw_str)
         content = raw.get("content", "") if isinstance(raw, dict) else ""
         if not content:
             _log("ℹ️", "DEV", "TASKS.md not found or empty — no task board available")
@@ -774,7 +778,14 @@ CRITICAL — DO NOT include any of the following as tasks:
 - Database migrations (supabase/migrations/*.sql)
 - Schema creation (CREATE TABLE scripts)
 - Any Supabase migration steps
-The database schema is already applied to Supabase by the Database Engineer before the Software Engineer begins. Write tasks for application code only.
+- Setting up environment variables in Vercel or any external service
+- Creating .env files with real secret values
+The database schema is already applied to Supabase by the Database Engineer.
+Environment variables are set by the user in Vercel after deployment — NOT by the Software Engineer.
+
+For Supabase integration, the only code task is:
+  "Create lib/supabase.ts — Supabase client using process.env.NEXT_PUBLIC_SUPABASE_URL and process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY"
+Never title a task "Set up env vars" or "Configure environment variables" — the SW Engineer writes code that READS from process.env, nothing more.
 
 Write the result as TASKS.md to the repository root using create_or_update_file:
 - Owner: "{_state.github_owner}"
@@ -949,6 +960,12 @@ def development(step_input: StepInput) -> StepOutput:
 Owner: "{_state.github_owner}" | Repo: "{_state.github_repo}" | Branch: "main"
 Commit messages: "feat:", "fix:", "update:", "refactor:" (conventional commits)
 
+CRITICAL — Environment Variables:
+- Do NOT configure env vars in Vercel or any external service
+- Do NOT call any Vercel env var tools
+- Just write code that reads from process.env — the user sets values in Vercel manually
+- A task titled "Supabase client" or "env vars" means: write lib/supabase.ts only
+
 When all tasks are done, list every file you modified."""
 
         _log("🤖", "DEV", "Software Engineer executing tasks from TASKS.md...")
@@ -1005,7 +1022,15 @@ When all tasks are done, list every file you modified."""
 
 Stack-specific reminder:
 {"Do NOT create index.html, css/styles.css, or js/script.js — this is a Next.js app. Use app/ directory." if tech_stack == "nextjs" else "Do NOT create a static index.html at root — this is a Vite React app. Use src/ directory."}
-All Supabase env vars must reference environment variables (process.env.NEXT_PUBLIC_SUPABASE_URL etc.) — never hardcode.
+
+CRITICAL — Environment Variables:
+- Do NOT configure env vars in Vercel or any external service
+- Do NOT call any Vercel env var tools (update_project_env_vars, etc.)
+- Do NOT create .env or .env.local files with real values
+- Just write code that reads from process.env, e.g.:
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+- The user will add the actual env var values to Vercel manually after deployment
+- A task titled "Supabase client" or "env vars" means: write lib/supabase.ts only
 
 ---
 
@@ -1292,11 +1317,13 @@ def code_review(step_input: StepInput) -> StepOutput:
     total_tasks = 0
 
     try:
-        raw = json.loads(gh.get_file_contents(
+        raw_str = gh.get_file_contents(
             owner=_state.github_owner, repo=_state.github_repo, path="TASKS.md"
-        ))
-        if isinstance(raw, dict) and raw.get("content"):
-            tasks_content = raw["content"]
+        )
+        if raw_str and raw_str.strip():
+            raw = json.loads(raw_str)
+            if isinstance(raw, dict) and raw.get("content"):
+                tasks_content = raw["content"]
     except Exception as e:
         _log("⚠️", "CODE_REVIEW", f"Could not read TASKS.md ({e}) — skipping task check")
 
