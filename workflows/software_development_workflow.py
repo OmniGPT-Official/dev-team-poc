@@ -915,7 +915,11 @@ def development(step_input: StepInput) -> StepOutput:
     import json
 
     gh = _get_github_tools()
-    arch_content = _state.architecture_content
+    # Only inject architecture on the first iteration — retries read tasks from TASKS.md
+    # and don't need the full architecture text, saving 3000 tokens per retry cycle.
+    arch_content = _state.architecture_content if _state.iteration == 0 else _state.architecture_content
+    # Note: iteration is incremented at the top of this function (see below), so iteration==1 is first run.
+    _include_arch = (_state.iteration <= 1)  # True only on first dev cycle
     files_created = []
 
     # =====================================================================
@@ -932,19 +936,16 @@ def development(step_input: StepInput) -> StepOutput:
         else:
             _log("ℹ️", "DEV", "All tasks already marked done — agent will confirm and report")
 
+        arch_section = (
+            f"\n## Architecture Reference (iteration 1 only — tasks are already in TASKS.md):\n{arch_content[:3000]}\n\n---\n"
+            if _include_arch else ""
+        )
         prompt = f"""## Session Context (survives context compression — always trust this over history)
 - Project: {_state.project_name}  |  Iteration: {_state.iteration}
 - Repo: https://github.com/{_state.github_owner}/{_state.github_repo}
 - Type: EXISTING project update
 - What's next after this step: code review → summary
-
----
-
-## Architecture Reference (for context — your tasks are already in TASKS.md):
-{arch_content[:3000]}
-
----
-
+{arch_section}
 ## YOUR PROCESS — follow EXACTLY, one task at a time:
 
 1. Call `get_file_contents` to read TASKS.md from the repo root
@@ -1014,6 +1015,10 @@ When all tasks are done, list every file you modified."""
         else:
             _log("ℹ️", "DEV", "All tasks already marked done — agent will confirm and report")
 
+        arch_section = (
+            f"\n## Architecture Reference (iteration 1 only — tasks are already in TASKS.md):\n{arch_content[:3000]}\n\n---\n"
+            if _include_arch else ""
+        )
         prompt = f"""## Session Context (survives context compression — always trust this over history)
 - Project: {_state.project_name}  |  Stack: {tech_stack.upper()}  |  Iteration: {_state.iteration}
 - Repo: https://github.com/{_state.github_owner}/{_state.github_repo}
@@ -1031,9 +1036,7 @@ CRITICAL — Environment Variables:
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 - The user will add the actual env var values to Vercel manually after deployment
 - A task titled "Supabase client" or "env vars" means: write lib/supabase.ts only
-
----
-
+{arch_section}
 ## YOUR PROCESS — follow EXACTLY, one task at a time:
 
 1. Call `get_file_contents` to read TASKS.md from the repo root
