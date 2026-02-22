@@ -20,8 +20,8 @@ from services.tool_injector import inject_user_tools
 # Skills directory is two levels up from this file (agents/ → project root → skills/)
 _skills_dir = Path(__file__).parent.parent / "skills"
 
-# Custom compression manager: only compress after 20 tool results accumulate in context
-# (default is 3 — far too aggressive for a coding agent that reads multiple files per task)
+# Custom compression manager: compress after 6 tool results accumulate in context
+# (default is 3 — slightly relaxed for a coding agent that reads multiple files per task)
 _compression_manager = CompressionManager(compress_tool_results_limit=6)
 
 software_engineer_agent = Agent(

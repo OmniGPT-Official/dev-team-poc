@@ -74,6 +74,7 @@ class ImplementationState:
         self.deploy_success: bool = False  # True once a deploy completes without error
         self.deploy_error: str = ""        # Last error message from a failed deploy
         self.deploy_iteration: int = 0     # Counts deploy attempts (1 = first, 2–5 = retries)
+        self.session_id: str = ""          # Unique ID per workflow run — isolates agent DB sessions
 
 
 _state = ImplementationState()
@@ -420,6 +421,7 @@ def read_architecture(step_input: StepInput) -> StepOutput:
     """Step 1: Read Architecture from Google Docs. Detects existing vs new project."""
     global _state
     _state = ImplementationState()  # Fresh state
+    _state.session_id = f"wf-{''.join(random.choices(string.ascii_lowercase + string.digits, k=12))}"
 
     _log_step_header("READ ARCHITECTURE", "Reading project spec from Google Docs")
     _t0 = time.time()
@@ -580,7 +582,7 @@ Return the repository URL when done."""
     _log("🤖", "REPO", "Asking DevOps Engineer to create repo...")
     user_id = _get_user_id()
     result = _run_with_heartbeat(
-        devops_engineer_agent.arun(prompt, user_id=user_id), "REPO-CREATE", timeout_seconds=0
+        devops_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "REPO-CREATE", timeout_seconds=0
     )
 
     if result is None:
@@ -629,7 +631,7 @@ def _extract_code(response: str) -> str:
     return response.strip()
 
 
-def _generate_file_content(agent, file_type: str, project_name: str, architecture: str) -> str:
+def _generate_file_content(agent, file_type: str, project_name: str, architecture: str, session_id: str = "") -> str:
     """Ask agent to generate code for a specific file type."""
 
     # Shared context so every file knows the exact folder structure
@@ -717,7 +719,7 @@ Output ONLY the JavaScript code, nothing else. Start with // or 'use strict'"""
         return ""
 
     user_id = _get_user_id()
-    result = _run_with_heartbeat(agent.arun(prompt, user_id=user_id), f"DEV-{file_type.upper()}", timeout_seconds=0)
+    result = _run_with_heartbeat(agent.arun(prompt, user_id=user_id, session_id=session_id), f"DEV-{file_type.upper()}", timeout_seconds=0)
     if result and result.content:
         return _extract_code(result.content)
     return ""
@@ -799,7 +801,7 @@ Return confirmation with the number of tasks created and a brief list of task ti
     _log("📋", "PLAN", "Lead Engineer is breaking architecture into tasks...")
     user_id = _get_user_id()
     result = _run_with_heartbeat(
-        lead_engineer_agent.arun(prompt, user_id=user_id), "PLAN", timeout_seconds=0
+        lead_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "PLAN", timeout_seconds=0
     )
 
     _elapsed = round(time.time() - _t0, 1)
@@ -869,7 +871,7 @@ def run_migrations(step_input: StepInput) -> StepOutput:
     _log("🗄️", "MIGRATIONS", "Database Engineer is generating and running migrations...")
     user_id = _get_user_id()
     result = _run_with_heartbeat(
-        database_engineer_agent.arun(prompt, user_id=user_id), "MIGRATIONS", timeout_seconds=0
+        database_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "MIGRATIONS", timeout_seconds=0
     )
 
     _elapsed = round(time.time() - _t0, 1)
@@ -917,9 +919,8 @@ def development(step_input: StepInput) -> StepOutput:
     gh = _get_github_tools()
     # Only inject architecture on the first iteration — retries read tasks from TASKS.md
     # and don't need the full architecture text, saving 3000 tokens per retry cycle.
-    arch_content = _state.architecture_content if _state.iteration == 0 else _state.architecture_content
-    # Note: iteration is incremented at the top of this function (see below), so iteration==1 is first run.
-    _include_arch = (_state.iteration <= 1)  # True only on first dev cycle
+    arch_content = _state.architecture_content
+    _include_arch = (_state.iteration == 1)  # True only on first dev cycle
     files_created = []
 
     # =====================================================================
@@ -972,7 +973,7 @@ When all tasks are done, list every file you modified."""
         _log("🤖", "DEV", "Software Engineer executing tasks from TASKS.md...")
         user_id = _get_user_id()
         result = _run_with_heartbeat(
-            software_engineer_agent.arun(prompt, user_id=user_id), "DEV-UPDATE", timeout_seconds=0
+            software_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "DEV-UPDATE", timeout_seconds=0
         )
 
         _elapsed = round(time.time() - _t0, 1)
@@ -1055,7 +1056,7 @@ When all tasks are done, list every file you created."""
 
         user_id = _get_user_id()
         result = _run_with_heartbeat(
-            software_engineer_agent.arun(prompt, user_id=user_id), "DEV-FRAMEWORK", timeout_seconds=0
+            software_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "DEV-FRAMEWORK", timeout_seconds=0
         )
 
         _elapsed = round(time.time() - _t0, 1)
@@ -1083,7 +1084,7 @@ When all tasks are done, list every file you created."""
     _log("📄", "DEV", "Static HTML/CSS/JS stack — generating files directly...")
     files_created = []
 
-    html_code = _generate_html_file_content(software_engineer_agent, "html", _state.project_name, arch_content)
+    html_code = _generate_file_content(software_engineer_agent, "html", _state.project_name, arch_content, session_id=_state.session_id)
     if html_code and len(html_code) > 100:
         res = json.loads(gh.create_or_update_file(
             owner=_state.github_owner,
@@ -1103,7 +1104,7 @@ When all tasks are done, list every file you created."""
 
     # --- Generate and create css/styles.css ---
     _log("🎨", "DEV", "Generating css/styles.css...")
-    css_code = _generate_file_content(software_engineer_agent, "css", _state.project_name, arch_content)
+    css_code = _generate_file_content(software_engineer_agent, "css", _state.project_name, arch_content, session_id=_state.session_id)
 
     if css_code and len(css_code) > 50:
         res = json.loads(gh.create_or_update_file(
@@ -1124,7 +1125,7 @@ When all tasks are done, list every file you created."""
 
     # --- Generate and create js/script.js ---
     _log("⚡", "DEV", "Generating js/script.js...")
-    js_code = _generate_file_content(software_engineer_agent, "js", _state.project_name, arch_content)
+    js_code = _generate_file_content(software_engineer_agent, "js", _state.project_name, arch_content, session_id=_state.session_id)
 
     if js_code and len(js_code) > 20:
         res = json.loads(gh.create_or_update_file(
@@ -1174,7 +1175,7 @@ Output ONLY the markdown content. Start with # {_state.project_name}"""
 
     user_id = _get_user_id()
     readme_result = _run_with_heartbeat(
-        software_engineer_agent.arun(readme_prompt, user_id=user_id), "DEV-README", timeout_seconds=0
+        software_engineer_agent.arun(readme_prompt, user_id=user_id, session_id=_state.session_id), "DEV-README", timeout_seconds=0
     )
     if readme_result and readme_result.content:
         readme_content = readme_result.content.strip()
@@ -1370,39 +1371,6 @@ def code_review(step_input: StepInput) -> StepOutput:
     )
 
 
-def code_review_with_agent(step_input: StepInput) -> StepOutput:
-    """Original agent-based code review (kept for reference)."""
-    global _state
-
-    from agents.lead_engineer import lead_engineer_agent
-
-    prompt = f"""Review code in {_state.github_owner}/{_state.github_repo}.
-
-1. Call: list_repository_files(owner="{_state.github_owner}", repo="{_state.github_repo}")
-2. Read main files with get_file_contents
-3. Reply: APPROVED ✓ or CHANGES_REQUESTED: [issues]
-"""
-
-    user_id = _get_user_id()
-    result = _run_with_heartbeat(lead_engineer_agent.arun(prompt, user_id=user_id), "CODE_REVIEW", timeout_seconds=90)
-
-    if result is None:
-        # Timeout/error — auto-approve since reviews are lenient by policy
-        _state.code_review_status = "approved"
-        _log("✅", "CODE_REVIEW", "Auto-approved (timeout/error)")
-        return StepOutput(content="Code Review: approved (auto)", success=True)
-
-    content = result.content.lower()
-
-    if "changes_requested" in content or "critical" in content:
-        _state.code_review_status = "changes_requested"
-        _log("⚠️", "CODE_REVIEW", "Changes requested")
-    else:
-        _state.code_review_status = "approved"
-        _log("✅", "CODE_REVIEW", "Approved")
-
-    return StepOutput(content=f"Code Review: {_state.code_review_status}", success=True)
-
 
 _IMPL_MAX_ITERATIONS = 5  # Max development iterations before forcing proceed
 
@@ -1507,7 +1475,7 @@ Return the deployment URL when done."""
 
     user_id = _get_user_id()
     result = _run_with_heartbeat(
-        devops_engineer_agent.arun(prompt, user_id=user_id), "DEPLOY", timeout_seconds=0
+        devops_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "DEPLOY", timeout_seconds=0
     )
 
     _elapsed = round(time.time() - _t0, 1)
@@ -1587,7 +1555,7 @@ def fix_build_errors(step_input: StepInput) -> StepOutput:
     _t0 = time.time()
     user_id = _get_user_id()
     result = _run_with_heartbeat(
-        software_engineer_agent.arun(prompt, user_id=user_id), "FIX", timeout_seconds=0
+        software_engineer_agent.arun(prompt, user_id=user_id, session_id=_state.session_id), "FIX", timeout_seconds=0
     )
     _elapsed = round(time.time() - _t0, 1)
 
