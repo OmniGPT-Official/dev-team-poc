@@ -652,7 +652,7 @@ def _generate_file_content(agent, file_type: str, project_name: str, architectur
         "html": f"""Generate a complete index.html file for: {project_name}
 
 Based on this architecture:
-{architecture[:3000]}
+{architecture}
 {folder_context}
 
 Requirements:
@@ -677,7 +677,7 @@ This file will be saved at: css/styles.css
 It is linked from index.html as: <link rel="stylesheet" href="css/styles.css">
 
 Based on this architecture:
-{architecture[:2000]}
+{architecture}
 {folder_context}
 
 Requirements:
@@ -699,7 +699,7 @@ This file will be saved at: js/script.js
 It is linked from index.html as: <script src="js/script.js"></script>
 
 Based on this architecture:
-{architecture[:1500]}
+{architecture}
 {folder_context}
 
 Requirements:
@@ -765,7 +765,7 @@ Detected Stack: {tech_stack.upper()} (verify against the architecture document b
 The architecture document is already provided below. Do NOT call read_document, get_document, or any Google Docs tool. The only tool you should call is create_or_update_file to write TASKS.md to GitHub.
 
 ## Architecture Document (already loaded — use this directly):
-{_state.architecture_content[:6000]}
+{_state.architecture_content}
 
 ## Your Task:
 Use your project-planning skill to break this architecture into 5-15 ordered, concrete implementation tasks.
@@ -854,7 +854,7 @@ def run_migrations(step_input: StepInput) -> StepOutput:
         "The architecture document is already provided below. Do NOT call read_document, "
         "get_document, or any Google Docs tool.\n\n"
         f"## Architecture Document (already loaded — use this directly):\n"
-        f"{_state.architecture_content[:6000]}\n\n"
+        f"{_state.architecture_content}\n\n"
         "## Your Task:\n"
         "Use your database-migration skill to:\n"
         "1. Extract the database schema from the architecture above\n"
@@ -938,7 +938,7 @@ def development(step_input: StepInput) -> StepOutput:
             _log("ℹ️", "DEV", "All tasks already marked done — agent will confirm and report")
 
         arch_section = (
-            f"\n## Architecture Reference (iteration 1 only — tasks are already in TASKS.md):\n{arch_content[:3000]}\n\n---\n"
+            f"\n## Architecture Reference (iteration 1 only — tasks are already in TASKS.md):\n{arch_content}\n\n---\n"
             if _include_arch else ""
         )
         prompt = f"""## Session Context (survives context compression — always trust this over history)
@@ -1017,7 +1017,7 @@ When all tasks are done, list every file you modified."""
             _log("ℹ️", "DEV", "All tasks already marked done — agent will confirm and report")
 
         arch_section = (
-            f"\n## Architecture Reference (iteration 1 only — tasks are already in TASKS.md):\n{arch_content[:3000]}\n\n---\n"
+            f"\n## Architecture Reference (iteration 1 only — tasks are already in TASKS.md):\n{arch_content}\n\n---\n"
             if _include_arch else ""
         )
         prompt = f"""## Session Context (survives context compression — always trust this over history)
@@ -1150,7 +1150,7 @@ When all tasks are done, list every file you created."""
 Repository: https://github.com/{_state.github_owner}/{_state.github_repo}
 
 Based on this architecture:
-{arch_content[:3000]}
+{arch_content}
 
 The README.md MUST include ALL of these sections:
 
