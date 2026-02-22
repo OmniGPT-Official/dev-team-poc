@@ -255,6 +255,34 @@ class VercelProjectTools(Toolkit):
         self._log("=" * 60)
 
         try:
+            # Fetch the project to get the numeric GitHub repoId — required by v13/deployments
+            self._log(f"Fetching project to resolve GitHub repoId...")
+            project_response = requests.get(
+                f"{self._base_url}/v9/projects/{project_name}",
+                headers=self._headers()
+            )
+
+            if not project_response.ok:
+                return json.dumps({
+                    "error": True,
+                    "message": f"Could not fetch project '{project_name}': {project_response.text[:300]}",
+                    "status_code": project_response.status_code,
+                })
+
+            link = project_response.json().get("link", {})
+            repo_id = link.get("repoId")
+
+            if not repo_id:
+                return json.dumps({
+                    "error": True,
+                    "message": (
+                        f"Project '{project_name}' has no linked GitHub repo. "
+                        "Call create_vercel_project with github_owner and github_repo first."
+                    ),
+                })
+
+            self._log(f"Resolved GitHub repoId: {repo_id}")
+
             # Create deployment via POST /v13/deployments
             payload = {
                 "name": project_name,
@@ -262,6 +290,7 @@ class VercelProjectTools(Toolkit):
                 "gitSource": {
                     "type": "github",
                     "ref": git_branch,
+                    "repoId": repo_id,
                 },
             }
 
