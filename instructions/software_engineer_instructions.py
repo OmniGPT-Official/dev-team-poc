@@ -75,6 +75,20 @@ Next.js does NOT support TypeScript config files. Using `next.config.ts` will cr
 `Error: Configuring Next.js via 'next.config.ts' is not supported.`
 The correct filename is always `next.config.js` (or `next.config.mjs` for ESM), regardless of whether the rest of the project uses TypeScript.
 
+**NEVER add `output: 'export'` or `distDir` to `next.config.js`.**
+These two settings are the #1 cause of Vercel build failures:
+- `output: 'export'` switches Next.js to static HTML export mode. Vercel then looks for an output directory named `public` or `out` and fails with:
+  `Error: No Output Directory named 'public' found after the Build completed.`
+- `distDir: 'dist'` (or any custom distDir) redirects the build output to a folder Vercel doesn't know about, producing the same error.
+
+The correct `next.config.js` for ALL Vercel-deployed Next.js projects is:
+```js
+/** @type {import('next').NextConfig} */
+const nextConfig = {}
+module.exports = nextConfig
+```
+Only add specific options when the architecture document explicitly requires them (e.g. `images.remotePatterns` for external image domains). **Never add `output`, `distDir`, or `exportPathMap`.**
+
 ### Next.js Required Bootstrap Files (CRITICAL — create ALL of these in Task 1):
 
 Every Next.js project MUST have these files committed before any components are written.
