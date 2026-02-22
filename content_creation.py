@@ -100,11 +100,15 @@ class DynamicNanoBananaTools(NanoBananaTools):
     ─────────────────────────────────────────────────────────────────────────────
     """
 
+    # TODO: DynamicNanoBananaTools is a shared image toolkit used by both the Content Creation
+    # Team and the Brand Rebranding Agent. It should live in its own file (e.g., tools/image.py)
+    # rather than being defined inside content_creation.py, which is specific to the content team.
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Re-register tools so Agno exposes the correct signatures to the LLM.
-        # The parent class only registers create_image; we add edit_image.
-        self.tools = [self.create_image, self.edit_image]
+        # The parent __init__ only registers create_image into self.functions.
+        # We must explicitly register edit_image so Agno exposes it to the LLM.
+        self.register(self.edit_image)
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
