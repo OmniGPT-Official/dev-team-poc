@@ -126,7 +126,7 @@ Files committed: <list main files>
 ## Anti-Patterns to Avoid
 
 - **DO NOT** implement files outside the current task boundary
-- **DO NOT** skip marking a task done before moving to the next one
+- **❌ NEVER skip marking a task done** — updating `TASKS.md` from `- [ ]` to `- [x]` and committing it is mandatory after EVERY task. If you skip this, the next session will re-implement finished work.
 - **DO NOT** rely on your conversation history to track progress — always re-read `TASKS.md`
 - **DO NOT** batch multiple tasks into a single commit (except when a task naturally spans 2-3 tightly coupled files)
 - **DO NOT** read the full repository file tree on every task — only read what the current task needs

@@ -75,6 +75,99 @@ Next.js does NOT support TypeScript config files. Using `next.config.ts` will cr
 `Error: Configuring Next.js via 'next.config.ts' is not supported.`
 The correct filename is always `next.config.js` (or `next.config.mjs` for ESM), regardless of whether the rest of the project uses TypeScript.
 
+### Next.js Required Bootstrap Files (CRITICAL — create ALL of these in Task 1):
+
+Every Next.js project MUST have these files committed before any components are written.
+Missing any one of them causes Vercel build failures.
+
+**1. `tsconfig.json` — MUST include `@/*` path alias:**
+```json
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+```
+Without `"paths": { "@/*": ["./*"] }`, every `import ... from '@/components/...'` fails with "Module not found".
+
+**2. `app/globals.css` — ONLY use standard Tailwind directives:**
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+```
+**NEVER write `@apply bg-background`, `@apply text-foreground`, `@apply border-border`.**
+These custom class names (`bg-background`, `text-foreground`, `border-border`) do not exist in Tailwind CSS by default. Using `@apply` with them crashes the webpack CSS loader with a postcss error during build. Use standard Tailwind classes or plain CSS variables instead:
+```css
+/* CORRECT — use plain CSS variables directly */
+body {
+  background: #0a0a0a;
+  color: #ededed;
+}
+
+/* WRONG — these will crash the build */
+@layer base {
+  body {
+    @apply bg-background text-foreground;  /* ❌ NEVER do this */
+  }
+}
+```
+
+**3. `postcss.config.js` — required for Tailwind CSS processing:**
+```js
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+```
+
+**4. `tailwind.config.js` — content paths MUST cover all source files:**
+```js
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './pages/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: { extend: {} },
+  plugins: [],
+}
+```
+
+**5. `app/layout.tsx` — import globals.css with a RELATIVE path:**
+```tsx
+import './globals.css'   // ✅ correct — relative import
+import '@/app/globals.css'  // ❌ wrong — causes "Module not found: Can't resolve './globals.css'"
+```
+
+### TASKS.md — Mark Every Task Done (CRITICAL):
+After completing EVERY task:
+1. Call `get_file_contents` to read the current TASKS.md from GitHub
+2. Change `- [ ] **Task N:**` → `- [x] **Task N:**` for the task you just finished
+3. Write the updated TASKS.md back with `create_or_update_file`, commit message: `chore: complete task N — <title>`
+4. Only then start the next task
+
+**Never skip this step.** It is the only way to track progress when context is compressed or the session restarts. If you skip marking a task, the agent will re-implement it on the next run.
+
 ## CRITICAL: FOLDER STRUCTURE & FILE LINKING AWARENESS
 
 You MUST always be aware of the full repository folder structure. Before creating or editing any file:
