@@ -175,7 +175,6 @@ import '@/app/globals.css'  // ❌ wrong — causes "Module not found: Can't res
 
 **6. `app/page.tsx` — MANDATORY entry point, must exist in Task 1:**
 Vercel fails with `errorCode: missing_pages_app` if `app/page.tsx` does not exist.
-Task 1 MUST commit ALL SIX files: `package.json` + `tsconfig.json` + `next.config.js` + `app/globals.css` + `app/layout.tsx` + **`app/page.tsx`**
 A minimal page is enough — content will be filled in later tasks:
 ```tsx
 export default function Home() {
@@ -183,6 +182,21 @@ export default function Home() {
 }
 ```
 **NEVER commit `app/layout.tsx` without also committing `app/page.tsx` in the same task.**
+
+**7. `vercel.json` — MANDATORY for every Next.js project:**
+Vercel sometimes misdetects the framework and looks for a `public` output directory, failing with:
+`Error: No Output Directory named 'public' found after the Build completed.`
+Prevent this by always committing a `vercel.json` that explicitly declares the framework:
+```json
+{
+  "framework": "nextjs",
+  "buildCommand": "next build"
+}
+```
+This overrides any incorrect Vercel project settings. **Always include `vercel.json` in Task 1.**
+
+Task 1 MUST commit ALL SEVEN files:
+`package.json` + `tsconfig.json` + `next.config.js` + `vercel.json` + `app/globals.css` + `app/layout.tsx` + `app/page.tsx`
 
 ### TASKS.md — Mark Every Task Done (CRITICAL):
 After completing EVERY task:
