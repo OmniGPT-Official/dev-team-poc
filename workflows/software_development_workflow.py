@@ -1165,19 +1165,50 @@ def code_review(step_input: StepInput) -> StepOutput:
     gh = _get_github_tools()
     files = json.loads(gh.list_repository_files(_state.github_owner, _state.github_repo))
 
-    # Check for actual code files
+    # Config-only filenames that are NOT application code.
+    # These must not satisfy the "code exists" check — a repo with only
+    # next.config.js / tsconfig.json will fail Vercel with missing_pages_app.
+    _CONFIG_ONLY = {
+        'next.config.js', 'next.config.mjs', 'next.config.ts',
+        'tailwind.config.js', 'tailwind.config.ts',
+        'postcss.config.js', 'postcss.config.mjs',
+        'vite.config.js', 'vite.config.ts',
+        'jest.config.js', 'jest.config.ts',
+        'tsconfig.json', 'package.json', 'package-lock.json',
+        'yarn.lock', '.eslintrc.js', '.eslintrc.json', '.prettierrc',
+        'README.md', 'TASKS.md', '.gitignore', '.env.example',
+    }
+
+    # Check for actual application code (not just config/tooling files)
     code_files = []
+    app_dirs = []  # directories like 'app', 'pages', 'src', 'components'
     if isinstance(files, list):
-        code_files = [f for f in files if isinstance(f, dict) and
-                      f.get('name', '').endswith(('.html', '.css', '.js', '.tsx', '.jsx', '.py', '.ts'))]
+        for f in files:
+            if not isinstance(f, dict):
+                continue
+            name = f.get('name', '')
+            ftype = f.get('type', 'file')
+            # Count directories that signal real app code
+            if ftype == 'dir' and name in ('app', 'pages', 'src', 'components', 'lib'):
+                app_dirs.append(name)
+            # Count actual code files (exclude pure config files)
+            elif (name.endswith(('.html', '.css', '.tsx', '.jsx', '.py'))
+                  or (name.endswith(('.js', '.ts')) and name not in _CONFIG_ONLY)):
+                code_files.append(f)
 
-    if not code_files:
-        _log("", "CODE_REVIEW", "No code files found - requesting implementation", level="warn")
+    has_code = bool(code_files) or bool(app_dirs)
+
+    if not has_code:
+        _log("", "CODE_REVIEW", "No application code found (config files don't count) — requesting implementation", level="warn")
         _state.code_review_status = "changes_requested"
-        return StepOutput(content="CHANGES_REQUESTED: No code files found. Create index.html, styles.css, etc.", success=True)
+        return StepOutput(
+            content="CHANGES_REQUESTED: No application code found. "
+                    "For Next.js: create app/page.tsx. For HTML: create index.html.",
+            success=True
+        )
 
-    # Code files exist - auto-approve
-    file_names = [f['name'] for f in code_files]
+    # Application code exists — auto-approve
+    file_names = [f['name'] for f in code_files] + [f"{d}/" for d in app_dirs]
     _state.step_timings["Code Review"] = round(time.time() - _t0, 1)
     _log("", "CODE_REVIEW", f"APPROVED — {len(code_files)} code files found: {', '.join(file_names)}", level="success")
     _state.code_review_status = "approved"

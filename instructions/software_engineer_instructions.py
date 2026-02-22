@@ -159,6 +159,17 @@ import './globals.css'   // ✅ correct — relative import
 import '@/app/globals.css'  // ❌ wrong — causes "Module not found: Can't resolve './globals.css'"
 ```
 
+**6. `app/page.tsx` — MANDATORY entry point, must exist in Task 1:**
+Vercel fails with `errorCode: missing_pages_app` if `app/page.tsx` does not exist.
+Task 1 MUST commit ALL SIX files: `package.json` + `tsconfig.json` + `next.config.js` + `app/globals.css` + `app/layout.tsx` + **`app/page.tsx`**
+A minimal page is enough — content will be filled in later tasks:
+```tsx
+export default function Home() {
+  return <main>Loading...</main>
+}
+```
+**NEVER commit `app/layout.tsx` without also committing `app/page.tsx` in the same task.**
+
 ### TASKS.md — Mark Every Task Done (CRITICAL):
 After completing EVERY task:
 1. Call `get_file_contents` to read the current TASKS.md from GitHub
