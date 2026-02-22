@@ -199,6 +199,38 @@ def _log_progress_board(state: "ImplementationState"):
     print()
 
 
+def _log_tasks_board(gh, owner: str, repo: str, phase: str = "") -> tuple:
+    """Read TASKS.md from GitHub and print a visual task board.
+
+    Shows all tasks with their completion status (✅ done / ⏳ pending).
+    Returns (pending_list, done_list) — both are lists of raw task line strings.
+    Returns ([], []) if TASKS.md is not found or unreadable.
+    """
+    import json as _json
+    try:
+        raw = _json.loads(gh.get_file_contents(owner=owner, repo=repo, path="TASKS.md"))
+        content = raw.get("content", "") if isinstance(raw, dict) else ""
+        if not content:
+            _log("ℹ️", "DEV", "TASKS.md not found or empty — no task board available")
+            return [], []
+
+        pending = re.findall(r'^- \[ \].+', content, re.MULTILINE)
+        done    = re.findall(r'^- \[x\].+', content, re.IGNORECASE | re.MULTILINE)
+        total   = len(pending) + len(done)
+
+        phase_label = f" [{phase}]" if phase else ""
+        _log("📋", "DEV", f"──── Task Board{phase_label}:  {len(done)}/{total} complete  ──────────────────────────────")
+        for t in done:
+            _log("   ", "DEV", f"  ✅  {t.strip()}")
+        for t in pending:
+            _log("   ", "DEV", f"  ⏳  {t.strip()}")
+        _log("📋", "DEV", "──────────────────────────────────────────────────────────────────────")
+        return pending, done
+    except Exception as e:
+        _log("⚠️", "DEV", f"Could not read TASKS.md for task board: {e}")
+        return [], []
+
+
 def parse_input_urls(input_str: str) -> dict:
     """Parse input string to extract Architecture URL, GitHub repo, and optional params."""
     result = {
@@ -881,6 +913,14 @@ def development(step_input: StepInput) -> StepOutput:
     if _state.is_existing_repo:
         _log("💻", "DEV", f"Iteration {_state.iteration} — Executing tasks from TASKS.md on EXISTING repo...")
 
+        # ── Show task board BEFORE the agent runs ────────────────────────────
+        _log("📋", "DEV", "Reading TASKS.md before development starts...")
+        pending_before, done_before = _log_tasks_board(gh, _state.github_owner, _state.github_repo, "BEFORE")
+        if pending_before:
+            _log("🤖", "DEV", f"Software Engineer will implement {len(pending_before)} pending task(s)...")
+        else:
+            _log("ℹ️", "DEV", "All tasks already marked done — agent will confirm and report")
+
         prompt = f"""## Session Context (survives context compression — always trust this over history)
 - Project: {_state.project_name}  |  Iteration: {_state.iteration}
 - Repo: https://github.com/{_state.github_owner}/{_state.github_repo}
@@ -919,8 +959,18 @@ When all tasks are done, list every file you modified."""
 
         _elapsed = round(time.time() - _t0, 1)
         _state.step_timings["Development"] = _elapsed
+
+        # ── Show task board AFTER the agent runs ─────────────────────────────
+        _log("📋", "DEV", "Re-reading TASKS.md after development run...")
+        pending_after, done_after = _log_tasks_board(gh, _state.github_owner, _state.github_repo, "AFTER")
+        newly_done = len(done_after) - len(done_before)
+        if newly_done > 0:
+            _log("✅", "DEV", f"{newly_done} task(s) completed this iteration ({len(done_after)}/{len(pending_after) + len(done_after)} total done)")
+        if pending_after:
+            _log("⚠️", "DEV", f"{len(pending_after)} task(s) still pending — code review will request another iteration")
+
         if result and result.content:
-            _log("", "DEV", f"Tasks completed in {_elapsed}s", level="success")
+            _log("", "DEV", f"Development complete in {_elapsed}s", level="success")
             return StepOutput(content=f"Updated existing repo: {result.content[:500]}", success=True)
         else:
             _log("", "DEV", "Agent failed to produce updates", level="error")
@@ -938,6 +988,14 @@ When all tasks are done, list every file you modified."""
     # ─────────────────────────────────────────────────────────────────────
     if tech_stack in ("nextjs", "react"):
         _log("🤖", "DEV", f"Task-driven {tech_stack.upper()} implementation — reading TASKS.md...")
+
+        # ── Show task board BEFORE the agent runs ────────────────────────────
+        _log("📋", "DEV", "Reading TASKS.md before development starts...")
+        pending_before, done_before = _log_tasks_board(gh, _state.github_owner, _state.github_repo, "BEFORE")
+        if pending_before:
+            _log("🤖", "DEV", f"Software Engineer will implement {len(pending_before)} pending task(s)...")
+        else:
+            _log("ℹ️", "DEV", "All tasks already marked done — agent will confirm and report")
 
         prompt = f"""## Session Context (survives context compression — always trust this over history)
 - Project: {_state.project_name}  |  Stack: {tech_stack.upper()}  |  Iteration: {_state.iteration}
@@ -974,8 +1032,18 @@ When all tasks are done, list every file you created."""
 
         _elapsed = round(time.time() - _t0, 1)
         _state.step_timings["Development"] = _elapsed
+
+        # ── Show task board AFTER the agent runs ─────────────────────────────
+        _log("📋", "DEV", "Re-reading TASKS.md after development run...")
+        pending_after, done_after = _log_tasks_board(gh, _state.github_owner, _state.github_repo, "AFTER")
+        newly_done = len(done_after) - len(done_before)
+        if newly_done > 0:
+            _log("✅", "DEV", f"{newly_done} task(s) completed this iteration ({len(done_after)}/{len(pending_after) + len(done_after)} total done)")
+        if pending_after:
+            _log("⚠️", "DEV", f"{len(pending_after)} task(s) still pending — code review will request another iteration")
+
         if result and result.content:
-            _log("", "DEV", f"Tasks completed in {_elapsed}s", level="success")
+            _log("", "DEV", f"Development complete in {_elapsed}s", level="success")
             return StepOutput(content=f"Implemented {tech_stack.upper()} project: {result.content[:500]}", success=True)
         else:
             _log("", "DEV", "Agent failed to implement framework project", level="error")
@@ -1148,7 +1216,16 @@ def validate_repo_link(step_input: StepInput) -> StepOutput:
 
 
 def code_review(step_input: StepInput) -> StepOutput:
-    """Lead Engineer reviews code - auto-approves if code files exist."""
+    """Lead Engineer reviews code — two-gate check before proceeding to deployment:
+
+    Gate 1: Application code files (or app/ dirs) must exist in the repo.
+            Config-only files (next.config.js, tsconfig.json, etc.) do NOT count.
+    Gate 2: TASKS.md must exist and every task must be marked `- [x]`.
+            Any `- [ ]` task means the Software Engineer isn't done yet.
+
+    CHANGES_REQUESTED on any failed gate → implementation loop retries.
+    APPROVED only when both gates pass.
+    """
     global _state
 
     _log_step_header(
@@ -1157,17 +1234,17 @@ def code_review(step_input: StepInput) -> StepOutput:
     )
     _log_progress_board(_state)
     _t0 = time.time()
-    _log("👀", "CODE_REVIEW", "Checking project files...")
 
-    # First, verify files exist directly (don't rely on agent)
     import json
 
     gh = _get_github_tools()
+
+    # ── Gate 1: Application code exists (not just config/tooling files) ──────
+    _log("👀", "CODE_REVIEW", "Gate 1 — checking for application code files...")
     files = json.loads(gh.list_repository_files(_state.github_owner, _state.github_repo))
 
     # Config-only filenames that are NOT application code.
-    # These must not satisfy the "code exists" check — a repo with only
-    # next.config.js / tsconfig.json will fail Vercel with missing_pages_app.
+    # A repo with only these files fails Vercel with missing_pages_app.
     _CONFIG_ONLY = {
         'next.config.js', 'next.config.mjs', 'next.config.ts',
         'tailwind.config.js', 'tailwind.config.ts',
@@ -1179,19 +1256,16 @@ def code_review(step_input: StepInput) -> StepOutput:
         'README.md', 'TASKS.md', '.gitignore', '.env.example',
     }
 
-    # Check for actual application code (not just config/tooling files)
     code_files = []
-    app_dirs = []  # directories like 'app', 'pages', 'src', 'components'
+    app_dirs = []
     if isinstance(files, list):
         for f in files:
             if not isinstance(f, dict):
                 continue
-            name = f.get('name', '')
+            name  = f.get('name', '')
             ftype = f.get('type', 'file')
-            # Count directories that signal real app code
             if ftype == 'dir' and name in ('app', 'pages', 'src', 'components', 'lib'):
                 app_dirs.append(name)
-            # Count actual code files (exclude pure config files)
             elif (name.endswith(('.html', '.css', '.tsx', '.jsx', '.py'))
                   or (name.endswith(('.js', '.ts')) and name not in _CONFIG_ONLY)):
                 code_files.append(f)
@@ -1199,20 +1273,71 @@ def code_review(step_input: StepInput) -> StepOutput:
     has_code = bool(code_files) or bool(app_dirs)
 
     if not has_code:
-        _log("", "CODE_REVIEW", "No application code found (config files don't count) — requesting implementation", level="warn")
+        _log("", "CODE_REVIEW", "Gate 1 FAILED — no application code (config files don't count)", level="warn")
         _state.code_review_status = "changes_requested"
         return StepOutput(
             content="CHANGES_REQUESTED: No application code found. "
                     "For Next.js: create app/page.tsx. For HTML: create index.html.",
-            success=True
+            success=True,
         )
 
-    # Application code exists — auto-approve
     file_names = [f['name'] for f in code_files] + [f"{d}/" for d in app_dirs]
+    _log("✅", "CODE_REVIEW", f"Gate 1 PASSED — application code present: {', '.join(file_names)}")
+
+    # ── Gate 2: All TASKS.md tasks must be done ───────────────────────────────
+    _log("📋", "CODE_REVIEW", "Gate 2 — reading TASKS.md to verify all tasks are complete...")
+    tasks_content = ""
+    done_tasks: list = []
+    pending_tasks: list = []
+    total_tasks = 0
+
+    try:
+        raw = json.loads(gh.get_file_contents(
+            owner=_state.github_owner, repo=_state.github_repo, path="TASKS.md"
+        ))
+        if isinstance(raw, dict) and raw.get("content"):
+            tasks_content = raw["content"]
+    except Exception as e:
+        _log("⚠️", "CODE_REVIEW", f"Could not read TASKS.md ({e}) — skipping task check")
+
+    if tasks_content:
+        pending_tasks = re.findall(r'^- \[ \].+', tasks_content, re.MULTILINE)
+        done_tasks    = re.findall(r'^- \[x\].+', tasks_content, re.IGNORECASE | re.MULTILINE)
+        total_tasks   = len(pending_tasks) + len(done_tasks)
+
+        _log("📋", "CODE_REVIEW", f"── Task Completion: {len(done_tasks)}/{total_tasks} ────────────────────────────────────")
+        for t in done_tasks:
+            _log("   ", "CODE_REVIEW", f"  ✅  {t.strip()}")
+        for t in pending_tasks:
+            _log("   ", "CODE_REVIEW", f"  ⏳  {t.strip()}")
+        _log("📋", "CODE_REVIEW", "────────────────────────────────────────────────────────────────────────")
+
+        if pending_tasks:
+            _state.code_review_status = "changes_requested"
+            _log("", "CODE_REVIEW",
+                 f"Gate 2 FAILED — {len(pending_tasks)}/{total_tasks} task(s) still incomplete — requesting another dev iteration",
+                 level="warn")
+            pending_list = "\n".join(f"  {t.strip()}" for t in pending_tasks)
+            return StepOutput(
+                content=f"CHANGES_REQUESTED: {len(pending_tasks)} task(s) not yet implemented:\n{pending_list}",
+                success=True,
+            )
+
+        _log("✅", "CODE_REVIEW", f"Gate 2 PASSED — all {total_tasks} TASKS.md tasks complete")
+    else:
+        _log("ℹ️", "CODE_REVIEW", "No TASKS.md found — Gate 2 skipped (proceeding on code files alone)")
+
+    # ── Both gates passed → APPROVED ─────────────────────────────────────────
     _state.step_timings["Code Review"] = round(time.time() - _t0, 1)
-    _log("", "CODE_REVIEW", f"APPROVED — {len(code_files)} code files found: {', '.join(file_names)}", level="success")
+    tasks_summary = f"{len(done_tasks)}/{total_tasks} tasks done" if tasks_content else "no TASKS.md"
+    _log("", "CODE_REVIEW",
+         f"APPROVED ✓  {len(file_names)} code file(s) | {tasks_summary} | {_state.step_timings['Code Review']}s",
+         level="success")
     _state.code_review_status = "approved"
-    return StepOutput(content=f"APPROVED ✓ Found {len(code_files)} code files: {', '.join(file_names)}", success=True)
+    return StepOutput(
+        content=f"APPROVED ✓  {len(file_names)} code file(s) + {tasks_summary}",
+        success=True,
+    )
 
 
 def code_review_with_agent(step_input: StepInput) -> StepOutput:
