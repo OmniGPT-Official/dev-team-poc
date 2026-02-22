@@ -259,8 +259,8 @@ def _extract_project_name(content: str) -> str:
 
 
 def _generate_repo_name(project_name: str = None) -> str:
-    """Generate unique repository name."""
-    suffix = ''.join(random.choices(string.digits, k=5))
+    """Generate unique repository name with a 7-digit suffix to avoid conflicts."""
+    suffix = ''.join(random.choices(string.digits, k=7))
     if project_name:
         safe = re.sub(r'[^\w-]', '-', project_name.lower())[:25]
         return f"{safe}-{suffix}"
@@ -1265,23 +1265,28 @@ def deploy_attempt(step_input: StepInput) -> StepOutput:
 
     from agents.devops_engineer import devops_engineer_agent
 
+    # Use the GitHub repo name as the Vercel project name — it contains the unique suffix
+    # (e.g. "scent-stories-0586721") so it never conflicts with pre-existing Vercel projects.
+    vercel_project_name = _state.github_repo
+
     if iteration == 1:
         # First attempt: full deploy — create project and link to GitHub
-        _log("🚀", "DEPLOY", "First deploy: creating Vercel project + triggering deployment...")
+        _log("🚀", "DEPLOY", f"First deploy: creating Vercel project '{vercel_project_name}' + triggering deployment...")
         prompt = f"""Deploy this GitHub repository to Vercel using the 2-step process:
 
 **STEP 1: Create Vercel Project**
 Call `create_vercel_project` with:
-- project_name: {_state.project_name}
+- project_name: {vercel_project_name}
 - github_repo: {_state.github_repo}
 - github_owner: {_state.github_owner}
 - framework: null (let Vercel auto-detect)
 
+The project_name MUST be exactly "{vercel_project_name}" (includes the unique identifier).
 This will create the project and link it to GitHub for automatic deployments on git push.
 
 **STEP 2: Trigger Initial Deployment**
 Call `trigger_deployment` with:
-- project_name: {_state.project_name}
+- project_name: {vercel_project_name}
 - git_branch: main
 
 **CRITICAL**: You MUST call BOTH functions. Don't skip trigger_deployment!
@@ -1292,11 +1297,11 @@ Return the deployment URL when done."""
         _log("🔄", "DEPLOY", f"Retry {iteration}/5: re-triggering deployment (project already linked)...")
         prompt = f"""Re-trigger the Vercel deployment for an already-linked project.
 
-The Vercel project "{_state.project_name}" is already created and linked to GitHub.
+The Vercel project "{vercel_project_name}" is already created and linked to GitHub.
 The Software Engineer has pushed fixes. Now re-trigger the build.
 
 Call `trigger_deployment` with:
-- project_name: {_state.project_name}
+- project_name: {vercel_project_name}
 - git_branch: main
 
 ONLY call trigger_deployment. Do NOT call create_vercel_project again.
@@ -1320,7 +1325,8 @@ Return the deployment URL when done."""
     response_text = result.content
 
     # Detect failure: look for error keywords OR absence of a vercel URL
-    url_match = re.search(r'https://[^\s)>]+vercel\.app[^\s)>]*', response_text)
+    # Regex excludes markdown characters [ ] ( ) so "[url](url)" doesn't bleed into the match
+    url_match = re.search(r'https://[^\s\[\]()\>]+vercel\.app[^\s\[\]()\>]*', response_text)
     response_lower = response_text.lower()
     has_error_keyword = any(kw in response_lower for kw in ("error", "failed", "failure", "command exited"))
     has_url = bool(url_match)
@@ -1333,7 +1339,7 @@ Return the deployment URL when done."""
 
     # Success
     _state.deploy_success = True
-    _state.deploy_url = url_match.group(0).rstrip("])")  # strip any trailing markdown chars
+    _state.deploy_url = url_match.group(0)  # markdown chars already excluded by regex
     _state.deploy_error = ""
     _log("", "DEPLOY", f"Attempt {iteration} SUCCEEDED in {_elapsed}s → {_state.deploy_url}", level="success")
     return StepOutput(content=response_text, success=True)
@@ -1425,8 +1431,8 @@ def validate_deployment_link(step_input: StepInput) -> StepOutput:
     # Fallback: try to extract from previous step content (legacy path)
     if not deploy_url:
         deploy_content = step_input.previous_step_content or ""
-        url_match = re.search(r'https://[^\s)>]+vercel\.app[^\s)>]*', deploy_content)
-        deploy_url = url_match.group(0).rstrip("])") if url_match else ""
+        url_match = re.search(r'https://[^\s\[\]()\>]+vercel\.app[^\s\[\]()\>]*', deploy_content)
+        deploy_url = url_match.group(0) if url_match else ""
 
     if not deploy_url:
         _log("", "VALIDATE_DEPLOY", "Could not extract Vercel URL — deployment may have failed all retries", level="warn")
