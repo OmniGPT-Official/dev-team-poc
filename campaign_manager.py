@@ -175,7 +175,26 @@ def step2_submit_batch_call(
     original_input = step_input.get_input_as_string() or ""
     step1_content = step_input.get_last_step_content() or ""
 
-    logger.info(f"Step 2: step1_content length={len(step1_content)}, preview={step1_content[:120]}")
+    logger.info(f"Step 2: get_last_step_content length={len(step1_content)}, preview={step1_content[:120]}")
+
+    # Fallback: if get_last_step_content() returned empty (known Agno issue with
+    # executor-based steps), read leads from session_state where Step 1 cached them.
+    if not step1_content or "phone_number" not in step1_content:
+        if session_state:
+            for key, value in session_state.items():
+                if key.startswith("leads_") and value and "phone_number" in value:
+                    step1_content = value
+                    logger.info(f"Step 2: get_last_step_content was empty — using session_state fallback (key={key})")
+                    break
+        if not step1_content or "phone_number" not in step1_content:
+            logger.error("Step 2: no leads available from get_last_step_content or session_state — aborting")
+            return StepOutput(
+                step_name="Step 2: Submit Batch Call",
+                content="❌ Error: No leads received from Step 1. Cannot submit batch call.",
+                success=False,
+            )
+
+    logger.info(f"Step 2: leads length={len(step1_content)}, preview={step1_content[:120]}")
 
     # Extract campaign name from original workflow input
     campaign_name = "Outbound Campaign"
