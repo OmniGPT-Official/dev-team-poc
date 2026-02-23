@@ -172,26 +172,42 @@ def step2_submit_batch_call(
     Step 2: Submit batch call to ElevenLabs using leads from Step 1.
     """
     logger.info("Step 2: starting batch call submission")
+    if session_state is None:
+        session_state = {}
     original_input = step_input.get_input_as_string() or ""
     step1_content = step_input.get_last_step_content() or ""
 
     logger.info(f"Step 2: get_last_step_content length={len(step1_content)}, preview={step1_content[:120]}")
 
-    # Fallback: if get_last_step_content() returned empty (known Agno issue with
-    # executor-based steps), read leads from session_state where Step 1 cached them.
+    # ── Extract sheet URL for a key-scoped session_state lookup ─────────────
+    # Done here (same logic as Step 1) so the fallback picks the exact right
+    # cache entry instead of the first matching leads_* key in the dict.
+    sheet_url = ""
+    for ln in original_input.splitlines():
+        ln = ln.strip()
+        if ln.lower().startswith("sheet:") or ln.lower().startswith("sheet url:"):
+            sheet_url = ln.split(":", 1)[1].strip()
+            break
+    leads_key = f"leads_{sheet_url}" if sheet_url else None
+
+    # ── Fallback: get_last_step_content() can be empty for executor-based
+    # steps in Agno. Use the key-scoped session_state entry that Step 1
+    # cached — guarded by isinstance so non-string values never crash. ──────
     if not step1_content or "phone_number" not in step1_content:
-        if session_state:
-            for key, value in session_state.items():
-                if key.startswith("leads_") and value and "phone_number" in value:
-                    step1_content = value
-                    logger.info(f"Step 2: get_last_step_content was empty — using session_state fallback (key={key})")
-                    break
-        if not step1_content or "phone_number" not in step1_content:
-            logger.error("Step 2: no leads available from get_last_step_content or session_state — aborting")
+        candidate = session_state.get(leads_key) if leads_key else None
+        if isinstance(candidate, str) and "phone_number" in candidate:
+            step1_content = candidate
+            logger.info(f"Step 2: get_last_step_content was empty — using session_state fallback (key={leads_key})")
+        else:
+            logger.error(
+                f"Step 2: no leads from get_last_step_content or session_state "
+                f"(leads_key={leads_key!r}) — aborting"
+            )
             return StepOutput(
                 step_name="Step 2: Submit Batch Call",
                 content="❌ Error: No leads received from Step 1. Cannot submit batch call.",
                 success=False,
+                stop=True,  # halt workflow — Step 3 must not run without call results
             )
 
     logger.info(f"Step 2: leads length={len(step1_content)}, preview={step1_content[:120]}")
@@ -221,12 +237,22 @@ def step2_submit_batch_call(
             step_name="Step 2: Submit Batch Call",
             content=f"❌ Error in Step 2: {e}",
             success=False,
+            stop=True,  # halt workflow — Step 3 has nothing to log
+        )
+
+    if not output_content:
+        logger.error("Step 2: coordinator returned empty content — batch call not confirmed")
+        return StepOutput(
+            step_name="Step 2: Submit Batch Call",
+            content="❌ Error: Calling coordinator returned no confirmation. Batch call may not have been submitted.",
+            success=False,
+            stop=True,  # halt workflow — do not log unconfirmed results
         )
 
     return StepOutput(
         step_name="Step 2: Submit Batch Call",
         content=output_content,
-        success=bool(output_content),
+        success=True,
     )
 
 
@@ -242,6 +268,16 @@ def step3_log_results(
     step2_content = step_input.get_last_step_content() or ""
 
     logger.info(f"Step 3: step2_content length={len(step2_content)}, preview={step2_content[:120]}")
+
+    # Guard: if Step 2 failed or returned nothing, do not call results_logger_agent
+    # with empty/error data — that risks corrupting the Google Sheet.
+    if not step2_content or step2_content.startswith("❌"):
+        logger.error("Step 3: step2_content is empty or indicates Step 2 failure — skipping sheet update")
+        return StepOutput(
+            step_name="Step 3: Log Results",
+            content="Step 3 skipped: no valid call results from Step 2 to log.",
+            success=False,
+        )
 
     # Extract sheet URL from original workflow input
     sheet_url = ""
