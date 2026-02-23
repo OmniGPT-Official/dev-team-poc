@@ -13,8 +13,6 @@ env.bak/
 venv.bak/
 
 # Environment Variables
-.env
-.env.local
 .env.*.local
 
 # Database
@@ -99,3 +97,4 @@ dev_files/
 
 # Supabase temp files
 supabase/.temp/
+config.bat

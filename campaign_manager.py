@@ -32,9 +32,9 @@ from agno.models.moonshot import MoonShot
 from agno.utils.log import logger
 from agents.calling_agents import (
     lead_reader_agent,
-    calling_coordinator_agent,
     results_logger_agent,
 )
+from tools.elevenlabs_batch_calling import ElevenLabsBatchCallingTools
 from services.tool_injector import make_tool_hook
 from db import db
 
@@ -169,19 +169,22 @@ def step2_submit_batch_call(
     session_state: Optional[Dict[str, Any]] = None,
 ) -> StepOutput:
     """
-    Step 2: Submit batch call to ElevenLabs using leads from Step 1.
+    Step 2: Submit batch call to ElevenLabs — pure Python, no LLM.
+
+    Root cause of previous failure: kimi-k2.5 generated malformed tool-call
+    arguments (field names with hundreds of colons instead of real values).
+    Fix: call ElevenLabsBatchCallingTools.submit_batch_call() directly from
+    Python — deterministic, no LLM, no formatting surprises.
     """
-    logger.info("Step 2: starting batch call submission")
+    logger.info("Step 2: starting batch call submission (direct API, no LLM)")
     if session_state is None:
         session_state = {}
     original_input = step_input.get_input_as_string() or ""
     step1_content = step_input.get_last_step_content() or ""
 
-    logger.info(f"Step 2: get_last_step_content length={len(step1_content)}, preview={step1_content[:120]}")
+    logger.info(f"Step 2: get_last_step_content length={len(step1_content)}")
 
-    # ── Extract sheet URL for a key-scoped session_state lookup ─────────────
-    # Done here (same logic as Step 1) so the fallback picks the exact right
-    # cache entry instead of the first matching leads_* key in the dict.
+    # ── Extract sheet URL for key-scoped session_state fallback ─────────────
     sheet_url = ""
     for ln in original_input.splitlines():
         ln = ln.strip()
@@ -190,29 +193,45 @@ def step2_submit_batch_call(
             break
     leads_key = f"leads_{sheet_url}" if sheet_url else None
 
-    # ── Fallback: get_last_step_content() can be empty for executor-based
-    # steps in Agno. Use the key-scoped session_state entry that Step 1
-    # cached — guarded by isinstance so non-string values never crash. ──────
+    # ── Fallback: get_last_step_content() can be empty for executor steps ───
     if not step1_content or "phone_number" not in step1_content:
         candidate = session_state.get(leads_key) if leads_key else None
         if isinstance(candidate, str) and "phone_number" in candidate:
             step1_content = candidate
-            logger.info(f"Step 2: get_last_step_content was empty — using session_state fallback (key={leads_key})")
+            logger.info(f"Step 2: using session_state fallback (key={leads_key})")
         else:
-            logger.error(
-                f"Step 2: no leads from get_last_step_content or session_state "
-                f"(leads_key={leads_key!r}) — aborting"
-            )
+            logger.error(f"Step 2: no leads available (leads_key={leads_key!r}) — aborting")
             return StepOutput(
                 step_name="Step 2: Submit Batch Call",
                 content="❌ Error: No leads received from Step 1. Cannot submit batch call.",
                 success=False,
-                stop=True,  # halt workflow — Step 3 must not run without call results
+                stop=True,
             )
 
-    logger.info(f"Step 2: leads length={len(step1_content)}, preview={step1_content[:120]}")
+    # ── Parse leads JSON ─────────────────────────────────────────────────────
+    # Strip any SUMMARY: prefix that lead_reader_agent prepends on the
+    # cache-miss path — the JSON array starts at the first '['.
+    json_start = step1_content.find("[")
+    if json_start > 0:
+        logger.info(f"Step 2: stripping {json_start}-char prefix before JSON array")
+        step1_content = step1_content[json_start:]
 
-    # Extract campaign name from original workflow input
+    try:
+        leads = json.loads(step1_content)
+        if not isinstance(leads, list) or not leads:
+            raise ValueError(f"Expected non-empty list, got: {type(leads).__name__}")
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error(f"Step 2: leads JSON invalid: {e}")
+        return StepOutput(
+            step_name="Step 2: Submit Batch Call",
+            content=f"❌ Error: Leads JSON is invalid: {e}",
+            success=False,
+            stop=True,
+        )
+
+    logger.info(f"Step 2: parsed {len(leads)} leads")
+
+    # ── Extract campaign name ────────────────────────────────────────────────
     campaign_name = "Outbound Campaign"
     for line in original_input.splitlines():
         line = line.strip()
@@ -220,35 +239,51 @@ def step2_submit_batch_call(
             campaign_name = line.split(":", 1)[1].strip()
             break
 
-    message = (
-        f"CAMPAIGN: {campaign_name}\n"
-        f"LEADS (JSON array — pass exactly these fields to submit_batch_call as-is):\n{step1_content}\n"
-        f"Submit batch call now."
-    )
-
-    logger.info(f"Step 2: calling calling_coordinator_agent with campaign='{campaign_name}'")
+    # ── Call ElevenLabs directly — no LLM intermediary ──────────────────────
+    # Wrapped in broad except to catch ValueError from _get_headers() when
+    # ELEVENLABS_API_KEY is missing (tool raises instead of returning a dict).
+    logger.info(f"Step 2: submitting {len(leads)} leads to ElevenLabs, campaign='{campaign_name}'")
+    elevenlabs = ElevenLabsBatchCallingTools()
     try:
-        result = calling_coordinator_agent.run(message)
-        output_content = result.content if result and result.content else ""
-        logger.info(f"Step 2: coordinator returned content length={len(output_content)}, preview={output_content[:120]}")
+        result = elevenlabs.submit_batch_call(campaign_name=campaign_name, recipients=leads)
     except Exception as e:
-        logger.error(f"Step 2: calling_coordinator_agent.run() raised exception: {e}")
+        logger.error(f"Step 2: unexpected exception calling ElevenLabs: {e}")
         return StepOutput(
             step_name="Step 2: Submit Batch Call",
-            content=f"❌ Error in Step 2: {e}",
+            content=f"❌ Unexpected error submitting batch call: {e}",
             success=False,
-            stop=True,  # halt workflow — Step 3 has nothing to log
+            stop=True,
         )
 
-    if not output_content:
-        logger.error("Step 2: coordinator returned empty content — batch call not confirmed")
+    if result.get("error"):
+        err_msg = result.get("message", "Unknown error")
+        api_err = result.get("api_error", "")
+        logger.error(f"Step 2: ElevenLabs API error: {err_msg} | status={result.get('status_code')} | api_error={api_err}")
         return StepOutput(
             step_name="Step 2: Submit Batch Call",
-            content="❌ Error: Calling coordinator returned no confirmation. Batch call may not have been submitted.",
+            content=f"❌ ElevenLabs API error: {err_msg}. Details: {api_err}",
             success=False,
-            stop=True,  # halt workflow — do not log unconfirmed results
+            stop=True,
         )
 
+    batch_id = result.get("batch_id")
+    total = result.get("total_recipients", len(leads))
+    # Filter empty strings from leads that had no phone_number (skipped by tool)
+    phone_numbers = [lead.get("phone_number") for lead in leads if lead.get("phone_number")]
+
+    if not batch_id:
+        logger.warning(f"Step 2: ElevenLabs returned no batch_id — response: {result}")
+    else:
+        logger.info(f"Step 2: ✅ batch submitted — batch_id={batch_id}, total={total}")
+
+    output_content = (
+        f"✅ Batch call submitted successfully.\n"
+        f"batch_id: {batch_id or 'unknown'}\n"
+        f"campaign: {campaign_name}\n"
+        f"total_recipients: {total}\n"
+        f"sheet_url: {sheet_url}\n"
+        f"phone_numbers_called: {json.dumps(phone_numbers)}"
+    )
     return StepOutput(
         step_name="Step 2: Submit Batch Call",
         content=output_content,
