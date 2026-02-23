@@ -209,6 +209,13 @@ def step2_submit_batch_call(
             )
 
     # ── Parse leads JSON ─────────────────────────────────────────────────────
+    # Strip any SUMMARY: prefix that lead_reader_agent prepends on the
+    # cache-miss path — the JSON array starts at the first '['.
+    json_start = step1_content.find("[")
+    if json_start > 0:
+        logger.info(f"Step 2: stripping {json_start}-char prefix before JSON array")
+        step1_content = step1_content[json_start:]
+
     try:
         leads = json.loads(step1_content)
         if not isinstance(leads, list) or not leads:
@@ -233,15 +240,25 @@ def step2_submit_batch_call(
             break
 
     # ── Call ElevenLabs directly — no LLM intermediary ──────────────────────
+    # Wrapped in broad except to catch ValueError from _get_headers() when
+    # ELEVENLABS_API_KEY is missing (tool raises instead of returning a dict).
     logger.info(f"Step 2: submitting {len(leads)} leads to ElevenLabs, campaign='{campaign_name}'")
     elevenlabs = ElevenLabsBatchCallingTools()
-    result = elevenlabs.submit_batch_call(campaign_name=campaign_name, recipients=leads)
-    logger.info(f"Step 2: ElevenLabs response: {result}")
+    try:
+        result = elevenlabs.submit_batch_call(campaign_name=campaign_name, recipients=leads)
+    except Exception as e:
+        logger.error(f"Step 2: unexpected exception calling ElevenLabs: {e}")
+        return StepOutput(
+            step_name="Step 2: Submit Batch Call",
+            content=f"❌ Unexpected error submitting batch call: {e}",
+            success=False,
+            stop=True,
+        )
 
     if result.get("error"):
         err_msg = result.get("message", "Unknown error")
         api_err = result.get("api_error", "")
-        logger.error(f"Step 2: ElevenLabs API error: {err_msg} | api_error={api_err}")
+        logger.error(f"Step 2: ElevenLabs API error: {err_msg} | status={result.get('status_code')} | api_error={api_err}")
         return StepOutput(
             step_name="Step 2: Submit Batch Call",
             content=f"❌ ElevenLabs API error: {err_msg}. Details: {api_err}",
@@ -249,14 +266,19 @@ def step2_submit_batch_call(
             stop=True,
         )
 
-    batch_id = result.get("batch_id", "unknown")
+    batch_id = result.get("batch_id")
     total = result.get("total_recipients", len(leads))
-    phone_numbers = [lead.get("phone_number", "") for lead in leads]
+    # Filter empty strings from leads that had no phone_number (skipped by tool)
+    phone_numbers = [lead.get("phone_number") for lead in leads if lead.get("phone_number")]
 
-    logger.info(f"Step 2: ✅ batch submitted — batch_id={batch_id}, total={total}")
+    if not batch_id:
+        logger.warning(f"Step 2: ElevenLabs returned no batch_id — response: {result}")
+    else:
+        logger.info(f"Step 2: ✅ batch submitted — batch_id={batch_id}, total={total}")
+
     output_content = (
         f"✅ Batch call submitted successfully.\n"
-        f"batch_id: {batch_id}\n"
+        f"batch_id: {batch_id or 'unknown'}\n"
         f"campaign: {campaign_name}\n"
         f"total_recipients: {total}\n"
         f"sheet_url: {sheet_url}\n"
